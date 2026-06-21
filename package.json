@@ -1,0 +1,40 @@
+{
+  "name": "visual-crawl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Crawl a website and capture every page and UI state across devices, then view them on a zoomable canvas.",
+  "bin": {
+    "visual-crawl": "bin/visual-crawl.mjs"
+  },
+  "scripts": {
+    "vc": "tsx src/cli.ts",
+    "demo": "tsx src/cli.ts demo",
+    "demo:crawl": "tsx src/cli.ts demo-crawl",
+    "crawl": "tsx src/cli.ts crawl",
+    "discover": "tsx src/cli.ts discover",
+    "capture": "tsx src/cli.ts capture",
+    "serve": "tsx src/cli.ts serve",
+    "viewer:build": "vite build viewer",
+    "viewer:dev": "vite viewer",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "playwright": "^1.61.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.34.2",
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^3.0.0"
+  }
+}

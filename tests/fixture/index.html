@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fixture — Home</title>
+    <style>
+      :root { --bg: #0f172a; --panel: #1e293b; --accent: #38bdf8; --text: #e2e8f0; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+      .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 22px;
+        background: var(--panel); position: sticky; top: 0; border-bottom: 1px solid #334155; }
+      .brand { font-weight: 800; letter-spacing: 2px; color: var(--accent); }
+      .desktop-nav { display: flex; gap: 18px; margin-left: auto; }
+      .desktop-nav a { color: var(--text); text-decoration: none; }
+      .hamburger, .signin { background: #334155; color: var(--text); border: 0; border-radius: 8px;
+        padding: 8px 12px; font-size: 16px; cursor: pointer; }
+      .signin { background: var(--accent); color: #082f49; font-weight: 700; }
+      main { max-width: 880px; margin: 0 auto; padding: 40px 22px 80px; }
+      .hero { padding: 48px 0; }
+      .hero h1 { font-size: 40px; margin: 0 0 12px; }
+      .card { background: var(--panel); border: 1px solid #334155; border-radius: 14px; padding: 22px; margin-top: 24px; }
+      .acc-trigger { width: 100%; text-align: left; background: var(--panel); color: var(--text);
+        border: 1px solid #334155; border-radius: 12px; padding: 16px; font-size: 17px; cursor: pointer; }
+      .acc-panel { padding: 16px; color: #94a3b8; }
+      .drawer { position: fixed; inset: 0 0 0 auto; width: 260px; background: var(--panel);
+        border-left: 1px solid #334155; padding: 22px; display: flex; flex-direction: column; gap: 16px; z-index: 50; }
+      .drawer[hidden] { display: none; }
+      .drawer a { color: var(--text); text-decoration: none; font-size: 18px; }
+      .drawer-close { align-self: flex-end; background: #334155; color: var(--text); border: 0;
+        border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+      dialog { background: var(--panel); color: var(--text); border: 1px solid #334155;
+        border-radius: 16px; padding: 28px; width: min(360px, 90vw); }
+      dialog::backdrop { background: rgba(2, 6, 23, 0.7); }
+      dialog input { display: block; width: 100%; margin: 8px 0 16px; padding: 10px; border-radius: 8px;
+        border: 1px solid #475569; background: #0f172a; color: var(--text); }
+      .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+      .modal-actions button { padding: 8px 14px; border-radius: 8px; border: 0; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">FIXTURE</div>
+      <nav class="desktop-nav">
+        <a href="/">Home</a><a href="/about">About</a><a href="/blog/post-1">Blog</a>
+      </nav>
+      <button class="hamburger" data-testid="menu-button" aria-label="Open menu"
+        aria-expanded="false" aria-controls="mobile-drawer">☰</button>
+      <button class="signin" data-testid="signin-button">Sign in</button>
+    </header>
+
+    <aside id="mobile-drawer" class="drawer" role="dialog" aria-modal="true" aria-label="Menu" hidden>
+      <button class="drawer-close" aria-label="Close menu">✕</button>
+      <a href="/">Home</a><a href="/about">About</a><a href="/blog/post-1">Blog</a>
+    </aside>
+
+    <dialog id="signin-modal" aria-label="Sign in">
+      <h2>Sign in</h2>
+      <label>Email<input type="email" placeholder="you@example.com" /></label>
+      <label>Password<input type="password" placeholder="••••••••" /></label>
+      <div class="modal-actions">
+        <button class="modal-close">Cancel</button>
+        <button class="signin">Continue</button>
+      </div>
+    </dialog>
+
+    <main>
+      <section class="hero">
+        <h1>How many UI states does your site have?</h1>
+        <p>This fixture exercises a menu, a modal, and an accordion across devices.</p>
+      </section>
+      <section class="card">
+        <button class="acc-trigger" data-testid="accordion-trigger"
+          aria-expanded="false" aria-controls="acc-panel">What is Visual Crawl? ▾</button>
+        <div id="acc-panel" class="acc-panel" hidden>
+          It crawls a site, captures every page and UI mutation across device profiles,
+          and renders the results on a zoomable canvas.
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const menuBtn = document.querySelector('[data-testid=menu-button]');
+      const drawer = document.getElementById('mobile-drawer');
+      const setDrawer = (open) => {
+        drawer.toggleAttribute('hidden', !open);
+        menuBtn.setAttribute('aria-expanded', String(open));
+      };
+      menuBtn.addEventListener('click', () => setDrawer(drawer.hasAttribute('hidden')));
+      drawer.querySelector('.drawer-close').addEventListener('click', () => setDrawer(false));
+
+      const modal = document.getElementById('signin-modal');
+      document.querySelector('[data-testid=signin-button]').addEventListener('click', () => modal.showModal());
+      modal.querySelector('.modal-close').addEventListener('click', () => modal.close());
+
+      const acc = document.querySelector('[data-testid=accordion-trigger]');
+      const panel = document.getElementById('acc-panel');
+      acc.addEventListener('click', () => {
+        const open = panel.hasAttribute('hidden');
+        panel.toggleAttribute('hidden', !open);
+        acc.setAttribute('aria-expanded', String(open));
+      });
+    </script>
+  </body>
+</html>

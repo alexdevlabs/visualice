@@ -1,0 +1,58 @@
+{
+  "site": { "title": "Fixture Site", "framework": "static" },
+  "routes": [
+    {
+      "id": "home",
+      "url": "/",
+      "depth": 0,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
+        {
+          "id": "menu-open",
+          "kind": "menu",
+          "label": "Mobile menu open",
+          "trigger": { "testId": "menu-button" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "menu-button" } },
+            { "action": "waitFor", "selector": "#mobile-drawer", "state": "visible" }
+          ],
+          "shots": {}
+        },
+        {
+          "id": "modal-signin",
+          "kind": "modal",
+          "label": "Sign-in modal",
+          "trigger": { "testId": "signin-button" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "signin-button" } },
+            { "action": "waitFor", "selector": "#signin-modal[open]", "state": "visible" }
+          ],
+          "shots": {}
+        },
+        {
+          "id": "accordion-open",
+          "kind": "accordion",
+          "label": "Accordion expanded",
+          "trigger": { "testId": "accordion-trigger" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "accordion-trigger" } },
+            { "action": "waitFor", "selector": "#acc-panel", "state": "visible" }
+          ],
+          "shots": {}
+        }
+      ]
+    },
+    {
+      "id": "about",
+      "url": "/about",
+      "depth": 1,
+      "states": [{ "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }]
+    },
+    {
+      "id": "blog-post-1",
+      "url": "/blog/post-1",
+      "depth": 1,
+      "states": [{ "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }]
+    }
+  ]
+}

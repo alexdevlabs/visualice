@@ -1,0 +1,40 @@
+import type { VisualCrawlConfig } from "./src/shared/config";
+
+/**
+ * Example config. Everything not set falls back to sensible defaults
+ * (see src/shared/config.ts). Run: `npm run capture -- --manifest=<path>`.
+ */
+const config: VisualCrawlConfig = {
+  target: "https://example.com",
+
+  scope: {
+    include: ["/**"],
+    exclude: ["/admin/**", "/logout"],
+    maxDepth: 4,
+    maxPages: 200,
+  },
+
+  devices: [
+    { name: "desktop", width: 1440, height: 900, dpr: 2 },
+    { name: "laptop", width: 1280, height: 800, dpr: 2 },
+    { name: "tablet", width: 820, height: 1180, dpr: 2, mobile: true, touch: true },
+    { name: "mobile", width: 390, height: 844, dpr: 3, mobile: true, touch: true },
+  ],
+
+  screenshot: {
+    fullPage: true,
+    alsoViewport: true,
+    format: "png",
+    thumbnail: { width: 480, format: "webp", quality: 70 },
+  },
+
+  stabilize: {
+    animations: "disabled",
+    freezeTime: "2025-01-01T00:00:00Z",
+    seedRandom: 42,
+    maskSelectors: [".ad", "[data-volatile]"],
+    waitStrategy: "networkidle",
+  },
+};
+
+export default config;

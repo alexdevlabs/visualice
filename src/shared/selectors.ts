@@ -1,0 +1,30 @@
+import type { Page, Locator } from "playwright";
+import type { Target } from "./types";
+
+/**
+ * Resolve a Target to a Playwright Locator, preferring robust strategies
+ * (test id > role+name > label > text > raw CSS).
+ */
+export function locatorFor(page: Page, t: Target): Locator {
+  let loc: Locator;
+  if (t.testId) loc = page.getByTestId(t.testId);
+  else if (t.role && t.name)
+    loc = page.getByRole(t.role as Parameters<Page["getByRole"]>[0], { name: t.name, exact: t.exact });
+  else if (t.role) loc = page.getByRole(t.role as Parameters<Page["getByRole"]>[0]);
+  else if (t.label) loc = page.getByLabel(t.label, { exact: t.exact });
+  else if (t.text) loc = page.getByText(t.text, { exact: t.exact });
+  else if (t.selector) loc = page.locator(t.selector);
+  else throw new Error(`Empty target: ${JSON.stringify(t)}`);
+  if (typeof t.nth === "number") loc = loc.nth(t.nth);
+  return loc;
+}
+
+export function describeTarget(t: Target): string {
+  if (t.testId) return `testid=${t.testId}`;
+  if (t.role && t.name) return `${t.role}:"${t.name}"`;
+  if (t.role) return `role=${t.role}`;
+  if (t.label) return `label="${t.label}"`;
+  if (t.text) return `text="${t.text}"`;
+  if (t.selector) return t.selector;
+  return "?";
+}
