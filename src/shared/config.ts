@@ -69,8 +69,17 @@ const StabilizeSchema = z.object({
   lazyScroll: z.boolean().default(true),
 });
 
+const LoginSchema = z.object({
+  url: z.string().optional(),
+  // steps are RecipeStep[]; validated loosely here and cast at runtime to keep the
+  // discriminated union out of the schema. Use ${ENV_VAR} in fill values for secrets.
+  steps: z.array(z.unknown()).default([]),
+  maxAgeHours: z.number().positive().default(12),
+});
+
 const AuthSchema = z.object({
   storageStatePath: z.string().optional(),
+  login: LoginSchema.optional(),
 });
 
 const OutputSchema = z.object({

@@ -6,6 +6,7 @@ import { runCapture } from "./capture";
 import { renderReport } from "./report";
 import { saveJson } from "./manifest";
 import { discoverPipeline } from "./discover";
+import { ensureStorageState } from "./auth";
 import { pathSlug } from "../shared/slug";
 
 export function makeRunId(date = new Date()): string {
@@ -16,6 +17,8 @@ export interface CapturePipelineOptions {
   config: Config;
   inputManifest: InputManifest;
   baseUrl: string;
+  /** Pre-resolved storageState path; if omitted, auth is resolved from config. */
+  storageState?: string;
   log?: (msg: string) => void;
 }
 
@@ -105,10 +108,7 @@ export async function capturePipeline(opts: CapturePipelineOptions): Promise<Cap
     hints: inputManifest.hints,
   };
 
-  const storageState =
-    config.auth.storageStatePath && (await fileExists(path.resolve(config.auth.storageStatePath)))
-      ? path.resolve(config.auth.storageStatePath)
-      : undefined;
+  const storageState = opts.storageState ?? (await ensureStorageState(config, log));
 
   const result = await runCapture({ config, manifest, baseUrl, runDir, storageState, log });
 
@@ -141,15 +141,17 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
   const outRoot = path.resolve(config.output.dir);
   const cachePath = path.join(outRoot, "crawl-map.cache.json");
 
+  const storageState = await ensureStorageState(config, log);
+
   let inputManifest: InputManifest;
   if (replay && (await fileExists(cachePath))) {
     log(`replay: reusing cached site model → ${cachePath}`);
     inputManifest = JSON.parse(await fs.readFile(cachePath, "utf8")) as InputManifest;
   } else {
-    inputManifest = await discoverPipeline({ config, baseUrl, log });
+    inputManifest = await discoverPipeline({ config, baseUrl, storageState, log });
     await saveJson(cachePath, inputManifest); // shots-free model, cached for reuse
     log(`cached site model → ${cachePath}`);
   }
 
-  return capturePipeline({ config, inputManifest, baseUrl, log });
+  return capturePipeline({ config, inputManifest, baseUrl, storageState, log });
 }

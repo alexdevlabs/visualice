@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fixture — Login</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0;
+        display: grid; place-items: center; min-height: 100vh; }
+      form { background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 28px; width: 320px; }
+      h1 { margin: 0 0 16px; font-size: 22px; }
+      input { display: block; width: 100%; margin: 8px 0 14px; padding: 10px; border-radius: 8px;
+        border: 1px solid #475569; background: #0f172a; color: #e2e8f0; }
+      button { width: 100%; padding: 10px; border: 0; border-radius: 8px; background: #38bdf8;
+        color: #082f49; font-weight: 700; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <form>
+      <h1>Sign in</h1>
+      <label>Email<input data-testid="email" type="email" /></label>
+      <label>Password<input data-testid="password" type="password" /></label>
+      <button data-testid="login-submit">Sign in</button>
+    </form>
+    <script>
+      document.querySelector("[data-testid=login-submit]").addEventListener("click", (e) => {
+        e.preventDefault();
+        const email = document.querySelector("[data-testid=email]").value || "anon";
+        localStorage.setItem("vc_user", email);
+        document.cookie = "vc_session=1; path=/";
+        location.href = "/secret";
+      });
+    </script>
+  </body>
+</html>

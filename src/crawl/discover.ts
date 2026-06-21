@@ -8,6 +8,7 @@ import { discoverStates } from "./discover-states";
 export interface DiscoverOptions {
   config: Config;
   baseUrl: string;
+  storageState?: string;
   log?: (msg: string) => void;
 }
 
@@ -26,7 +27,11 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
   const log = opts.log ?? (() => {});
   const browser = await chromium.launch();
   try {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 900 },
+      deviceScaleFactor: 1,
+      storageState: opts.storageState,
+    });
     context.setDefaultTimeout(config.politeness.timeoutMs);
     await applyContextInit(context, config.stabilize);
 

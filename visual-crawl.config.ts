@@ -35,6 +35,21 @@ const config: VisualCrawlConfig = {
     maskSelectors: [".ad", "[data-volatile]"],
     waitStrategy: "networkidle",
   },
+
+  // Authenticated crawls: run the login recipe once, reuse the saved session.
+  // Secrets come from env (${VC_USER} / ${VC_PASS}) — never hardcode them.
+  // auth: {
+  //   storageStatePath: ".visual-crawl/auth.json",
+  //   login: {
+  //     url: "/login",
+  //     steps: [
+  //       { action: "fill", target: { label: "Email" }, value: "${VC_USER}" },
+  //       { action: "fill", target: { label: "Password" }, value: "${VC_PASS}" },
+  //       { action: "click", target: { role: "button", name: "Sign in" } },
+  //       { action: "waitFor", url: "**/dashboard" },
+  //     ],
+  //   },
+  // },
 };
 
 export default config;

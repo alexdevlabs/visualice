@@ -13,7 +13,8 @@ See [`PLAN.md`](./PLAN.md) for the full design.
 - ✅ **M2** route discovery — BFS link crawl + sitemap/robots, scope rules, SPA-aware
 - ✅ **M3** state discovery — heuristic interaction probing finds modals/menus/accordions/tabs and records replayable recipes
 - ✅ **M4** viewer — zoomable canvas (pan/zoom + LOD + virtualization), grouped & all-at-once layouts, sidebar, filters, inspector
-- ⬜ M5 skill (agentic Explore mode) · M6 stabilization hardening
+- ✅ **M5** Claude skill (`.claude/skills/visual-crawl/`) + real auth — login recipe → saved storage state, with agentic Explore mode for tricky states
+- ⬜ M6 stabilization hardening
 
 ## Quick start
 
@@ -51,6 +52,39 @@ The viewer is a standalone static app (`viewer/`); it reads `viewer-data.json` +
 screenshots and needs no connection to the crawled site. Scroll to pan, ⌘/ctrl+scroll
 (or pinch) to zoom, click any shot for metadata. Toggle **Grouped** (by path) vs
 **All at once**; thumbnails load when zoomed out and swap to full resolution as you zoom in.
+
+## Authenticated sites
+
+```ts
+// visual-crawl.config.ts
+auth: {
+  storageStatePath: ".visual-crawl/auth.json",
+  login: {
+    url: "/login",
+    steps: [
+      { action: "fill", target: { label: "Email" }, value: "${VC_USER}" },
+      { action: "fill", target: { label: "Password" }, value: "${VC_PASS}" },
+      { action: "click", target: { role: "button", name: "Sign in" } },
+      { action: "waitFor", url: "**/dashboard" },
+    ],
+  },
+}
+```
+
+`VC_USER=… VC_PASS=… npm run auth` runs the login once and saves the session;
+`crawl` reuses it and re-authenticates when it goes stale. Secrets stay in env.
+
+## Use it as a Claude Code skill
+
+The skill lives in `.claude/skills/visual-crawl/` — active automatically when you work in
+this repo. To use `/visual-crawl` from any project, symlink it into your personal skills:
+
+```bash
+ln -s "$PWD/.claude/skills/visual-crawl" ~/.claude/skills/visual-crawl
+```
+
+Then ask Claude to "visually crawl https://your.site" — it picks the right mode
+(replay / auto / agentic explore for auth + tricky states), captures, and opens the viewer.
 
 Output lands in `.visual-crawl/runs/<runId>/`:
 

@@ -7,6 +7,7 @@ import { loadConfig } from "./shared/config";
 import { loadInputManifest, saveJson } from "./crawl/manifest";
 import { capturePipeline, crawlPipeline } from "./crawl/orchestrator";
 import { discoverPipeline } from "./crawl/discover";
+import { ensureStorageState } from "./crawl/auth";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
 
@@ -35,6 +36,7 @@ function printHelp(): void {
 Usage:
   visual-crawl crawl [opts]               Discover routes + UI states, then capture across devices
   visual-crawl discover [opts]            Auto-discover routes + UI states (no screenshots)
+  visual-crawl auth [--force]             Run the configured login recipe → save storage state
   visual-crawl capture [opts]             Replay a given manifest's recipes and capture screenshots
   visual-crawl demo                       Capture the bundled fixture from a hand-written manifest
   visual-crawl demo-crawl                 Full discover→capture run against the bundled fixture
@@ -129,6 +131,18 @@ async function cmdCrawl(flags: Flags): Promise<void> {
   reportDone(runDir, manifest.stats?.shots ?? 0);
 }
 
+async function cmdAuth(flags: Flags): Promise<void> {
+  const config = await loadConfig(typeof flags.config === "string" ? flags.config : undefined);
+  if (!config.auth.storageStatePath) {
+    throw new Error("config.auth.storageStatePath is not set — nothing to authenticate.");
+  }
+  if (typeof flags.force === "boolean" && flags.force) {
+    await fs.rm(path.resolve(config.auth.storageStatePath), { force: true }).catch(() => {});
+  }
+  const sp = await ensureStorageState(config, log);
+  log(sp ? `auth ready: ${sp}` : "no login recipe configured; nothing to do.");
+}
+
 async function cmdDiscover(flags: Flags): Promise<void> {
   const config = await loadConfig(typeof flags.config === "string" ? flags.config : undefined);
   const baseUrl = (typeof flags.base === "string" ? flags.base : undefined) ?? config.target;
@@ -193,6 +207,8 @@ async function main(): Promise<void> {
       return cmdCrawl(flags);
     case "discover":
       return cmdDiscover(flags);
+    case "auth":
+      return cmdAuth(flags);
     case "demo":
       return cmdDemo();
     case "demo-crawl":
