@@ -109,7 +109,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   // pointer pan + click-to-select
   const drag = useRef<{ x: number; y: number; t0: Transform; moved: boolean } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    // Capture on the canvas itself, not the tile under the cursor — a tile can be
+    // unmounted by virtualization mid-drag, which would drop the capture and strand
+    // the pan (drag.current left non-null, no pointerup).
+    elRef.current?.setPointerCapture?.(e.pointerId);
     drag.current = { x: e.clientX, y: e.clientY, t0: tRef.current, moved: false };
   };
   const onPointerMove = (e: React.PointerEvent) => {

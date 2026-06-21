@@ -8,6 +8,7 @@ import { loadInputManifest, saveJson } from "./crawl/manifest";
 import { capturePipeline, crawlPipeline } from "./crawl/orchestrator";
 import { discoverPipeline } from "./crawl/discover";
 import { ensureStorageState } from "./crawl/auth";
+import { pathExists } from "./shared/fsx";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
 
@@ -66,10 +67,6 @@ async function cmdCapture(flags: Flags): Promise<void> {
   reportDone(runDir, manifest.stats?.shots ?? 0);
 }
 
-async function pathExists(p: string): Promise<boolean> {
-  return !!(await fs.stat(p).catch(() => null));
-}
-
 async function ensureViewerBuilt(viewerDist: string): Promise<void> {
   if (await pathExists(path.join(viewerDist, "index.html"))) return;
   log("building viewer (first run)…");
@@ -103,11 +100,14 @@ async function cmdServe(flags: Flags): Promise<void> {
   const viewerDist = path.join(PROJECT_ROOT, "viewer", "dist");
   await ensureViewerBuilt(viewerDist);
 
-  const server = await serveViewer({
-    runDir,
-    viewerDist,
-    port: typeof flags.port === "string" ? Number(flags.port) : undefined,
-  });
+  let port: number | undefined;
+  if (typeof flags.port === "string") {
+    port = Number(flags.port);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      throw new Error(`invalid --port=${flags.port}`);
+    }
+  }
+  const server = await serveViewer({ runDir, viewerDist, port });
 
   if (typeof flags.shoot === "string") {
     await shootViewer(server.url, flags.shoot);

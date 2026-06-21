@@ -11,4 +11,10 @@ const child = spawn("npx", ["tsx", cli, ...process.argv.slice(2)], {
   stdio: "inherit",
   cwd: process.cwd(),
 });
-child.on("exit", (code) => process.exit(code ?? 0));
+child.on("error", (err) => {
+  console.error(`failed to launch: ${err.message}`);
+  process.exit(1);
+});
+// A null code means the child was killed by a signal — surface that as failure
+// (exit 1) rather than masking it as success.
+child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
