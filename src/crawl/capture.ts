@@ -6,7 +6,7 @@ import type { Config } from "../shared/config";
 import type { Manifest, RouteNode, StateNode, Device, ShotRef } from "../shared/types";
 import { pathSlug, stateSlug } from "../shared/slug";
 import { applyContextInit, stabilizePage } from "./stabilize";
-import { makeThumb, imageSize, writeFull } from "./thumbnails";
+import { makeThumb, imageSize, writeFull, writeViewportCrop } from "./thumbnails";
 import { applyRecipe, resolveUrl } from "./recipe";
 import { mapPool, sleep } from "../shared/pool";
 
@@ -82,13 +82,13 @@ async function captureState(page: Page, ctx: StateCtx): Promise<ShotRef> {
 
   if (config.screenshot.alsoViewport) {
     const viewportPath = path.join(dir, `${device.name}.viewport.${ext}`);
-    const vbuf = await page.screenshot({
-      fullPage: false,
-      mask: mask.length ? mask : undefined,
-      type: shotType,
-      quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
-    });
-    await writeFull(vbuf, viewportPath, ext, config.screenshot.quality);
+    // Crop the viewport out of the full buffer instead of taking a second screenshot.
+    if (config.screenshot.fullPage && dims.width && dims.height) {
+      const cropH = Math.min(Math.round(device.height * device.dpr), dims.height);
+      await writeViewportCrop(buf, viewportPath, ext, config.screenshot.quality, dims.width, cropH);
+    } else {
+      await writeFull(buf, viewportPath, ext, config.screenshot.quality); // full already == viewport
+    }
     ref.viewport = rel(viewportPath);
   }
 

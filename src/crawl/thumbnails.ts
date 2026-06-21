@@ -30,3 +30,19 @@ export async function imageSize(buf: Buffer): Promise<{ width?: number; height?:
   const m = await sharp(buf).metadata();
   return { width: m.width, height: m.height };
 }
+
+/** Crop the top-left region (the viewport) out of an already-captured full-page buffer. */
+export async function writeViewportCrop(
+  buf: Buffer,
+  destPath: string,
+  format: "png" | "jpeg" | "webp",
+  quality: number,
+  width: number,
+  height: number,
+): Promise<void> {
+  let img = sharp(buf).extract({ left: 0, top: 0, width, height });
+  if (format === "webp") img = img.webp({ quality });
+  else if (format === "jpeg") img = img.jpeg({ quality });
+  else img = img.png();
+  await img.toFile(destPath);
+}

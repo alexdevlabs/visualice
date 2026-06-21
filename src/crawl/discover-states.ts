@@ -180,13 +180,19 @@ function classifyChange(before: Snapshot, after: Snapshot, cand: RawCandidate): 
   return "accordion";
 }
 
+// Escape a value for use inside a double-quoted CSS attribute selector
+// (`[id="..."]`), so ids containing quotes or backslashes don't break the selector.
+function cssAttrValue(s: string): string {
+  return s.replace(/[\\"]/g, "\\$&");
+}
+
 function buildRecipe(cand: RawCandidate, kind: StateKind, openId?: string): RecipeStep[] {
   const recipe: RecipeStep[] = [{ action: "click", target: cand.target }];
   // Prefer waiting for the exact element that opened — a generic [role=dialog] can
   // match an unrelated hidden element (e.g. a closed drawer) and never go visible.
   const id = cand.controls ?? openId;
   if (id) {
-    recipe.push({ action: "waitFor", selector: `[id="${id}"]`, state: "visible" });
+    recipe.push({ action: "waitFor", selector: `[id="${cssAttrValue(id)}"]`, state: "visible" });
   } else if (kind === "modal" || kind === "menu" || kind === "drawer") {
     recipe.push({ action: "waitFor", selector: 'dialog[open]:visible,[role="dialog"]:visible', state: "visible" });
   } else {
@@ -225,11 +231,19 @@ export async function discoverStates(
     const candidates = await collectCandidates(page, config.discovery.interactions);
     const seenSig = new Set<string>();
     const maxStates = config.discovery.interactions.maxPerPage;
+    const baseline = await takeSnapshot(page);
+    const atBaseline = (s: Snapshot) =>
+      s.sig === baseline.sig && !s.modals && !s.expanded && !s.details;
 
     for (const cand of candidates) {
       if (states.length - 1 >= maxStates) break;
       try {
-        await page.goto(routeUrl, { waitUntil }); // reset to a clean page per probe
+        // Reset to a clean page between probes. Try a cheap Escape first (closes
+        // most modals/menus); only pay for a full reload if the page didn't reset.
+        await page.keyboard.press("Escape").catch(() => {});
+        if (!atBaseline(await takeSnapshot(page))) {
+          await page.goto(routeUrl, { waitUntil });
+        }
         const before = await takeSnapshot(page);
         await locatorFor(page, cand.target).click({ timeout: 4000 });
         await page.waitForTimeout(250);

@@ -5,13 +5,26 @@ import { inScope } from "../shared/glob";
 import { pathSlug } from "../shared/slug";
 import { sleep } from "../shared/pool";
 
-function routeId(pathname: string): string {
-  return pathSlug(pathname).replace(/\//g, "-");
+function routeId(canonical: string): string {
+  return pathSlug(canonical).replace(/\//g, "-");
 }
 
-function normPath(pathname: string): string {
-  const x = pathname.replace(/\/+$/, "");
-  return x === "" ? "/" : x;
+// Tracking params that don't identify a distinct page — dropped so they don't
+// explode the crawl, while *meaningful* query params still separate routes.
+const TRACKING = /^(utm_|mc_|fbclid$|gclid$|gbraid$|wbraid$|msclkid$|yclid$|igshid$|_ga$|ref$)/i;
+
+function scopePath(u: URL): string {
+  return u.pathname.replace(/\/+$/, "") || "/";
+}
+
+/** Path + meaningful, sorted query — the identity used for dedup and output. */
+function canonicalPath(u: URL): string {
+  const p = scopePath(u);
+  const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING.test(k));
+  if (!params.length) return p;
+  params.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+  const search = params.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+  return `${p}?${search}`;
 }
 
 function uniqueRouteId(base: string, routes: RouteNode[]): string {
@@ -26,7 +39,7 @@ function dedupeLinks(links: string[], origin: string): string[] {
   for (const href of links) {
     try {
       const u = new URL(href);
-      if (u.origin === origin) out.add(normPath(u.pathname));
+      if (u.origin === origin) out.add(canonicalPath(u));
     } catch {
       /* skip */
     }
@@ -97,17 +110,19 @@ export async function discoverRoutes(
   try {
     while (queue.length && routes.length < maxPages) {
       const item = queue.shift()!;
-      let pathname: string;
+      let canon: string;
+      let scope: string;
       try {
         const u = new URL(item.url);
         if (sameOriginOnly && u.origin !== origin) continue;
-        pathname = normPath(u.pathname);
+        canon = canonicalPath(u);
+        scope = scopePath(u);
       } catch {
         continue;
       }
-      const key = origin + pathname;
+      const key = origin + canon;
       if (visited.has(key)) continue;
-      if (!inScope(pathname, include, exclude)) continue;
+      if (!inScope(scope, include, exclude)) continue;
       visited.add(key);
 
       let status: number | undefined;
@@ -124,13 +139,13 @@ export async function discoverRoutes(
           links = await page.$$eval("a[href]", (els) => els.map((e) => (e as HTMLAnchorElement).href));
         }
       } catch (e) {
-        log(`  ! ${pathname}: ${(e as Error).message.split("\n")[0]}`);
+        log(`  ! ${canon}: ${(e as Error).message.split("\n")[0]}`);
       }
 
-      const id = uniqueRouteId(routeId(pathname), routes);
+      const id = uniqueRouteId(routeId(canon), routes);
       routes.push({
         id,
-        url: pathname,
+        url: canon,
         finalUrl: page.url(),
         title,
         status,
@@ -139,16 +154,16 @@ export async function discoverRoutes(
         links: dedupeLinks(links, origin),
         states: [],
       });
-      log(`  • ${pathname}${title ? ` — ${title}` : ""}`);
+      log(`  • ${canon}${title ? ` — ${title}` : ""}`);
 
       if (item.depth < maxDepth) {
         for (const href of links) {
           try {
             const u = new URL(href);
             if (u.origin !== origin) continue;
-            const np = normPath(u.pathname);
-            if (visited.has(origin + np) || !inScope(np, include, exclude)) continue;
-            enqueue(origin + np, item.depth + 1, pathname);
+            const linkCanon = canonicalPath(u);
+            if (visited.has(origin + linkCanon) || !inScope(scopePath(u), include, exclude)) continue;
+            enqueue(origin + linkCanon, item.depth + 1, canon);
           } catch {
             /* skip */
           }

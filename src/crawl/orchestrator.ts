@@ -7,10 +7,14 @@ import { renderReport } from "./report";
 import { saveJson } from "./manifest";
 import { discoverPipeline } from "./discover";
 import { ensureStorageState } from "./auth";
+import { pathExists } from "../shared/fsx";
 import { pathSlug } from "../shared/slug";
 
 export function makeRunId(date = new Date()): string {
-  return date.toISOString().replace(/:/g, "-").replace(/\.\d+Z$/, "Z");
+  // Keep milliseconds so back-to-back/parallel runs don't share a run dir and
+  // overwrite each other. `:` and `.` → `-` keeps the id lexically sortable
+  // (millis are zero-padded to 3 digits, so chronological == lexical).
+  return date.toISOString().replace(/[:.]/g, "-");
 }
 
 export interface CapturePipelineOptions {
@@ -25,10 +29,6 @@ export interface CapturePipelineOptions {
 export interface CapturePipelineResult {
   runDir: string;
   manifest: Manifest;
-}
-
-async function fileExists(p: string): Promise<boolean> {
-  return !!(await fs.stat(p).catch(() => null));
 }
 
 function toViewerData(m: Manifest): ViewerData {
@@ -144,7 +144,7 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
   const storageState = await ensureStorageState(config, log);
 
   let inputManifest: InputManifest;
-  if (replay && (await fileExists(cachePath))) {
+  if (replay && (await pathExists(cachePath))) {
     log(`replay: reusing cached site model → ${cachePath}`);
     inputManifest = JSON.parse(await fs.readFile(cachePath, "utf8")) as InputManifest;
   } else {

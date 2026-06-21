@@ -1,13 +1,22 @@
-/** Minimal glob → RegExp for path scoping. Supports `**` (any incl. `/`) and `*` (any except `/`). */
+/**
+ * Minimal glob → RegExp for path scoping.
+ * - `**` matches any chars including `/`
+ * - `*` matches any chars except `/`
+ * - a `/**` segment also matches the parent dir itself (so `/docs/**` ⊇ `/docs`)
+ */
 export function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
-    if (c === "*") {
+    if (c === "/" && glob[i + 1] === "*" && glob[i + 2] === "*") {
+      // "/**" → optionally "/<anything>", so the directory itself matches too
+      re += "(?:/.*)?";
+      i += 2;
+      if (glob[i + 1] === "/") i++; // "/**/x" → the leading slash is part of the optional group
+    } else if (c === "*") {
       if (glob[i + 1] === "*") {
         re += ".*";
         i++;
-        if (glob[i + 1] === "/") i++; // collapse `**/` so it can also match zero segments
       } else {
         re += "[^/]*";
       }

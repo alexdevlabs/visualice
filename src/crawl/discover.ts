@@ -4,17 +4,13 @@ import type { InputManifest } from "../shared/types";
 import { applyContextInit } from "./stabilize";
 import { discoverRoutes } from "./discover-routes";
 import { discoverStates } from "./discover-states";
+import { resolveUrl } from "./recipe";
 
 export interface DiscoverOptions {
   config: Config;
   baseUrl: string;
   storageState?: string;
   log?: (msg: string) => void;
-}
-
-function absRouteUrl(finalUrl: string | undefined, url: string, baseUrl: string): string {
-  const u = finalUrl ?? url;
-  return /^https?:\/\//i.test(u) ? u : new URL(u, baseUrl).href;
 }
 
 /**
@@ -40,7 +36,8 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
     log(`found ${routes.length} route(s); discovering UI states…`);
 
     for (const route of routes) {
-      route.states = await discoverStates(context, absRouteUrl(route.finalUrl, route.url, baseUrl), route, config, log);
+      const url = resolveUrl(baseUrl, route.finalUrl ?? route.url);
+      route.states = await discoverStates(context, url, route, config, log);
     }
 
     await context.close();

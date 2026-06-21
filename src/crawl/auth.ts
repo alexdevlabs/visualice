@@ -5,13 +5,31 @@ import type { Config } from "../shared/config";
 import type { RecipeStep } from "../shared/types";
 import { applyRecipe, resolveUrl } from "./recipe";
 
-function resolveEnvString(s: string): string {
-  return s.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, key) => process.env[key] ?? "");
+function resolveEnvString(s: string, missing: Set<string>): string {
+  return s.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, key) => {
+    const v = process.env[key];
+    if (v === undefined) {
+      missing.add(key);
+      return "";
+    }
+    return v;
+  });
 }
 
-/** Substitute ${ENV_VAR} placeholders in fill values so secrets stay out of config files. */
+/**
+ * Substitute ${ENV_VAR} placeholders in fill values so secrets stay out of config
+ * files. Throws if any referenced var is unset — submitting blank credentials would
+ * otherwise save a logged-out session as if authentication succeeded.
+ */
 function resolveEnvSteps(steps: RecipeStep[]): RecipeStep[] {
-  return steps.map((step) => (step.action === "fill" ? { ...step, value: resolveEnvString(step.value) } : step));
+  const missing = new Set<string>();
+  const out = steps.map((step) =>
+    step.action === "fill" ? { ...step, value: resolveEnvString(step.value, missing) } : step,
+  );
+  if (missing.size) {
+    throw new Error(`auth login: missing env var(s): ${[...missing].join(", ")}`);
+  }
+  return out;
 }
 
 /**
