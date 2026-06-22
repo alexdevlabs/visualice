@@ -71,15 +71,23 @@ async function ensureViewerBuilt(viewerDist: string): Promise<void> {
   if (await pathExists(path.join(viewerDist, "index.html"))) return;
   log("building viewer (first run)…");
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("npx", ["vite", "build", "viewer"], { cwd: PROJECT_ROOT, stdio: "inherit" });
-    child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`vite build failed (${code})`))));
+    const child = spawn("npx", ["vite", "build", "viewer"], {
+      cwd: PROJECT_ROOT,
+      stdio: "inherit",
+    });
+    child.on("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`vite build failed (${code})`)),
+    );
   });
 }
 
 async function shootViewer(url: string, outFile: string): Promise<void> {
   const browser = await chromium.launch();
   try {
-    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 2 });
+    const page = await browser.newPage({
+      viewport: { width: 1600, height: 1000 },
+      deviceScaleFactor: 2,
+    });
     await page.goto(url, { waitUntil: "networkidle" });
     await page.waitForTimeout(800);
     await page.screenshot({ path: outFile });
@@ -94,7 +102,9 @@ async function cmdServe(flags: Flags): Promise<void> {
   const runId = typeof flags.run === "string" ? flags.run : "latest";
   const runDir = path.join(outRoot, "runs", runId);
   if (!(await pathExists(path.join(runDir, "viewer-data.json")))) {
-    throw new Error(`no run data at ${runDir}/viewer-data.json — run a crawl first (e.g. 'visual-crawl crawl').`);
+    throw new Error(
+      `no run data at ${runDir}/viewer-data.json — run a crawl first (e.g. 'visual-crawl crawl').`,
+    );
   }
 
   const viewerDist = path.join(PROJECT_ROOT, "viewer", "dist");
@@ -127,7 +137,12 @@ async function cmdCrawl(flags: Flags): Promise<void> {
   const config = await loadConfig(typeof flags.config === "string" ? flags.config : undefined);
   const baseUrl = (typeof flags.base === "string" ? flags.base : undefined) ?? config.target;
   if (!baseUrl) throw new Error("no base URL: pass --base=<url> or set target in config");
-  const { runDir, manifest } = await crawlPipeline({ config, baseUrl, replay: flags.replay === true, log });
+  const { runDir, manifest } = await crawlPipeline({
+    config,
+    baseUrl,
+    replay: flags.replay === true,
+    log,
+  });
   reportDone(runDir, manifest.stats?.shots ?? 0);
 }
 
@@ -231,6 +246,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  console.error(e instanceof Error ? e.stack ?? e.message : e);
+  console.error(e instanceof Error ? (e.stack ?? e.message) : e);
   process.exit(1);
 });

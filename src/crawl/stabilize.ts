@@ -93,7 +93,9 @@ export async function stabilizePage(page: Page, stab: Stabilize): Promise<void> 
       .catch(() => {});
   }
   if (stab.waitForFonts) {
-    await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => undefined) : undefined)).catch(() => {});
+    await page
+      .evaluate(() => (document.fonts ? document.fonts.ready.then(() => undefined) : undefined))
+      .catch(() => {});
   }
   if (stab.lazyScroll) {
     await autoScroll(page).catch(() => {});

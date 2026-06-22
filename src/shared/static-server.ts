@@ -4,7 +4,10 @@ import { startServer, serveFileFromRoot, type StaticServer } from "./file-serve"
 export type { StaticServer };
 
 /** Minimal static file server. Falls back to `<path>.html` and `<path>/index.html`. */
-export async function serveDirectory(dir: string, opts: { port?: number } = {}): Promise<StaticServer> {
+export async function serveDirectory(
+  dir: string,
+  opts: { port?: number } = {},
+): Promise<StaticServer> {
   const root = path.resolve(dir);
   return startServer(async (req, res) => {
     try {

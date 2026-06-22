@@ -30,7 +30,10 @@ export interface StaticServer {
   close: () => Promise<void>;
 }
 
-export async function startServer(handler: http.RequestListener, port?: number): Promise<StaticServer> {
+export async function startServer(
+  handler: http.RequestListener,
+  port?: number,
+): Promise<StaticServer> {
   const server = http.createServer(handler);
   const bound = await new Promise<number>((resolve, reject) => {
     server.once("error", reject);

@@ -42,12 +42,21 @@ export default function App() {
     return (
       <div className="vc-empty">
         <h1>Visual Crawl</h1>
-        <p>Couldn't load <code>{DATA_URL}</code> — {error}</p>
-        <p className="vc-dim">Run <code>visual-crawl serve</code> to host a run, or pass <code>?data=&lt;url&gt;</code>.</p>
+        <p>
+          Couldn't load <code>{DATA_URL}</code> — {error}
+        </p>
+        <p className="vc-dim">
+          Run <code>visual-crawl serve</code> to host a run, or pass <code>?data=&lt;url&gt;</code>.
+        </p>
       </div>
     );
   }
-  if (!data || !layout) return <div className="vc-empty"><p className="vc-dim">Loading…</p></div>;
+  if (!data || !layout)
+    return (
+      <div className="vc-empty">
+        <p className="vc-dim">Loading…</p>
+      </div>
+    );
 
   const toggleDevice = (name: string) => {
     setDeviceFilter((prev) => {
@@ -67,12 +76,18 @@ export default function App() {
         <div className="vc-brand">
           <span className="vc-logo">◉</span>
           <span>{data.site.title || data.site.origin}</span>
-          <span className="vc-dim vc-run">{data.tiles.length} shots · {data.site.runId}</span>
+          <span className="vc-dim vc-run">
+            {data.tiles.length} shots · {data.site.runId}
+          </span>
         </div>
         <div className="vc-controls">
           <div className="vc-seg">
-            <button className={mode === "grouped" ? "on" : ""} onClick={() => setMode("grouped")}>Grouped</button>
-            <button className={mode === "all" ? "on" : ""} onClick={() => setMode("all")}>All at once</button>
+            <button className={mode === "grouped" ? "on" : ""} onClick={() => setMode("grouped")}>
+              Grouped
+            </button>
+            <button className={mode === "all" ? "on" : ""} onClick={() => setMode("all")}>
+              All at once
+            </button>
           </div>
           <input
             className="vc-search"
@@ -107,7 +122,12 @@ export default function App() {
           <ul>
             {groupsWithTiles.map((g) => (
               <li key={g.routeId}>
-                <button onClick={() => { const b = layout.byRoute.get(g.routeId); if (b) canvas.current?.focusRect(b); }}>
+                <button
+                  onClick={() => {
+                    const b = layout.byRoute.get(g.routeId);
+                    if (b) canvas.current?.focusRect(b);
+                  }}
+                >
                   <span className="vc-side-path">{g.path === "home" ? "/" : "/" + g.path}</span>
                   <span className="vc-dim">{g.title}</span>
                 </button>
@@ -126,23 +146,56 @@ export default function App() {
           />
           {selected && (
             <div className="vc-inspector">
-              <button className="vc-close" onClick={() => setSelectedId(null)}>✕</button>
+              <button className="vc-close" onClick={() => setSelectedId(null)}>
+                ✕
+              </button>
               <div className="vc-insp-title">{selected.stateLabel}</div>
-              <div className="vc-insp-row"><span>Path</span><code>{selected.routeUrl}</code></div>
-              <div className="vc-insp-row"><span>State</span><code>{selected.stateId}</code></div>
-              <div className="vc-insp-row"><span>Kind</span><code>{selected.stateKind}</code></div>
-              <div className="vc-insp-row"><span>Device</span><code>{selected.device}</code></div>
+              <div className="vc-insp-row">
+                <span>Path</span>
+                <code>{selected.routeUrl}</code>
+              </div>
+              <div className="vc-insp-row">
+                <span>State</span>
+                <code>{selected.stateId}</code>
+              </div>
+              <div className="vc-insp-row">
+                <span>Kind</span>
+                <code>{selected.stateKind}</code>
+              </div>
+              <div className="vc-insp-row">
+                <span>Device</span>
+                <code>{selected.device}</code>
+              </div>
               {selected.width && (
-                <div className="vc-insp-row"><span>Size</span><code>{selected.width}×{selected.height}px</code></div>
+                <div className="vc-insp-row">
+                  <span>Size</span>
+                  <code>
+                    {selected.width}×{selected.height}px
+                  </code>
+                </div>
               )}
               <div className="vc-insp-actions">
-                <a href={"./data/" + selected.full} target="_blank" rel="noreferrer">Open full image ↗</a>
-                <a href={new URL(selected.routeUrl, data.site.baseUrl).href} target="_blank" rel="noreferrer">Open live page ↗</a>
+                <a href={"./data/" + selected.full} target="_blank" rel="noreferrer">
+                  Open full image ↗
+                </a>
+                <a
+                  href={new URL(selected.routeUrl, data.site.baseUrl).href}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open live page ↗
+                </a>
               </div>
-              <img className="vc-insp-preview" src={"./data/" + selected.full} alt={selected.stateLabel} />
+              <img
+                className="vc-insp-preview"
+                src={"./data/" + selected.full}
+                alt={selected.stateLabel}
+              />
             </div>
           )}
-          <div className="vc-hint">scroll to pan · ⌘/ctrl+scroll or pinch to zoom · click a shot for details</div>
+          <div className="vc-hint">
+            scroll to pan · ⌘/ctrl+scroll or pinch to zoom · click a shot for details
+          </div>
         </main>
       </div>
     </div>

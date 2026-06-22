@@ -38,7 +38,10 @@ function resolveEnvSteps(steps: RecipeStep[]): RecipeStep[] {
  * - Otherwise, if a login recipe is configured, runs it once and saves the session.
  * - Returns the absolute path to use as `storageState`, or undefined for anonymous crawls.
  */
-export async function ensureStorageState(config: Config, log: (m: string) => void): Promise<string | undefined> {
+export async function ensureStorageState(
+  config: Config,
+  log: (m: string) => void,
+): Promise<string | undefined> {
   const sp = config.auth.storageStatePath;
   if (!sp) return undefined;
 
@@ -59,7 +62,9 @@ export async function ensureStorageState(config: Config, log: (m: string) => voi
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
-    const startUrl = login?.url ? resolveUrl(config.target ?? "http://localhost", login.url) : config.target;
+    const startUrl = login?.url
+      ? resolveUrl(config.target ?? "http://localhost", login.url)
+      : config.target;
     if (startUrl) await page.goto(startUrl, { waitUntil: "domcontentloaded" });
     await applyRecipe(page, resolveEnvSteps((login?.steps ?? []) as RecipeStep[]));
     await fs.mkdir(path.dirname(abs), { recursive: true });

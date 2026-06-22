@@ -66,6 +66,13 @@ export interface StateNode {
   trigger?: Target;
   recipe: RecipeStep[];
   signature?: string;
+  /**
+   * Provenance. "auto" = found by the heuristic discoverer (safe to refresh on a
+   * re-crawl). "authored" = hand-written or Explore-mode authored (never clobbered
+   * by auto-discovery). Absent is treated as "authored" so legacy/hand-edited cache
+   * entries are protected by default.
+   */
+  source?: "auto" | "authored";
   shots: Record<string, ShotRef>; // keyed by device name
 }
 

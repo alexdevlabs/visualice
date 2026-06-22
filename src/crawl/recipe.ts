@@ -28,13 +28,17 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
         break;
       case "waitFor":
         if (step.selector)
-          await page.locator(step.selector).first().waitFor({ state: step.state ?? "visible", timeout: step.timeoutMs });
+          await page
+            .locator(step.selector)
+            .first()
+            .waitFor({ state: step.state ?? "visible", timeout: step.timeoutMs });
         else if (step.url) await page.waitForURL(step.url, { timeout: step.timeoutMs });
         else if (step.timeoutMs) await page.waitForTimeout(step.timeoutMs);
         break;
       case "scroll":
         if (step.to === "top") await page.evaluate(() => window.scrollTo(0, 0));
-        else if (step.to === "bottom") await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        else if (step.to === "bottom")
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
         else await page.evaluate((y) => window.scrollTo(0, y), step.to);
         break;
       case "wait":

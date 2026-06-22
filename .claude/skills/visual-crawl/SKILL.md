@@ -32,7 +32,7 @@ npm install && npx playwright install chromium
    unchanged. Fast, deterministic, no rediscovery:
    `npm run crawl -- --base=<url> --replay`
 2. **Auto** — first crawl of a public site built from standard components:
-   `npm run crawl -- --base=<url>`  (heuristic discovery + capture)
+   `npm run crawl -- --base=<url>` (heuristic discovery + capture)
 3. **Explore (agentic)** — the site needs login, or has states the heuristics miss
    (custom/hover dropdowns, multi-step flows, canvas widgets). See §4.
 
@@ -41,7 +41,7 @@ to Explore only for the gaps.
 
 ## 4. Explore mode — you drive the browser via Playwright MCP
 
-Use the `browser_*` MCP tools to *author or augment* the cached site model, then let the
+Use the `browser_*` MCP tools to _author or augment_ the cached site model, then let the
 deterministic engine do the bulk capture. Do not screenshot the whole site through your
 own context — that is the engine's job; you only discover the tricky parts.
 
@@ -52,13 +52,17 @@ own context — that is the engine's job; you only discover the tricky parts.
   > stable CSS) and the id/selector of the element that appears.
 - Append each as a state to `.visual-crawl/crawl-map.cache.json` under the right route:
   ```json
-  { "id": "menu-products", "kind": "menu", "label": "Products dropdown",
+  {
+    "id": "menu-products",
+    "kind": "menu",
+    "label": "Products dropdown",
     "trigger": { "role": "button", "name": "Products" },
     "recipe": [
       { "action": "hover", "target": { "role": "button", "name": "Products" } },
       { "action": "waitFor", "selector": "[data-menu='products']", "state": "visible" }
     ],
-    "shots": {} }
+    "shots": {}
+  }
   ```
 - Then capture everything via Replay: `npm run crawl -- --base=<url> --replay`.
 

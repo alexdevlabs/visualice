@@ -135,8 +135,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   // virtualization: only render tiles intersecting the viewport (+ margin)
   const visible = useMemo(() => {
     const margin = 400 / t.scale;
-    const x0 = (-t.x) / t.scale - margin;
-    const y0 = (-t.y) / t.scale - margin;
+    const x0 = -t.x / t.scale - margin;
+    const y0 = -t.y / t.scale - margin;
     const x1 = (vp.w - t.x) / t.scale + margin;
     const y1 = (vp.h - t.y) / t.scale + margin;
     return layout.placed.filter(
@@ -146,7 +146,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
   const labelsVisible = useMemo(() => {
     const x1 = (vp.w - t.x) / t.scale + 200;
-    const y0 = (-t.y) / t.scale - 200;
+    const y0 = -t.y / t.scale - 200;
     const y1 = (vp.h - t.y) / t.scale + 200;
     return layout.labels.filter((l) => l.y <= y1 && l.y + 60 >= y0 && l.x <= x1);
   }, [layout, t, vp]);
@@ -166,7 +166,11 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
         style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})` }}
       >
         {labelsVisible.map((l) => (
-          <div key={l.routeId} className="vc-group-label" style={{ left: l.x, top: l.y, width: l.w }}>
+          <div
+            key={l.routeId}
+            className="vc-group-label"
+            style={{ left: l.x, top: l.y, width: l.w }}
+          >
             <span className="vc-group-title">{l.title}</span>
             <span className="vc-group-sub">{l.subtitle}</span>
           </div>
@@ -183,7 +187,13 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
               className={"vc-tile" + (selected ? " is-selected" : "")}
               style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
             >
-              <img src={src} draggable={false} loading="lazy" decoding="async" alt={p.tile.stateLabel} />
+              <img
+                src={src}
+                draggable={false}
+                loading="lazy"
+                decoding="async"
+                alt={p.tile.stateLabel}
+              />
               {showTileLabels && (
                 <div className="vc-tile-meta">
                   <span className="vc-badge">{p.tile.device}</span>

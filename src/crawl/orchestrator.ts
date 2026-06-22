@@ -4,7 +4,7 @@ import type { Config } from "../shared/config";
 import type { Manifest, InputManifest, ViewerData, ViewerTile } from "../shared/types";
 import { runCapture } from "./capture";
 import { renderReport } from "./report";
-import { saveJson } from "./manifest";
+import { saveJson, mergeManifests } from "./manifest";
 import { discoverPipeline } from "./discover";
 import { ensureStorageState } from "./auth";
 import { pathExists } from "../shared/fsx";
@@ -82,7 +82,9 @@ async function pruneRuns(outRoot: string, keep: number): Promise<void> {
 }
 
 /** Capture-only pipeline (M1): replay a manifest's recipes across all devices. */
-export async function capturePipeline(opts: CapturePipelineOptions): Promise<CapturePipelineResult> {
+export async function capturePipeline(
+  opts: CapturePipelineOptions,
+): Promise<CapturePipelineResult> {
   const { config, inputManifest, baseUrl } = opts;
   const log = opts.log ?? (() => {});
   const id = makeRunId();
@@ -148,9 +150,25 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
     log(`replay: reusing cached site model → ${cachePath}`);
     inputManifest = JSON.parse(await fs.readFile(cachePath, "utf8")) as InputManifest;
   } else {
-    inputManifest = await discoverPipeline({ config, baseUrl, storageState, log });
+    const discovered = await discoverPipeline({ config, baseUrl, storageState, log });
+    // Default crawl re-discovers from scratch, but MERGES into any existing cache
+    // rather than overwriting it — auto states are refreshed, authored (hand-written /
+    // Explore-mode) states are always preserved.
+    if (await pathExists(cachePath)) {
+      const cached = JSON.parse(await fs.readFile(cachePath, "utf8")) as InputManifest;
+      inputManifest = mergeManifests(cached, discovered);
+      const authored = inputManifest.routes.reduce(
+        (n, r) => n + r.states.filter((s) => (s.source ?? "authored") !== "auto").length,
+        0,
+      );
+      log(
+        `merged discovery into existing cache → ${cachePath} (${authored} authored state(s) preserved)`,
+      );
+    } else {
+      inputManifest = discovered;
+      log(`cached site model → ${cachePath}`);
+    }
     await saveJson(cachePath, inputManifest); // shots-free model, cached for reuse
-    log(`cached site model → ${cachePath}`);
   }
 
   return capturePipeline({ config, inputManifest, baseUrl, storageState, log });

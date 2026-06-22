@@ -73,7 +73,8 @@ async function collectCandidates(page: Page, interactions: Interactions): Promis
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
       if (al && role) return { role, name: al };
       if (role && text && text.length <= 40) return { role, name: text };
-      if (el.tagName === "BUTTON" && text && text.length <= 40) return { role: "button", name: text };
+      if (el.tagName === "BUTTON" && text && text.length <= 40)
+        return { role: "button", name: text };
       return { selector: cssPath(el) };
     };
     const hintFor = (el: Element): string | undefined => {
@@ -89,7 +90,12 @@ async function collectCandidates(page: Page, interactions: Interactions): Promis
 
     const els = Array.from(document.querySelectorAll(sel));
     const seen = new Set<Element>();
-    const out: { target: Record<string, unknown>; label: string; hint?: string; controls?: string }[] = [];
+    const out: {
+      target: Record<string, unknown>;
+      label: string;
+      hint?: string;
+      controls?: string;
+    }[] = [];
     for (const el of els) {
       if (seen.has(el)) continue;
       seen.add(el);
@@ -99,7 +105,16 @@ async function collectCandidates(page: Page, interactions: Interactions): Promis
       if (el.hasAttribute("download")) continue;
       const ty = el.getAttribute("type");
       if (ty === "submit" || ty === "reset") continue;
-      if (cfg.denySelectors.some((s) => { try { return el.matches(s); } catch { return false; } })) continue;
+      if (
+        cfg.denySelectors.some((s) => {
+          try {
+            return el.matches(s);
+          } catch {
+            return false;
+          }
+        })
+      )
+        continue;
       const label = (
         el.getAttribute("aria-label") ||
         (el.textContent || "").replace(/\s+/g, " ").trim() ||
@@ -194,7 +209,11 @@ function buildRecipe(cand: RawCandidate, kind: StateKind, openId?: string): Reci
   if (id) {
     recipe.push({ action: "waitFor", selector: `[id="${cssAttrValue(id)}"]`, state: "visible" });
   } else if (kind === "modal" || kind === "menu" || kind === "drawer") {
-    recipe.push({ action: "waitFor", selector: 'dialog[open]:visible,[role="dialog"]:visible', state: "visible" });
+    recipe.push({
+      action: "waitFor",
+      selector: 'dialog[open]:visible,[role="dialog"]:visible',
+      state: "visible",
+    });
   } else {
     recipe.push({ action: "wait", ms: 200 });
   }
@@ -221,7 +240,9 @@ export async function discoverStates(
   config: Config,
   log: (msg: string) => void,
 ): Promise<StateNode[]> {
-  const states: StateNode[] = [{ id: "default", kind: "default", label: "Default", recipe: [], shots: {} }];
+  const states: StateNode[] = [
+    { id: "default", kind: "default", label: "Default", recipe: [], source: "auto", shots: {} },
+  ];
   if (!config.discovery.interactions.auto) return states;
 
   const waitUntil = config.stabilize.waitStrategy;
@@ -266,6 +287,7 @@ export async function discoverStates(
           trigger: cand.target,
           recipe: buildRecipe(cand, kind, openId),
           signature: after.sig,
+          source: "auto",
           shots: {},
         });
         log(`    + ${route.id}: ${id}`);

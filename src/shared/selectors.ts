@@ -9,7 +9,10 @@ export function locatorFor(page: Page, t: Target): Locator {
   let loc: Locator;
   if (t.testId) loc = page.getByTestId(t.testId);
   else if (t.role && t.name)
-    loc = page.getByRole(t.role as Parameters<Page["getByRole"]>[0], { name: t.name, exact: t.exact });
+    loc = page.getByRole(t.role as Parameters<Page["getByRole"]>[0], {
+      name: t.name,
+      exact: t.exact,
+    });
   else if (t.role) loc = page.getByRole(t.role as Parameters<Page["getByRole"]>[0]);
   else if (t.label) loc = page.getByLabel(t.label, { exact: t.exact });
   else if (t.text) loc = page.getByText(t.text, { exact: t.exact });

@@ -23,7 +23,9 @@ function canonicalPath(u: URL): string {
   const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING.test(k));
   if (!params.length) return p;
   params.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-  const search = params.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+  const search = params
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
   return `${p}?${search}`;
 }
 
@@ -92,7 +94,8 @@ export async function discoverRoutes(
   const visited = new Set<string>();
   const routes: RouteNode[] = [];
   const queue: { url: string; depth: number; from: string | null }[] = [];
-  const enqueue = (url: string, depth: number, from: string | null) => queue.push({ url, depth, from });
+  const enqueue = (url: string, depth: number, from: string | null) =>
+    queue.push({ url, depth, from });
 
   enqueue(baseUrl, 0, null);
   for (const s of config.seeds) {
@@ -136,7 +139,9 @@ export async function discoverRoutes(
         status = resp?.status();
         title = await page.title().catch(() => undefined);
         if (item.depth < maxDepth) {
-          links = await page.$$eval("a[href]", (els) => els.map((e) => (e as HTMLAnchorElement).href));
+          links = await page.$$eval("a[href]", (els) =>
+            els.map((e) => (e as HTMLAnchorElement).href),
+          );
         }
       } catch (e) {
         log(`  ! ${canon}: ${(e as Error).message.split("\n")[0]}`);
@@ -162,7 +167,8 @@ export async function discoverRoutes(
             const u = new URL(href);
             if (u.origin !== origin) continue;
             const linkCanon = canonicalPath(u);
-            if (visited.has(origin + linkCanon) || !inScope(scopePath(u), include, exclude)) continue;
+            if (visited.has(origin + linkCanon) || !inScope(scopePath(u), include, exclude))
+              continue;
             enqueue(origin + linkCanon, item.depth + 1, canon);
           } catch {
             /* skip */

@@ -1,0 +1,11 @@
+# build output & deps
+node_modules
+dist
+viewer/dist
+
+# crawl output (gitignored runtime data; includes hand-formatted cache json)
+.visual-crawl
+
+# lockfile & fixtures
+package-lock.json
+tests/fixture

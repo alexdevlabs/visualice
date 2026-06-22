@@ -134,17 +134,28 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
       await applyContextInit(context, config.stabilize);
 
       const tasks: { route: RouteNode; state: StateNode }[] = [];
-      for (const route of manifest.routes) for (const state of route.states) tasks.push({ route, state });
+      for (const route of manifest.routes)
+        for (const state of route.states) tasks.push({ route, state });
 
       await mapPool(tasks, config.politeness.concurrency, async ({ route, state }) => {
         const page = await context.newPage();
         try {
-          const ref = await captureState(page, { route, state, device, baseUrl, shotsDir, runDir, config });
+          const ref = await captureState(page, {
+            route,
+            state,
+            device,
+            baseUrl,
+            shotsDir,
+            runDir,
+            config,
+          });
           state.shots[device.name] = ref;
           shotCount++;
           log(`  ✓ ${pathSlug(route.url)} / ${state.id}`);
         } catch (e) {
-          log(`  ✗ ${pathSlug(route.url)} / ${state.id} [${device.name}]: ${(e as Error).message.split("\n")[0]}`);
+          log(
+            `  ✗ ${pathSlug(route.url)} / ${state.id} [${device.name}]: ${(e as Error).message.split("\n")[0]}`,
+          );
         } finally {
           await page.close().catch(() => {});
           await sleep(config.politeness.minDelayMs);

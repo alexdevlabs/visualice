@@ -13,7 +13,9 @@ export function renderReport(m: Manifest): string {
       ).toFixed(1)}s`,
     );
   }
-  lines.push(`- **Devices:** ${m.devices.map((d) => `${d.name} ${d.width}×${d.height}@${d.dpr}`).join(", ")}`);
+  lines.push(
+    `- **Devices:** ${m.devices.map((d) => `${d.name} ${d.width}×${d.height}@${d.dpr}`).join(", ")}`,
+  );
   lines.push("");
   lines.push(`## Routes`);
   lines.push("");
