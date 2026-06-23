@@ -8,8 +8,15 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    // Not source: build output, deps, runtime crawl output, HTML fixtures.
-    ignores: ["**/dist/**", "node_modules/**", ".visualice/**", "tests/fixture/**"],
+    // Not source: build output, deps, runtime crawl output, HTML fixtures
+    // (and the fixture authoring sources — HTML-in-template-literals).
+    ignores: [
+      "**/dist/**",
+      "node_modules/**",
+      ".visualice/**",
+      "tests/fixture/**",
+      "tests/fixture-src/**",
+    ],
   },
 
   js.configs.recommended,

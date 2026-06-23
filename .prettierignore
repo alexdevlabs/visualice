@@ -9,3 +9,4 @@ viewer/dist
 # lockfile & fixtures
 package-lock.json
 tests/fixture
+tests/fixture-src

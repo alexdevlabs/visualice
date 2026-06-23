@@ -3,103 +3,459 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fixture — Home</title>
-    <style>
-      :root { --bg: #0f172a; --panel: #1e293b; --accent: #38bdf8; --text: #e2e8f0; }
-      * { box-sizing: border-box; }
-      body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
-      .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 22px;
-        background: var(--panel); position: sticky; top: 0; border-bottom: 1px solid #334155; }
-      .brand { font-weight: 800; letter-spacing: 2px; color: var(--accent); }
-      .desktop-nav { display: flex; gap: 18px; margin-left: auto; }
-      .desktop-nav a { color: var(--text); text-decoration: none; }
-      .hamburger, .signin { background: #334155; color: var(--text); border: 0; border-radius: 8px;
-        padding: 8px 12px; font-size: 16px; cursor: pointer; }
-      .signin { background: var(--accent); color: #082f49; font-weight: 700; }
-      main { max-width: 880px; margin: 0 auto; padding: 40px 22px 80px; }
-      .hero { padding: 48px 0; }
-      .hero h1 { font-size: 40px; margin: 0 0 12px; }
-      .card { background: var(--panel); border: 1px solid #334155; border-radius: 14px; padding: 22px; margin-top: 24px; }
-      .acc-trigger { width: 100%; text-align: left; background: var(--panel); color: var(--text);
-        border: 1px solid #334155; border-radius: 12px; padding: 16px; font-size: 17px; cursor: pointer; }
-      .acc-panel { padding: 16px; color: #94a3b8; }
-      .drawer { position: fixed; inset: 0 0 0 auto; width: 260px; background: var(--panel);
-        border-left: 1px solid #334155; padding: 22px; display: flex; flex-direction: column; gap: 16px; z-index: 50; }
-      .drawer[hidden] { display: none; }
-      .drawer a { color: var(--text); text-decoration: none; font-size: 18px; }
-      .drawer-close { align-self: flex-end; background: #334155; color: var(--text); border: 0;
-        border-radius: 8px; padding: 6px 10px; cursor: pointer; }
-      dialog { background: var(--panel); color: var(--text); border: 1px solid #334155;
-        border-radius: 16px; padding: 28px; width: min(360px, 90vw); }
-      dialog::backdrop { background: rgba(2, 6, 23, 0.7); }
-      dialog input { display: block; width: 100%; margin: 8px 0 16px; padding: 10px; border-radius: 8px;
-        border: 1px solid #475569; background: #0f172a; color: var(--text); }
-      .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
-      .modal-actions button { padding: 8px 14px; border-radius: 8px; border: 0; cursor: pointer; }
-    </style>
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="brand">FIXTURE</div>
-      <nav class="desktop-nav">
-        <a href="/">Home</a><a href="/about">About</a><a href="/blog/post-1">Blog</a>
-      </nav>
-      <button class="hamburger" data-testid="menu-button" aria-label="Open menu"
-        aria-expanded="false" aria-controls="mobile-drawer">☰</button>
-      <button class="signin" data-testid="signin-button">Sign in</button>
-    </header>
-
-    <aside id="mobile-drawer" class="drawer" role="dialog" aria-modal="true" aria-label="Menu" hidden>
-      <button class="drawer-close" aria-label="Close menu">✕</button>
-      <a href="/">Home</a><a href="/about">About</a><a href="/blog/post-1">Blog</a>
-    </aside>
-
-    <dialog id="signin-modal" aria-label="Sign in">
-      <h2>Sign in</h2>
-      <label>Email<input type="email" placeholder="you@example.com" /></label>
-      <label>Password<input type="password" placeholder="••••••••" /></label>
-      <div class="modal-actions">
-        <button class="modal-close">Cancel</button>
-        <button class="signin">Continue</button>
-      </div>
-    </dialog>
-
-    <main>
-      <section class="hero">
-        <h1>How many UI states does your site have?</h1>
-        <p>This fixture exercises a menu, a modal, and an accordion across devices.</p>
-      </section>
-      <section class="card">
-        <button class="acc-trigger" data-testid="accordion-trigger"
-          aria-expanded="false" aria-controls="acc-panel">What is Visualice? ▾</button>
-        <div id="acc-panel" class="acc-panel" hidden>
-          It crawls a site, captures every page and UI mutation across device profiles,
-          and renders the results on a zoomable canvas.
-        </div>
-      </section>
-    </main>
-
+    <title>Home · Third Pour</title>
+    <meta name="description" content="Third Pour is a small, opinionated coffee journal about brewing, beans, and the gear that earns its counter space." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%98%95%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/assets/tailwind.css" />
     <script>
-      const menuBtn = document.querySelector('[data-testid=menu-button]');
-      const drawer = document.getElementById('mobile-drawer');
-      const setDrawer = (open) => {
-        drawer.toggleAttribute('hidden', !open);
-        menuBtn.setAttribute('aria-expanded', String(open));
-      };
-      menuBtn.addEventListener('click', () => setDrawer(drawer.hasAttribute('hidden')));
-      drawer.querySelector('.drawer-close').addEventListener('click', () => setDrawer(false));
+(function () {
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (e) {}
+})();</script>
+  </head>
+  <body class="flex min-h-screen flex-col">
+    
+<header class="sticky top-0 z-30 border-b border-stone-200/80 bg-cream/85 backdrop-blur dark:border-stone-700/70 dark:bg-grounds/85">
+  <div class="container-tp flex h-16 items-center gap-3">
+    <a href="/" class="flex items-center gap-2 text-amber-700 dark:text-amber-500" aria-label="Third Pour home">
+      
+<svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M6 14h17v5a6 6 0 0 1-6 6h-5a6 6 0 0 1-6-6z"/>
+  <path d="M23 15h2.5a3 3 0 0 1 0 6H23"/>
+  <path d="M11 8c-1 1.2-1 2.4 0 3.6M16 7c-1 1.2-1 2.4 0 3.6" opacity="0.8"/>
+</svg>
+      <span class="font-serif text-lg font-bold tracking-tight text-stone-900 dark:text-stone-50">Third Pour</span>
+    </a>
+    <nav class="ml-6 hidden items-center gap-1 md:flex" aria-label="Primary"><a href="/" class="nav-link nav-link-active" aria-current="page">Home</a><a href="/articles" class="nav-link ">Articles</a><a href="/about" class="nav-link ">About</a><a href="/contact" class="nav-link ">Contact</a></nav>
+    <div class="ml-auto flex items-center gap-1">
+      <button type="button" class="icon-btn" data-testid="search-button" aria-label="Search"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
+      
+  <button type="button" class="icon-btn" data-theme-toggle data-testid="theme-toggle"
+    aria-label="Toggle dark mode" title="Toggle dark mode">
+    <span class="dark:hidden"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></span>
+    <span class="hidden dark:inline"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span>
+  </button>
+      <a href="/login" class="btn-primary ml-1 hidden sm:inline-flex" data-testid="signin-link">Sign in</a>
+      <button type="button" class="icon-btn md:hidden" data-testid="menu-button" aria-label="Open menu"
+        aria-expanded="false" aria-controls="mobile-drawer"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+    </div>
+  </div>
+</header>
+    <main class="flex-1">
+<section class="container-tp grid items-center gap-10 py-14 sm:py-20 lg:grid-cols-2">
+  <div>
+    <p class="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-paper px-3 py-1 text-xs font-medium text-stone-500 dark:border-stone-700 dark:bg-espresso dark:text-stone-400">
+      <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span> New this week · Brewing
+    </p>
+    <h1 class="mt-5 text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">Better coffee, one honest cup at a time.</h1>
+    <p class="mt-5 max-w-md text-lg leading-relaxed text-stone-600 dark:text-stone-300">Field notes for people who take coffee a little too seriously.</p>
+    <div class="mt-7 flex flex-wrap items-center gap-3">
+      <a href="/articles" class="btn-primary" data-testid="hero-cta">Start reading <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <button type="button" class="btn-ghost" data-subscribe>Subscribe</button>
+    </div>
+  </div>
+  <div class="mx-auto aspect-square w-full max-w-sm text-amber-700 dark:text-amber-500">
+<svg viewBox="0 0 240 240" class="h-full w-full" role="img" aria-label="A pour-over coffee dripper over a cup">
+  <defs>
+    <linearGradient id="tp-brew" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="currentColor" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="currentColor" stop-opacity="0.04"/>
+    </linearGradient>
+  </defs>
+  <circle cx="120" cy="120" r="110" fill="url(#tp-brew)"/>
+  <g fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M70 70h100l-26 40H96z"/>
+    <path d="M110 110l10 26 10-26"/>
+    <path d="M120 40c-7 7-7 14 0 21M138 46c-6 6-6 12 0 18M102 46c-6 6-6 12 0 18" opacity="0.7"/>
+    <path d="M120 150v18"/>
+    <path d="M86 176h68l-8 34a8 8 0 0 1-8 7h-36a8 8 0 0 1-8-7z"/>
+    <path d="M154 182h14a10 10 0 0 1 0 20h-12"/>
+  </g>
+</svg></div>
+</section>
 
-      const modal = document.getElementById('signin-modal');
-      document.querySelector('[data-testid=signin-button]').addEventListener('click', () => modal.showModal());
-      modal.querySelector('.modal-close').addEventListener('click', () => modal.close());
+<section class="container-tp pb-6">
+  <a href="/articles/the-pour-over-ratio" class="card group grid gap-6 sm:grid-cols-[1.4fr_1fr] sm:items-center">
+    <div>
+      <div class="flex items-center gap-2 text-xs"><span class="badge">Featured</span> <span class="badge">Brewing</span>
+        <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 6 min</span></div>
+      <h2 class="mt-3 text-2xl font-bold leading-snug group-hover:text-amber-700 dark:group-hover:text-amber-400 sm:text-3xl">The Pour-Over Ratio, Settled</h2>
+      <p class="mt-2 text-stone-600 dark:text-stone-300">One number does most of the work. Here's how to pick it and stop second-guessing every cup.</p>
+      <span class="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-700 dark:text-amber-500">Read the guide <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </div>
+    <div class="mx-auto h-36 w-36 text-amber-700 dark:text-amber-500 sm:h-44 sm:w-44">
+<svg viewBox="0 0 320 200" class="h-full w-full" role="img" aria-label="Cross-section of a V60 cone showing the coffee bed">
+  <g fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M90 30h140l-58 120h-24z"/>
+    <path d="M118 90h84" stroke-opacity="0.5"/>
+    <path d="M132 120l56 0" stroke-opacity="0.5"/>
+    <path d="M120 86c20 8 60 8 80 0" />
+    <path d="M160 150v22M150 172h20" />
+  </g>
+  <g fill="currentColor" fill-opacity="0.18"><path d="M122 86c18 7 56 7 76 0l-22 46h-32z"/></g>
+  <g font-size="12" fill="currentColor" opacity="0.75">
+    <text x="244" y="60">water</text>
+    <text x="244" y="100">slurry</text>
+    <text x="244" y="150">bed</text>
+  </g>
+</svg></div>
+  </a>
+</section>
 
-      const acc = document.querySelector('[data-testid=accordion-trigger]');
-      const panel = document.getElementById('acc-panel');
-      acc.addEventListener('click', () => {
-        const open = panel.hasAttribute('hidden');
-        panel.toggleAttribute('hidden', !open);
-        acc.setAttribute('aria-expanded', String(open));
+<section class="container-tp py-12">
+  
+<div class="max-w-2xl">
+  <p class="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-500">The latest</p>
+  <h2 class="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Fresh from the kitchen counter</h2>
+  <p class="mt-3 text-lg leading-relaxed text-stone-600 dark:text-stone-300">Brewing notes, bean reviews, and gear we actually keep.</p>
+</div>
+  <div class="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+    
+<a href="/articles/the-pour-over-ratio" data-category="Brewing"
+  class="card group flex flex-col gap-3 transition hover:-translate-y-0.5 hover:shadow-md">
+  <div class="flex items-center gap-2 text-xs">
+    <span class="badge">Brewing</span>
+    <span class="text-stone-300 dark:text-stone-600">·</span>
+    <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 6 min</span>
+  </div>
+  <h3 class="font-serif text-xl font-bold leading-snug text-stone-900 group-hover:text-amber-700 dark:text-stone-50 dark:group-hover:text-amber-400">The Pour-Over Ratio, Settled</h3>
+  <p class="text-sm leading-relaxed text-stone-600 dark:text-stone-300">One number does most of the work. Here's how to pick it and stop second-guessing every cup.</p>
+  <span class="mt-auto inline-flex items-center gap-1 pt-2 text-sm font-medium text-amber-700 dark:text-amber-500">Read <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+</a>
+
+<a href="/articles/single-origin-vs-blend" data-category="Beans"
+  class="card group flex flex-col gap-3 transition hover:-translate-y-0.5 hover:shadow-md">
+  <div class="flex items-center gap-2 text-xs">
+    <span class="badge">Beans</span>
+    <span class="text-stone-300 dark:text-stone-600">·</span>
+    <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 5 min</span>
+  </div>
+  <h3 class="font-serif text-xl font-bold leading-snug text-stone-900 group-hover:text-amber-700 dark:text-stone-50 dark:group-hover:text-amber-400">Single Origin vs. Blend</h3>
+  <p class="text-sm leading-relaxed text-stone-600 dark:text-stone-300">Two honest philosophies of coffee — and why your morning cup probably wants the boring one.</p>
+  <span class="mt-auto inline-flex items-center gap-1 pt-2 text-sm font-medium text-amber-700 dark:text-amber-500">Read <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+</a>
+
+<a href="/articles/dialing-in-espresso" data-category="Brewing"
+  class="card group flex flex-col gap-3 transition hover:-translate-y-0.5 hover:shadow-md">
+  <div class="flex items-center gap-2 text-xs">
+    <span class="badge">Brewing</span>
+    <span class="text-stone-300 dark:text-stone-600">·</span>
+    <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 7 min</span>
+  </div>
+  <h3 class="font-serif text-xl font-bold leading-snug text-stone-900 group-hover:text-amber-700 dark:text-stone-50 dark:group-hover:text-amber-400">Dialing In Espresso Without Losing Your Mind</h3>
+  <p class="text-sm leading-relaxed text-stone-600 dark:text-stone-300">A repeatable routine for finding a shot you like — and getting back to it tomorrow.</p>
+  <span class="mt-auto inline-flex items-center gap-1 pt-2 text-sm font-medium text-amber-700 dark:text-amber-500">Read <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+</a>
+
+<a href="/articles/storing-beans-for-freshness" data-category="Beans"
+  class="card group flex flex-col gap-3 transition hover:-translate-y-0.5 hover:shadow-md">
+  <div class="flex items-center gap-2 text-xs">
+    <span class="badge">Beans</span>
+    <span class="text-stone-300 dark:text-stone-600">·</span>
+    <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 4 min</span>
+  </div>
+  <h3 class="font-serif text-xl font-bold leading-snug text-stone-900 group-hover:text-amber-700 dark:text-stone-50 dark:group-hover:text-amber-400">Storing Beans for Freshness</h3>
+  <p class="text-sm leading-relaxed text-stone-600 dark:text-stone-300">The fridge is a trap. Here's what actually keeps roasted coffee tasting alive.</p>
+  <span class="mt-auto inline-flex items-center gap-1 pt-2 text-sm font-medium text-amber-700 dark:text-amber-500">Read <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+</a>
+
+<a href="/articles/choosing-your-first-grinder" data-category="Gear"
+  class="card group flex flex-col gap-3 transition hover:-translate-y-0.5 hover:shadow-md">
+  <div class="flex items-center gap-2 text-xs">
+    <span class="badge">Gear</span>
+    <span class="text-stone-300 dark:text-stone-600">·</span>
+    <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 5 min</span>
+  </div>
+  <h3 class="font-serif text-xl font-bold leading-snug text-stone-900 group-hover:text-amber-700 dark:text-stone-50 dark:group-hover:text-amber-400">Choosing Your First Grinder</h3>
+  <p class="text-sm leading-relaxed text-stone-600 dark:text-stone-300">If you upgrade one thing this year, make it the grinder. Here's how to spend wisely.</p>
+  <span class="mt-auto inline-flex items-center gap-1 pt-2 text-sm font-medium text-amber-700 dark:text-amber-500">Read <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+</a>
+  </div>
+</section>
+
+<section class="container-tp py-12">
+  <div class="card grid items-center gap-6 sm:grid-cols-[1fr_auto]">
+    <div>
+      
+<div class="max-w-2xl">
+  <p class="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-500">Brew math</p>
+  <h2 class="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">The only number you need</h2>
+  <p class="mt-3 text-lg leading-relaxed text-stone-600 dark:text-stone-300">Pick a ratio, weigh your coffee, and let the rest follow. Most cups start at 1:16.</p>
+</div>
+      <a href="/articles/the-pour-over-ratio" class="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-amber-700 dark:text-amber-500">How the ratio works <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    </div>
+    <div class="mx-auto h-32 w-32 text-amber-700 dark:text-amber-500">
+<svg viewBox="0 0 120 120" class="h-full w-full" aria-label="Brew ratio dial" role="img">
+  <circle cx="60" cy="60" r="48" fill="none" stroke="currentColor" stroke-opacity="0.18" stroke-width="10"/>
+  <circle cx="60" cy="60" r="48" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round"
+    stroke-dasharray="226 302" transform="rotate(-90 60 60)"/>
+  <text x="60" y="56" text-anchor="middle" font-size="20" font-weight="700" fill="currentColor">1:16</text>
+  <text x="60" y="76" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.7">RATIO</text>
+</svg></div>
+  </div>
+</section>
+
+<section class="container-tp py-12">
+  <div class="overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 to-paper p-8 dark:border-amber-500/20 dark:from-espresso dark:to-grounds sm:p-12">
+    <div class="grid items-center gap-6 sm:grid-cols-[1fr_auto]">
+      <div>
+        <h2 class="text-2xl font-bold sm:text-3xl">The Weekly Pour</h2>
+        <p class="mt-2 max-w-md text-stone-600 dark:text-stone-300">One short email each Friday: a brew tip and a bean worth trying. No spam, ever.</p>
+      </div>
+      <button type="button" class="btn-primary shrink-0" data-subscribe data-testid="subscribe-button">Join the list</button>
+    </div>
+  </div>
+</section></main>
+    
+<footer class="mt-20 border-t border-stone-200 bg-paper/60 dark:border-stone-700 dark:bg-espresso/40">
+  <div class="container-tp grid gap-10 py-12 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="sm:col-span-2 lg:col-span-1">
+      <div class="flex items-center gap-2 text-amber-700 dark:text-amber-500">
+<svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M6 14h17v5a6 6 0 0 1-6 6h-5a6 6 0 0 1-6-6z"/>
+  <path d="M23 15h2.5a3 3 0 0 1 0 6H23"/>
+  <path d="M11 8c-1 1.2-1 2.4 0 3.6M16 7c-1 1.2-1 2.4 0 3.6" opacity="0.8"/>
+</svg>
+        <span class="font-serif text-lg font-bold text-stone-900 dark:text-stone-50">Third Pour</span></div>
+      <p class="mt-3 max-w-xs text-sm leading-relaxed text-stone-500 dark:text-stone-400">Field notes for people who take coffee a little too seriously.</p>
+      <p class="mt-3 text-xs text-stone-400 dark:text-stone-500"><span data-volatile>1,200+</span> cups logged this month.</p>
+    </div>
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-stone-400">Sections</h3>
+      <ul class="mt-3 space-y-2 text-sm"><li><a href="/articles" class="text-stone-600 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400">Brewing</a></li><li><a href="/articles" class="text-stone-600 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400">Beans</a></li><li><a href="/articles" class="text-stone-600 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400">Gear</a></li></ul>
+    </div>
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-stone-400">Company</h3>
+      <ul class="mt-3 space-y-2 text-sm">
+        <li><a href="/about" class="text-stone-600 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400">About</a></li>
+        <li><a href="/contact" class="text-stone-600 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400">Contact</a></li>
+        <li><a href="/login" class="text-stone-600 hover:text-amber-700 dark:text-stone-300 dark:hover:text-amber-400">Sign in</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-stone-400">The Weekly Pour</h3>
+      <form class="mt-3 flex gap-2" data-testid="footer-newsletter">
+        <label class="flex-1"><span class="sr-only">Email</span>
+          <input type="email" placeholder="you@example.com" class="field text-sm" /></label>
+        <button type="submit" class="btn-primary px-4"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></button>
+      </form>
+      <div class="mt-4 flex items-center gap-3 text-stone-400">
+        <a href="/contact" class="hover:text-amber-700 dark:hover:text-amber-400" aria-label="Bluesky"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10.5C10.6 7.9 7 4.6 5 5c-1.6.3-.8 4.2-.4 5.6.4 1.4 2 1.9 3.6 1.7-2.4.4-2.8 1.8-1.6 3.2 2.3 2.6 3.4-.9 5.4-3.5 2 2.6 3.1 6.1 5.4 3.5 1.2-1.4.8-2.8-1.6-3.2 1.6.2 3.2-.3 3.6-1.7.4-1.4 1.2-5.3-.4-5.6-2-.4-5.6 2.9-7 5.5z" fill="currentColor" stroke="none"/></svg></a>
+        <a href="/contact" class="hover:text-amber-700 dark:hover:text-amber-400" aria-label="Instagram"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg></a>
+        <a href="/contact" class="hover:text-amber-700 dark:hover:text-amber-400" aria-label="GitHub"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-4 1.2-4-2-6-2.5m12 4.5v-3.5a3 3 0 0 0-.8-2.3c2.7-.3 5.5-1.3 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6.2 0C6.6 2.8 5.6 3.1 5.6 3.1a4.3 4.3 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.2 9.5c0 4.6 2.8 5.7 5.5 6a3 3 0 0 0-.8 2.3V21"/></svg></a>
+        <a href="/contact" class="hover:text-amber-700 dark:hover:text-amber-400" aria-label="RSS"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg></a>
+      </div>
+    </div>
+  </div>
+  <div class="border-t border-stone-200 py-5 dark:border-stone-700">
+    <p class="container-tp text-xs text-stone-400 dark:text-stone-500">© 2025 Third Pour. A demo fixture — every cup is fictional.</p>
+  </div>
+</footer>
+    
+<div id="drawer-backdrop" hidden class="fixed inset-0 z-40 bg-stone-900/40 backdrop-blur-sm md:hidden"></div>
+<aside id="mobile-drawer" hidden role="dialog" aria-modal="true" aria-label="Menu"
+  class="fixed inset-y-0 right-0 z-50 flex w-72 max-w-[80vw] flex-col gap-1 border-l border-stone-200 bg-paper p-5 dark:border-stone-700 dark:bg-espresso md:hidden">
+  <div class="mb-3 flex items-center justify-between">
+    <span class="font-serif text-lg font-bold text-stone-900 dark:text-stone-50">Menu</span>
+    <button type="button" class="icon-btn" data-drawer-close aria-label="Close menu"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <a href="/" class="block rounded-lg px-3 py-2 text-base font-medium bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300" aria-current="page">Home</a><a href="/articles" class="block rounded-lg px-3 py-2 text-base font-medium text-stone-700 hover:bg-stone-100 dark:text-stone-200 dark:hover:bg-stone-800">Articles</a><a href="/about" class="block rounded-lg px-3 py-2 text-base font-medium text-stone-700 hover:bg-stone-100 dark:text-stone-200 dark:hover:bg-stone-800">About</a><a href="/contact" class="block rounded-lg px-3 py-2 text-base font-medium text-stone-700 hover:bg-stone-100 dark:text-stone-200 dark:hover:bg-stone-800">Contact</a>
+  <div class="mt-auto flex items-center gap-2 border-t border-stone-200 pt-4 dark:border-stone-700">
+    
+  <button type="button" class="icon-btn" data-theme-toggle data-testid="theme-toggle-drawer"
+    aria-label="Toggle dark mode" title="Toggle dark mode">
+    <span class="dark:hidden"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></span>
+    <span class="hidden dark:inline"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span>
+  </button>
+    <a href="/login" class="btn-primary flex-1" data-testid="signin-link-drawer">Sign in</a>
+  </div>
+</aside>
+    
+<dialog id="search-modal" aria-label="Search" class="tp-dialog w-[min(560px,92vw)]">
+  <form method="dialog" class="flex flex-col gap-4">
+    <div class="flex items-center justify-between">
+      <h2 class="font-serif text-xl font-bold text-stone-900 dark:text-stone-50">Search</h2>
+      <button type="submit" class="icon-btn" aria-label="Close search" data-modal-close><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <label class="relative block">
+      <span class="sr-only">Search articles</span>
+      <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+      <input type="search" data-testid="search-input" placeholder="Try “ratio” or “grinder”…"
+        class="field pl-10" autocomplete="off" />
+    </label>
+    <div>
+      <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">Popular</p>
+      <ul class="flex flex-wrap gap-2">
+        <li><a href="/articles/the-pour-over-ratio" class="badge hover:underline">Pour-over ratio</a></li>
+        <li><a href="/articles/dialing-in-espresso" class="badge hover:underline">Espresso</a></li>
+        <li><a href="/articles/choosing-your-first-grinder" class="badge hover:underline">Grinders</a></li>
+      </ul>
+    </div>
+  </form>
+</dialog>
+    
+<dialog id="newsletter-modal" aria-label="Subscribe to the newsletter" class="tp-dialog w-[min(440px,92vw)]">
+  <div class="flex items-start justify-between">
+    <h2 class="font-serif text-xl font-bold text-stone-900 dark:text-stone-50">The Weekly Pour</h2>
+    <button type="button" class="icon-btn" aria-label="Close" data-modal-close><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <form id="newsletter-form" class="mt-3 flex flex-col gap-3">
+    <p class="text-sm text-stone-600 dark:text-stone-300">One short email each Friday — a brew tip and a bean worth trying. No spam.</p>
+    <label class="block">
+      <span class="sr-only">Email address</span>
+      <input type="email" required data-testid="newsletter-email" placeholder="you@example.com" class="field" />
+    </label>
+    <button type="submit" class="btn-primary w-full" data-testid="newsletter-submit">Subscribe</button>
+  </form>
+  <div id="newsletter-thanks" hidden class="mt-3 flex flex-col items-center gap-2 py-4 text-center">
+    <span class="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    <p class="font-medium text-stone-800 dark:text-stone-100">You're on the list. See you Friday.</p>
+  </div>
+</dialog>
+    
+<div id="cookie-banner" class="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-paper/95 backdrop-blur dark:border-stone-700 dark:bg-espresso/95">
+  <div class="container-tp flex flex-col items-center gap-3 py-3 sm:flex-row">
+    <p class="text-sm text-stone-600 dark:text-stone-300">We use a couple of cookies to remember your theme. That's the whole story.</p>
+    <div class="flex shrink-0 items-center gap-2 sm:ml-auto">
+      <button type="button" class="btn-ghost px-4 py-1.5 text-xs" data-cookie-dismiss>Decline</button>
+      <button type="button" class="btn-primary px-4 py-1.5 text-xs" data-testid="cookie-accept" data-cookie-accept>Accept</button>
+    </div>
+  </div>
+</div>
+    <script>
+(function () {
+  var root = document.documentElement;
+  function setTheme(dark) {
+    // In-memory only (see noFlashTheme above) — deliberately not persisted.
+    root.classList.toggle('dark', dark);
+  }
+  document.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+    b.addEventListener('click', function () { setTheme(!root.classList.contains('dark')); });
+  });
+
+  var drawer = document.getElementById('mobile-drawer');
+  var backdrop = document.getElementById('drawer-backdrop');
+  var menuBtn = document.querySelector('[data-testid=menu-button]');
+  function setDrawer(open) {
+    if (!drawer) return;
+    drawer.toggleAttribute('hidden', !open);
+    if (backdrop) backdrop.toggleAttribute('hidden', !open);
+    if (menuBtn) menuBtn.setAttribute('aria-expanded', String(open));
+  }
+  if (menuBtn) menuBtn.addEventListener('click', function () { setDrawer(drawer && drawer.hasAttribute('hidden')); });
+  document.querySelectorAll('[data-drawer-close]').forEach(function (b) { b.addEventListener('click', function () { setDrawer(false); }); });
+  if (backdrop) backdrop.addEventListener('click', function () { setDrawer(false); });
+
+  function openDialog(id) { var d = document.getElementById(id); if (d && d.showModal && !d.open) d.showModal(); }
+  var searchBtn = document.querySelector('[data-testid=search-button]');
+  if (searchBtn) searchBtn.addEventListener('click', function () { openDialog('search-modal'); });
+  document.querySelectorAll('[data-subscribe]').forEach(function (b) { b.addEventListener('click', function () { openDialog('newsletter-modal'); }); });
+  document.querySelectorAll('[data-modal-close]').forEach(function (b) {
+    b.addEventListener('click', function () { var d = b.closest('dialog'); if (d) d.close(); });
+  });
+
+  var nf = document.getElementById('newsletter-form');
+  if (nf) nf.addEventListener('submit', function (e) {
+    e.preventDefault();
+    nf.setAttribute('hidden', '');
+    var t = document.getElementById('newsletter-thanks');
+    if (t) t.removeAttribute('hidden');
+  });
+
+  var banner = document.getElementById('cookie-banner');
+  try { if (banner && localStorage.getItem('tp_cookies')) banner.remove(); } catch (e) {}
+  function dismissCookies(accept) {
+    if (!banner) return;
+    try { localStorage.setItem('tp_cookies', accept ? 'accepted' : 'declined'); } catch (e) {}
+    banner.remove();
+  }
+  document.querySelectorAll('[data-cookie-accept]').forEach(function (b) { b.addEventListener('click', function () { dismissCookies(true); }); });
+  document.querySelectorAll('[data-cookie-dismiss]').forEach(function (b) { b.addEventListener('click', function () { dismissCookies(false); }); });
+
+  document.querySelectorAll('[data-filter]').forEach(function (pill) {
+    pill.addEventListener('click', function () {
+      var cat = pill.getAttribute('data-filter');
+      document.querySelectorAll('[data-filter]').forEach(function (p) {
+        var on = p === pill;
+        p.setAttribute('aria-pressed', String(on));
+        p.classList.toggle('filter-active', on);
       });
-    </script>
+      document.querySelectorAll('[data-category]').forEach(function (card) {
+        card.toggleAttribute('hidden', !(cat === 'All' || card.getAttribute('data-category') === cat));
+      });
+    });
+  });
+
+  var shareBtn = document.querySelector('[data-testid=share-button]');
+  var sharePop = document.getElementById('share-popover');
+  if (shareBtn && sharePop) {
+    shareBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = sharePop.hasAttribute('hidden');
+      sharePop.toggleAttribute('hidden', !open);
+      shareBtn.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', function (e) {
+      if (sharePop.hasAttribute('hidden')) return;
+      if (!sharePop.contains(e.target) && !shareBtn.contains(e.target)) {
+        sharePop.setAttribute('hidden', '');
+        shareBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  document.querySelectorAll('[data-accordion] [data-accordion-trigger]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var panel = document.getElementById(btn.getAttribute('aria-controls'));
+      var open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', String(open));
+      if (panel) panel.toggleAttribute('hidden', !open);
+    });
+  });
+
+  var cf = document.getElementById('contact-form');
+  if (cf) cf.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var ok = true;
+    cf.querySelectorAll('[required]').forEach(function (field) {
+      var bad = !String(field.value || '').trim();
+      var err = field.closest('label') ? field.closest('label').querySelector('.field-error') : null;
+      if (err) err.toggleAttribute('hidden', !bad);
+      field.setAttribute('aria-invalid', String(bad));
+      if (bad) ok = false;
+    });
+    if (ok) {
+      cf.setAttribute('hidden', '');
+      var s = document.getElementById('contact-success');
+      if (s) s.removeAttribute('hidden');
+    }
+  });
+
+  var lf = document.getElementById('login-form');
+  if (lf) lf.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var emailEl = document.querySelector('[data-testid=email]');
+    var passEl = document.querySelector('[data-testid=password]');
+    var email = emailEl ? emailEl.value : '';
+    var pass = passEl ? passEl.value : '';
+    var err = document.getElementById('login-error');
+    if (!email.trim() || !pass.trim()) { if (err) err.removeAttribute('hidden'); return; }
+    try { localStorage.setItem('tp_user', email); } catch (e2) {}
+    document.cookie = 'tp_session=1; path=/; max-age=86400';
+    location.href = '/dashboard';
+  });
+
+  var greet = document.getElementById('dash-greeting');
+  if (greet) { try { var u = localStorage.getItem('tp_user'); if (u) greet.textContent = 'Welcome back, ' + u; } catch (e) {} }
+  var signout = document.querySelector('[data-testid=signout]');
+  if (signout) signout.addEventListener('click', function () {
+    try { localStorage.removeItem('tp_user'); } catch (e) {}
+    document.cookie = 'tp_session=; path=/; max-age=0';
+    location.href = '/';
+  });
+})();</script>
   </body>
 </html>

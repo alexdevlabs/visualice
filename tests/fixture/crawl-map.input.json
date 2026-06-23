@@ -1,5 +1,9 @@
 {
-  "site": { "title": "Fixture Site", "framework": "static" },
+  "site": { "title": "Third Pour", "framework": "static" },
+  "hints": {
+    "stableSelectors": ["[data-testid]"],
+    "notes": "Drives `npm run demo`. Every state's trigger is visible on all devices (the mobile drawer is left to device-aware auto-discovery via `demo:crawl`). Theme toggle adds `.dark` to <html>."
+  },
   "routes": [
     {
       "id": "home",
@@ -8,51 +12,236 @@
       "states": [
         { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
         {
-          "id": "menu-open",
-          "kind": "menu",
-          "label": "Mobile menu open",
-          "trigger": { "testId": "menu-button" },
+          "id": "dark",
+          "kind": "other",
+          "label": "Dark mode",
+          "trigger": { "testId": "theme-toggle" },
           "recipe": [
-            { "action": "click", "target": { "testId": "menu-button" } },
-            { "action": "waitFor", "selector": "#mobile-drawer", "state": "visible" }
+            { "action": "click", "target": { "testId": "theme-toggle" } },
+            { "action": "waitFor", "selector": "html.dark", "state": "attached" }
           ],
           "shots": {}
         },
         {
-          "id": "modal-signin",
+          "id": "search-open",
           "kind": "modal",
-          "label": "Sign-in modal",
-          "trigger": { "testId": "signin-button" },
+          "label": "Search modal",
+          "trigger": { "testId": "search-button" },
           "recipe": [
-            { "action": "click", "target": { "testId": "signin-button" } },
-            { "action": "waitFor", "selector": "#signin-modal[open]", "state": "visible" }
+            { "action": "click", "target": { "testId": "search-button" } },
+            { "action": "waitFor", "selector": "#search-modal[open]", "state": "visible" }
           ],
           "shots": {}
         },
         {
-          "id": "accordion-open",
-          "kind": "accordion",
-          "label": "Accordion expanded",
-          "trigger": { "testId": "accordion-trigger" },
+          "id": "newsletter-open",
+          "kind": "modal",
+          "label": "Newsletter modal",
+          "trigger": { "testId": "subscribe-button" },
           "recipe": [
-            { "action": "click", "target": { "testId": "accordion-trigger" } },
-            { "action": "waitFor", "selector": "#acc-panel", "state": "visible" }
+            { "action": "click", "target": { "testId": "subscribe-button" } },
+            { "action": "waitFor", "selector": "#newsletter-modal[open]", "state": "visible" }
           ],
           "shots": {}
         }
       ]
     },
     {
+      "id": "articles",
+      "url": "/articles",
+      "depth": 1,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
+        {
+          "id": "filter-beans",
+          "kind": "tab",
+          "label": "Filtered: Beans",
+          "trigger": { "testId": "filter-beans" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "filter-beans" } },
+            { "action": "waitFor", "selector": "[data-category=Brewing]", "state": "hidden" }
+          ],
+          "shots": {}
+        },
+        {
+          "id": "dark",
+          "kind": "other",
+          "label": "Dark mode",
+          "trigger": { "testId": "theme-toggle" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "theme-toggle" } },
+            { "action": "waitFor", "selector": "html.dark", "state": "attached" }
+          ],
+          "shots": {}
+        }
+      ]
+    },
+    {
+      "id": "art-pour-over",
+      "url": "/articles/the-pour-over-ratio",
+      "depth": 2,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
+        {
+          "id": "share-open",
+          "kind": "popover",
+          "label": "Share popover",
+          "trigger": { "testId": "share-button" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "share-button" } },
+            { "action": "waitFor", "selector": "#share-popover", "state": "visible" }
+          ],
+          "shots": {}
+        },
+        {
+          "id": "dark",
+          "kind": "other",
+          "label": "Dark mode",
+          "trigger": { "testId": "theme-toggle" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "theme-toggle" } },
+            { "action": "waitFor", "selector": "html.dark", "state": "attached" }
+          ],
+          "shots": {}
+        }
+      ]
+    },
+    {
+      "id": "art-single-origin",
+      "url": "/articles/single-origin-vs-blend",
+      "depth": 2,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }
+      ]
+    },
+    {
+      "id": "art-dialing",
+      "url": "/articles/dialing-in-espresso",
+      "depth": 2,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }
+      ]
+    },
+    {
+      "id": "art-storing",
+      "url": "/articles/storing-beans-for-freshness",
+      "depth": 2,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }
+      ]
+    },
+    {
+      "id": "art-grinder",
+      "url": "/articles/choosing-your-first-grinder",
+      "depth": 2,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }
+      ]
+    },
+    {
       "id": "about",
       "url": "/about",
       "depth": 1,
-      "states": [{ "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }]
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
+        {
+          "id": "accordion-open",
+          "kind": "accordion",
+          "label": "FAQ expanded",
+          "trigger": { "testId": "accordion-trigger-0" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "accordion-trigger-0" } },
+            { "action": "waitFor", "selector": "#faq-0", "state": "visible" }
+          ],
+          "shots": {}
+        },
+        {
+          "id": "dark",
+          "kind": "other",
+          "label": "Dark mode",
+          "trigger": { "testId": "theme-toggle" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "theme-toggle" } },
+            { "action": "waitFor", "selector": "html.dark", "state": "attached" }
+          ],
+          "shots": {}
+        }
+      ]
     },
     {
-      "id": "blog-post-1",
-      "url": "/blog/post-1",
+      "id": "contact",
+      "url": "/contact",
       "depth": 1,
-      "states": [{ "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} }]
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
+        {
+          "id": "validation-error",
+          "kind": "other",
+          "label": "Validation errors",
+          "trigger": { "testId": "contact-submit" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "contact-submit" } },
+            { "action": "waitFor", "selector": ".field-error", "state": "visible" }
+          ],
+          "shots": {}
+        },
+        {
+          "id": "success",
+          "kind": "other",
+          "label": "Submitted",
+          "trigger": { "testId": "contact-submit" },
+          "recipe": [
+            { "action": "fill", "target": { "testId": "contact-name" }, "value": "Mara" },
+            { "action": "fill", "target": { "testId": "contact-email" }, "value": "mara@example.com" },
+            {
+              "action": "fill",
+              "target": { "testId": "contact-message" },
+              "value": "Loved the pour-over guide — any tips for iced?"
+            },
+            { "action": "click", "target": { "testId": "contact-submit" } },
+            { "action": "waitFor", "selector": "#contact-success", "state": "visible" }
+          ],
+          "shots": {}
+        }
+      ]
+    },
+    {
+      "id": "login",
+      "url": "/login",
+      "depth": 1,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
+        {
+          "id": "error",
+          "kind": "other",
+          "label": "Login error",
+          "trigger": { "testId": "login-submit" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "login-submit" } },
+            { "action": "waitFor", "selector": "#login-error", "state": "visible" }
+          ],
+          "shots": {}
+        }
+      ]
+    },
+    {
+      "id": "dashboard",
+      "url": "/dashboard",
+      "depth": 1,
+      "states": [
+        { "id": "default", "kind": "default", "label": "Default", "recipe": [], "shots": {} },
+        {
+          "id": "dark",
+          "kind": "other",
+          "label": "Dark mode",
+          "trigger": { "testId": "theme-toggle" },
+          "recipe": [
+            { "action": "click", "target": { "testId": "theme-toggle" } },
+            { "action": "waitFor", "selector": "html.dark", "state": "attached" }
+          ],
+          "shots": {}
+        }
+      ]
     }
   ]
 }
