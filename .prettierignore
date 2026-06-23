@@ -4,7 +4,7 @@ dist
 viewer/dist
 
 # crawl output (gitignored runtime data; includes hand-formatted cache json)
-.visual-crawl
+.visualice
 
 # lockfile & fixtures
 package-lock.json

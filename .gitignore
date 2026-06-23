@@ -1,5 +1,5 @@
 node_modules
-.visual-crawl
+.visualice
 dist
 viewer/dist
 *.log

@@ -1,16 +1,17 @@
 {
-  "name": "visual-crawl",
+  "name": "visualice",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Crawl a website and capture every page and UI state across devices, then view them on a zoomable canvas.",
   "bin": {
-    "visual-crawl": "bin/visual-crawl.mjs"
+    "visualice": "bin/visualice.mjs"
   },
   "scripts": {
     "vc": "tsx src/cli.ts",
     "demo": "tsx src/cli.ts demo",
     "demo:crawl": "tsx src/cli.ts demo-crawl",
+    "fixture": "tsx src/cli.ts fixture",
     "crawl": "tsx src/cli.ts crawl",
     "discover": "tsx src/cli.ts discover",
     "capture": "tsx src/cli.ts capture",

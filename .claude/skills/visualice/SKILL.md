@@ -1,17 +1,17 @@
 ---
-name: visual-crawl
+name: visualice
 description: Crawl a website and capture every page and UI state (modals, menus, drawers, accordions, tabs) across device profiles, then browse the screenshots on a zoomable canvas. Use when the user wants to screenshot/snapshot a whole site, visually crawl it, audit UI across breakpoints, capture all pages and interactive states, build a visual catalog/regression baseline of a web app, or "see every screen" of a site.
 ---
 
-# Visual Crawl
+# Visualice
 
-Drive the `visual-crawl` tool to screenshot an entire site — every route and every
+Drive the `visualice` tool to screenshot an entire site — every route and every
 interactive UI state — across device profiles, then open a zoomable viewer. Discovery
 is normally automatic; you (Claude) step in for auth and for states the heuristics miss.
 
 ## 1. Locate the tool & install deps
 
-Run all commands from the `visual-crawl` project root (the directory containing its
+Run all commands from the `visualice` project root (the directory containing its
 `package.json` — this repo, or wherever it is installed). On first use only:
 
 ```
@@ -21,14 +21,14 @@ npm install && npx playwright install chromium
 ## 2. Establish target & config
 
 - Get the site URL from the user. Pass it as `--base=<url>`, or set `target` in
-  `visual-crawl.config.ts`.
+  `visualice.config.ts`.
 - A config file controls scope, devices, stabilization, and auth; sensible defaults
   apply if it is absent. For large sites, confirm scope with the user and set
   `scope.include` / `scope.exclude` globs and `scope.maxPages`, and the `devices` list.
 
 ## 3. Choose a mode
 
-1. **Replay** — a `.visual-crawl/crawl-map.cache.json` already exists and the site is
+1. **Replay** — a `.visualice/crawl-map.cache.json` already exists and the site is
    unchanged. Fast, deterministic, no rediscovery:
    `npm run crawl -- --base=<url> --replay`
 2. **Auto** — first crawl of a public site built from standard components:
@@ -50,7 +50,7 @@ own context — that is the engine's job; you only discover the tricky parts.
 - Spot interactive triggers the heuristics would miss. `browser_click` / `browser_hover`
   to confirm what each opens; note a robust selector for the trigger (test id > role+name
   > stable CSS) and the id/selector of the element that appears.
-- Append each as a state to `.visual-crawl/crawl-map.cache.json` under the right route:
+- Append each as a state to `.visualice/crawl-map.cache.json` under the right route:
   ```json
   {
     "id": "menu-products",
@@ -73,7 +73,7 @@ recipe in the config so the deterministic engine can reproduce it:
 
 ```ts
 auth: {
-  storageStatePath: ".visual-crawl/auth.json",
+  storageStatePath: ".visualice/auth.json",
   login: {
     url: "/login",
     steps: [
@@ -92,7 +92,7 @@ auth: {
 
 ## 6. Capture, report, view
 
-- Output lands in `.visual-crawl/runs/<id>/`: `screenshots/<path>/<state>/<device>.*`,
+- Output lands in `.visualice/runs/<id>/`: `screenshots/<path>/<state>/<device>.*`,
   `crawl-map.json`, `viewer-data.json`, `crawl-report.md`.
 - Summarize the run for the user from `crawl-report.md`: route/state/shot counts and any
   capture failures (these usually mean a recipe needs an Explore-mode tweak).

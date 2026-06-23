@@ -32,16 +32,17 @@ function parseFlags(argv: string[]): Flags {
 const log = (m: string) => console.error(m);
 
 function printHelp(): void {
-  console.log(`visual-crawl — crawl a site and capture pages + UI states across devices
+  console.log(`visualice — crawl a site and capture pages + UI states across devices
 
 Usage:
-  visual-crawl crawl [opts]               Discover routes + UI states, then capture across devices
-  visual-crawl discover [opts]            Auto-discover routes + UI states (no screenshots)
-  visual-crawl auth [--force]             Run the configured login recipe → save storage state
-  visual-crawl capture [opts]             Replay a given manifest's recipes and capture screenshots
-  visual-crawl demo                       Capture the bundled fixture from a hand-written manifest
-  visual-crawl demo-crawl                 Full discover→capture run against the bundled fixture
-  visual-crawl serve [opts]               Launch the zoomable results viewer
+  visualice crawl [opts]               Discover routes + UI states, then capture across devices
+  visualice discover [opts]            Auto-discover routes + UI states (no screenshots)
+  visualice auth [--force]             Run the configured login recipe → save storage state
+  visualice capture [opts]             Replay a given manifest's recipes and capture screenshots
+  visualice demo                       Capture the bundled fixture from a hand-written manifest
+  visualice demo-crawl                 Full discover→capture run against the bundled fixture
+  visualice fixture [opts]             Serve the bundled fixture blog so you can browse it
+  visualice serve [opts]               Launch the zoomable results viewer
 
 options:
   --config=<path>      config file (.ts/.js/.json); defaults applied if omitted
@@ -52,7 +53,7 @@ options:
   --port=<n>           for 'serve': fixed port (default: random)
   --open               for 'serve': open the viewer in your browser
 
-Output lands under <config.output.dir>/runs/<runId>/ (default .visual-crawl/).`);
+Output lands under <config.output.dir>/runs/<runId>/ (default .visualice/).`);
 }
 
 async function cmdCapture(flags: Flags): Promise<void> {
@@ -96,6 +97,16 @@ async function shootViewer(url: string, outFile: string): Promise<void> {
   }
 }
 
+/** Parse and validate an optional --port flag. */
+function parsePort(flags: Flags): number | undefined {
+  if (typeof flags.port !== "string") return undefined;
+  const port = Number(flags.port);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`invalid --port=${flags.port}`);
+  }
+  return port;
+}
+
 async function cmdServe(flags: Flags): Promise<void> {
   const config = await loadConfig(typeof flags.config === "string" ? flags.config : undefined);
   const outRoot = path.resolve(config.output.dir);
@@ -103,21 +114,14 @@ async function cmdServe(flags: Flags): Promise<void> {
   const runDir = path.join(outRoot, "runs", runId);
   if (!(await pathExists(path.join(runDir, "viewer-data.json")))) {
     throw new Error(
-      `no run data at ${runDir}/viewer-data.json — run a crawl first (e.g. 'visual-crawl crawl').`,
+      `no run data at ${runDir}/viewer-data.json — run a crawl first (e.g. 'visualice crawl').`,
     );
   }
 
   const viewerDist = path.join(PROJECT_ROOT, "viewer", "dist");
   await ensureViewerBuilt(viewerDist);
 
-  let port: number | undefined;
-  if (typeof flags.port === "string") {
-    port = Number(flags.port);
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-      throw new Error(`invalid --port=${flags.port}`);
-    }
-  }
-  const server = await serveViewer({ runDir, viewerDist, port });
+  const server = await serveViewer({ runDir, viewerDist, port: parsePort(flags) });
 
   if (typeof flags.shoot === "string") {
     await shootViewer(server.url, flags.shoot);
@@ -188,6 +192,15 @@ async function cmdDemoCrawl(flags: Flags): Promise<void> {
   }
 }
 
+async function cmdFixture(flags: Flags): Promise<void> {
+  const server = await serveDirectory(FIXTURE_DIR, { port: parsePort(flags) });
+  log("fixture blog serving at:");
+  console.log(server.url);
+  if (flags.open === true) spawn("open", [server.url]);
+  log("press Ctrl-C to stop.");
+  await new Promise<never>(() => {}); // keep alive
+}
+
 async function cmdDemo(): Promise<void> {
   const server = await serveDirectory(FIXTURE_DIR);
   log(`fixture served at ${server.url}`);
@@ -228,6 +241,8 @@ async function main(): Promise<void> {
       return cmdDemo();
     case "demo-crawl":
       return cmdDemoCrawl(flags);
+    case "fixture":
+      return cmdFixture(flags);
     case "capture":
       return cmdCapture(flags);
     case "serve":

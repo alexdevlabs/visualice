@@ -1,10 +1,10 @@
-import type { VisualCrawlConfig } from "./src/shared/config";
+import type { VisualiceConfig } from "./src/shared/config";
 
 /**
  * Example config. Everything not set falls back to sensible defaults
  * (see src/shared/config.ts). Run: `npm run capture -- --manifest=<path>`.
  */
-const config: VisualCrawlConfig = {
+const config: VisualiceConfig = {
   target: "https://example.com",
 
   scope: {
@@ -39,7 +39,7 @@ const config: VisualCrawlConfig = {
   // Authenticated crawls: run the login recipe once, reuse the saved session.
   // Secrets come from env (${VC_USER} / ${VC_PASS}) — never hardcode them.
   // auth: {
-  //   storageStatePath: ".visual-crawl/auth.json",
+  //   storageStatePath: ".visualice/auth.json",
   //   login: {
   //     url: "/login",
   //     steps: [

@@ -41,12 +41,12 @@ export default function App() {
   if (error) {
     return (
       <div className="vc-empty">
-        <h1>Visual Crawl</h1>
+        <h1>Visualice</h1>
         <p>
           Couldn't load <code>{DATA_URL}</code> — {error}
         </p>
         <p className="vc-dim">
-          Run <code>visual-crawl serve</code> to host a run, or pass <code>?data=&lt;url&gt;</code>.
+          Run <code>visualice serve</code> to host a run, or pass <code>?data=&lt;url&gt;</code>.
         </p>
       </div>
     );

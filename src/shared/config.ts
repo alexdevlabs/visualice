@@ -83,7 +83,7 @@ const AuthSchema = z.object({
 });
 
 const OutputSchema = z.object({
-  dir: z.string().default(".visual-crawl"),
+  dir: z.string().default(".visualice"),
   keepRuns: z.number().int().positive().default(5),
 });
 
@@ -111,8 +111,8 @@ export const ConfigSchema = z.object({
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
-/** Authoring type for `visual-crawl.config.ts` — everything optional thanks to defaults. */
-export type VisualCrawlConfig = z.input<typeof ConfigSchema>;
+/** Authoring type for `visualice.config.ts` — everything optional thanks to defaults. */
+export type VisualiceConfig = z.input<typeof ConfigSchema>;
 
 export async function loadConfig(file?: string): Promise<Config> {
   if (!file) return ConfigSchema.parse({});

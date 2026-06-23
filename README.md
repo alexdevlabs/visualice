@@ -1,4 +1,4 @@
-# visual-crawl
+# visualice
 
 Crawl a website, capture **every page and every UI state** (modals, menus, drawers, accordions…)
 across multiple device profiles, organize the screenshots, record a reusable crawl map, and view
@@ -13,7 +13,7 @@ See [`PLAN.md`](./PLAN.md) for the full design.
 - ✅ **M2** route discovery — BFS link crawl + sitemap/robots, scope rules, SPA-aware
 - ✅ **M3** state discovery — heuristic interaction probing finds modals/menus/accordions/tabs and records replayable recipes
 - ✅ **M4** viewer — zoomable canvas (pan/zoom + LOD + virtualization), grouped & all-at-once layouts, sidebar, filters, inspector
-- ✅ **M5** Claude skill (`.claude/skills/visual-crawl/`) + real auth — login recipe → saved storage state, with agentic Explore mode for tricky states
+- ✅ **M5** Claude skill (`.claude/skills/visualice/`) + real auth — login recipe → saved storage state, with agentic Explore mode for tricky states
 - ⬜ M6 stabilization hardening
 
 ## Quick start
@@ -31,12 +31,12 @@ npm test            # unit tests
 
 ```bash
 # discover routes + UI states, then screenshot everything across devices:
-npm run crawl -- --base=https://your.site --config=visual-crawl.config.ts
+npm run crawl -- --base=https://your.site --config=visualice.config.ts
 
 # re-run later, reusing the cached site model (skips discovery, fast + deterministic):
 npm run crawl -- --base=https://your.site --replay
 
-# discovery only (writes .visual-crawl/crawl-map.cache.json, no screenshots):
+# discovery only (writes .visualice/crawl-map.cache.json, no screenshots):
 npm run discover -- --base=https://your.site
 ```
 
@@ -56,9 +56,9 @@ screenshots and needs no connection to the crawled site. Scroll to pan, ⌘/ctrl
 ## Authenticated sites
 
 ```ts
-// visual-crawl.config.ts
+// visualice.config.ts
 auth: {
-  storageStatePath: ".visual-crawl/auth.json",
+  storageStatePath: ".visualice/auth.json",
   login: {
     url: "/login",
     steps: [
@@ -76,17 +76,17 @@ auth: {
 
 ## Use it as a Claude Code skill
 
-The skill lives in `.claude/skills/visual-crawl/` — active automatically when you work in
-this repo. To use `/visual-crawl` from any project, symlink it into your personal skills:
+The skill lives in `.claude/skills/visualice/` — active automatically when you work in
+this repo. To use `/visualice` from any project, symlink it into your personal skills:
 
 ```bash
-ln -s "$PWD/.claude/skills/visual-crawl" ~/.claude/skills/visual-crawl
+ln -s "$PWD/.claude/skills/visualice" ~/.claude/skills/visualice
 ```
 
 Then ask Claude to "visually crawl https://your.site" — it picks the right mode
 (replay / auto / agentic explore for auth + tricky states), captures, and opens the viewer.
 
-Output lands in `.visual-crawl/runs/<runId>/`:
+Output lands in `.visualice/runs/<runId>/`:
 
 ```
 screenshots/<path>/<state>/<device>.png   # + .thumb.webp + .json sidecar
@@ -98,7 +98,7 @@ crawl-report.md     # human summary
 ## Capture a real site (replay mode)
 
 ```bash
-npm run capture -- --config=visual-crawl.config.ts --manifest=path/to/crawl-map.json --base=https://your.site
+npm run capture -- --config=visualice.config.ts --manifest=path/to/crawl-map.json --base=https://your.site
 ```
 
 The input manifest holds routes + interaction recipes. Discovery (auto-building that manifest)
