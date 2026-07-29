@@ -4,7 +4,7 @@ import type { Config } from "../shared/config";
 import type { Manifest, InputManifest, ViewerData, ViewerTile } from "../shared/types";
 import { runCapture } from "./capture";
 import { renderReport } from "./report";
-import { saveJson, mergeManifests } from "./manifest";
+import { saveJson, mergeManifests, loadInputManifest } from "./manifest";
 import { discoverPipeline } from "./discover";
 import { ensureStorageState } from "./auth";
 import { pathExists } from "../shared/fsx";
@@ -148,14 +148,14 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
   let inputManifest: InputManifest;
   if (replay && (await pathExists(cachePath))) {
     log(`replay: reusing cached site model → ${cachePath}`);
-    inputManifest = JSON.parse(await fs.readFile(cachePath, "utf8")) as InputManifest;
+    inputManifest = await loadInputManifest(cachePath);
   } else {
     const discovered = await discoverPipeline({ config, baseUrl, storageState, log });
     // Default crawl re-discovers from scratch, but MERGES into any existing cache
     // rather than overwriting it — auto states are refreshed, authored (hand-written /
     // Explore-mode) states are always preserved.
     if (await pathExists(cachePath)) {
-      const cached = JSON.parse(await fs.readFile(cachePath, "utf8")) as InputManifest;
+      const cached = await loadInputManifest(cachePath);
       inputManifest = mergeManifests(cached, discovered);
       const authored = inputManifest.routes.reduce(
         (n, r) => n + r.states.filter((s) => (s.source ?? "authored") !== "auto").length,

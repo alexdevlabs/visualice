@@ -1,13 +1,20 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Manifest, InputManifest, RouteNode, StateNode } from "../shared/types";
+import { parseInputManifest } from "../shared/manifest-schema";
 
 export async function loadManifest(file: string): Promise<Manifest> {
   return JSON.parse(await fs.readFile(file, "utf8")) as Manifest;
 }
 
+/**
+ * Load + validate a capture input / cached site model. Validation catches malformed
+ * hand-authored (Explore-mode) entries up front, with every issue listed, instead of
+ * failing opaquely mid-capture. Defaults (empty `shots`, `recipe`, …) are filled in.
+ */
 export async function loadInputManifest(file: string): Promise<InputManifest> {
-  return JSON.parse(await fs.readFile(file, "utf8")) as InputManifest;
+  const raw: unknown = JSON.parse(await fs.readFile(file, "utf8"));
+  return parseInputManifest(raw, file) as InputManifest;
 }
 
 export async function saveJson(file: string, data: unknown): Promise<void> {

@@ -1,0 +1,644 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://visualice.dev/config.schema.json",
+  "title": "Visualice config",
+  "description": "Configuration for a visualice crawl. Every field is optional; omitted fields fall back to the defaults in src/shared/config.ts.",
+  "type": "object",
+  "properties": {
+    "target": {
+      "description": "Base URL of the site to crawl.",
+      "type": "string"
+    },
+    "scope": {
+      "default": {
+        "include": [
+          "/**"
+        ],
+        "exclude": [],
+        "maxDepth": 4,
+        "maxPages": 200,
+        "sameOriginOnly": true
+      },
+      "type": "object",
+      "properties": {
+        "include": {
+          "default": [
+            "/**"
+          ],
+          "description": "Path globs to crawl. `**` crosses `/`, `*` does not.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "default": [],
+          "description": "Path globs to skip; wins over `include`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxDepth": {
+          "default": 4,
+          "description": "Max link hops from a seed.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxPages": {
+          "default": 200,
+          "description": "Hard cap on routes captured.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sameOriginOnly": {
+          "default": true,
+          "description": "Never leave the target origin.",
+          "type": "boolean"
+        }
+      }
+    },
+    "seeds": {
+      "default": [],
+      "description": "Extra entry points to crawl beyond the homepage.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "discovery": {
+      "default": {
+        "useSitemap": true,
+        "viewport": {
+          "width": 1280,
+          "height": 900
+        },
+        "mobileStates": true,
+        "interactions": {
+          "auto": true,
+          "hover": true,
+          "maxPerPage": 12,
+          "maxCandidates": 40,
+          "clickTimeoutMs": 4000,
+          "settleMs": 250,
+          "nestDepth": 1,
+          "denyLabels": [
+            "logout",
+            "sign out",
+            "delete",
+            "remove",
+            "unsubscribe",
+            "pay"
+          ],
+          "denySelectors": [],
+          "extraTriggers": []
+        }
+      },
+      "type": "object",
+      "properties": {
+        "useSitemap": {
+          "default": true,
+          "description": "Seed the crawl from /sitemap.xml and robots-declared sitemaps.",
+          "type": "boolean"
+        },
+        "viewport": {
+          "default": {
+            "width": 1280,
+            "height": 900
+          },
+          "description": "Viewport used while probing for states (capture replays them on every device).",
+          "type": "object",
+          "properties": {
+            "width": {
+              "default": 1280,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "height": {
+              "default": 900,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        },
+        "mobileStates": {
+          "default": true,
+          "description": "Also probe at the first mobile device's viewport, so mobile-only states (hamburger nav) are discovered; those states capture only on mobile devices.",
+          "type": "boolean"
+        },
+        "interactions": {
+          "default": {
+            "auto": true,
+            "hover": true,
+            "maxPerPage": 12,
+            "maxCandidates": 40,
+            "clickTimeoutMs": 4000,
+            "settleMs": 250,
+            "nestDepth": 1,
+            "denyLabels": [
+              "logout",
+              "sign out",
+              "delete",
+              "remove",
+              "unsubscribe",
+              "pay"
+            ],
+            "denySelectors": [],
+            "extraTriggers": []
+          },
+          "type": "object",
+          "properties": {
+            "auto": {
+              "default": true,
+              "description": "Heuristically probe triggers to discover UI states.",
+              "type": "boolean"
+            },
+            "hover": {
+              "default": true,
+              "description": "Also probe hover-revealed states (dropdown navs, hover menus).",
+              "type": "boolean"
+            },
+            "maxPerPage": {
+              "default": 12,
+              "description": "Cap on discovered states per route (combinatorial guard).",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "maxCandidates": {
+              "default": 40,
+              "description": "Cap on trigger candidates examined per page.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "clickTimeoutMs": {
+              "default": 4000,
+              "description": "Timeout for one probe click/hover.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settleMs": {
+              "default": 250,
+              "description": "Settle delay after a probe before diffing the DOM.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "nestDepth": {
+              "default": 1,
+              "description": "0 = default render only, 1 = single mutations, >1 = also probe inside opened states (expensive).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "denyLabels": {
+              "default": [
+                "logout",
+                "sign out",
+                "delete",
+                "remove",
+                "unsubscribe",
+                "pay"
+              ],
+              "description": "Skip triggers whose accessible label contains any of these (case-insensitive).",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "denySelectors": {
+              "default": [],
+              "description": "Skip triggers matching these selectors.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "extraTriggers": {
+              "default": [],
+              "description": "Extra selectors to treat as candidate triggers.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "devices": {
+      "default": [
+        {
+          "name": "desktop",
+          "width": 1440,
+          "height": 900,
+          "dpr": 2,
+          "mobile": false,
+          "touch": false,
+          "colorScheme": "light",
+          "reducedMotion": "reduce",
+          "locale": "en-US",
+          "timezoneId": "UTC"
+        },
+        {
+          "name": "mobile",
+          "width": 390,
+          "height": 844,
+          "dpr": 3,
+          "mobile": true,
+          "touch": true,
+          "colorScheme": "light",
+          "reducedMotion": "reduce",
+          "locale": "en-US",
+          "timezoneId": "UTC"
+        }
+      ],
+      "description": "Device profiles; every route × state is captured once per device.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Device label; also the screenshot filename (desktop.png)."
+          },
+          "width": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Viewport width in CSS px."
+          },
+          "height": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Viewport height in CSS px."
+          },
+          "dpr": {
+            "default": 1,
+            "description": "Device pixel ratio (deviceScaleFactor).",
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "mobile": {
+            "default": false,
+            "description": "Emulate a mobile browser (meta viewport, UA).",
+            "type": "boolean"
+          },
+          "touch": {
+            "default": false,
+            "description": "Emulate touch input.",
+            "type": "boolean"
+          },
+          "userAgent": {
+            "description": "Override the user-agent string.",
+            "type": "string"
+          },
+          "colorScheme": {
+            "default": "light",
+            "description": "prefers-color-scheme — add a second device with `dark` for a dark-mode catalog.",
+            "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "no-preference"
+            ]
+          },
+          "reducedMotion": {
+            "default": "reduce",
+            "description": "prefers-reduced-motion; `reduce` complements the animation-kill stabilizer.",
+            "type": "string",
+            "enum": [
+              "reduce",
+              "no-preference"
+            ]
+          },
+          "locale": {
+            "default": "en-US",
+            "description": "Browser locale — pinned so Intl/toLocaleString output is machine-independent.",
+            "type": "string"
+          },
+          "timezoneId": {
+            "default": "UTC",
+            "description": "IANA timezone — pinned so rendered dates are machine-independent.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "width",
+          "height"
+        ]
+      }
+    },
+    "screenshot": {
+      "default": {
+        "fullPage": true,
+        "alsoViewport": false,
+        "format": "png",
+        "quality": 90,
+        "thumbnail": {
+          "width": 480,
+          "format": "webp",
+          "quality": 70
+        }
+      },
+      "type": "object",
+      "properties": {
+        "fullPage": {
+          "default": true,
+          "description": "Capture the whole scrollable page.",
+          "type": "boolean"
+        },
+        "alsoViewport": {
+          "default": false,
+          "description": "Additionally write an above-the-fold crop per shot.",
+          "type": "boolean"
+        },
+        "format": {
+          "default": "png",
+          "description": "Full-resolution image format.",
+          "type": "string",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp"
+          ]
+        },
+        "quality": {
+          "default": 90,
+          "description": "Encoder quality for lossy formats.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "thumbnail": {
+          "default": {
+            "width": 480,
+            "format": "webp",
+            "quality": 70
+          },
+          "type": "object",
+          "properties": {
+            "width": {
+              "default": 480,
+              "description": "Thumbnail width in px.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "format": {
+              "default": "webp",
+              "description": "Thumbnail image format.",
+              "type": "string",
+              "enum": [
+                "webp",
+                "jpeg",
+                "png"
+              ]
+            },
+            "quality": {
+              "default": 70,
+              "description": "Thumbnail encoder quality.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        }
+      }
+    },
+    "stabilize": {
+      "default": {
+        "animations": "disabled",
+        "maskSelectors": [],
+        "waitStrategy": "networkidle",
+        "extraDelayMs": 250,
+        "waitForFonts": true,
+        "lazyScroll": true
+      },
+      "type": "object",
+      "properties": {
+        "animations": {
+          "default": "disabled",
+          "description": "Inject CSS that kills transitions/animations before shooting.",
+          "type": "string",
+          "enum": [
+            "disabled",
+            "allow"
+          ]
+        },
+        "freezeTime": {
+          "description": "ISO timestamp pinned into the page as `Date.now()` for reproducible shots.",
+          "type": "string"
+        },
+        "seedRandom": {
+          "description": "Seed for a deterministic `Math.random()`.",
+          "type": "number"
+        },
+        "maskSelectors": {
+          "default": [],
+          "description": "Selectors painted over with an opaque box (ads, clocks, carousels).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "waitStrategy": {
+          "default": "networkidle",
+          "description": "Navigation wait condition.",
+          "type": "string",
+          "enum": [
+            "load",
+            "domcontentloaded",
+            "networkidle"
+          ]
+        },
+        "extraDelayMs": {
+          "default": 250,
+          "description": "Settle delay applied right before each screenshot.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "waitForFonts": {
+          "default": true,
+          "description": "Await `document.fonts.ready`.",
+          "type": "boolean"
+        },
+        "lazyScroll": {
+          "default": true,
+          "description": "Scroll to the bottom and back to trigger lazy-loaded content.",
+          "type": "boolean"
+        }
+      }
+    },
+    "auth": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "storageStatePath": {
+          "description": "Where the Playwright storage state (cookies + localStorage) is kept.",
+          "type": "string"
+        },
+        "login": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "description": "Login page, absolute or relative to `target`.",
+              "type": "string"
+            },
+            "steps": {
+              "default": [],
+              "description": "Recipe steps to sign in. Use ${ENV_VAR} in `fill` values for secrets.",
+              "type": "array",
+              "items": {}
+            },
+            "maxAgeHours": {
+              "default": 12,
+              "description": "Re-run the login recipe once the saved session is older than this.",
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "verify": {
+              "description": "Post-login success check. Without it, a silently-changed login form would save a logged-out session and produce a run of login-wall screenshots.",
+              "type": "object",
+              "properties": {
+                "url": {
+                  "description": "URL glob the page must reach after the login recipe (e.g. **/dashboard).",
+                  "type": "string"
+                },
+                "selector": {
+                  "description": "Selector that must be visible after the login recipe.",
+                  "type": "string"
+                },
+                "timeoutMs": {
+                  "default": 10000,
+                  "description": "Verification timeout.",
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "http": {
+      "default": {
+        "ignoreHTTPSErrors": false,
+        "extraHTTPHeaders": {}
+      },
+      "type": "object",
+      "properties": {
+        "ignoreHTTPSErrors": {
+          "default": false,
+          "description": "Accept invalid/self-signed TLS certificates (staging environments).",
+          "type": "boolean"
+        },
+        "extraHTTPHeaders": {
+          "default": {},
+          "description": "Headers sent with every browser request (preview tokens, bypass cookies). Values may use ${ENV_VAR}.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "httpCredentials": {
+          "description": "HTTP basic-auth credentials for password-protected environments.",
+          "type": "object",
+          "properties": {
+            "username": {
+              "type": "string",
+              "description": "Basic-auth username; may use ${ENV_VAR}."
+            },
+            "password": {
+              "type": "string",
+              "description": "Basic-auth password; may use ${ENV_VAR}."
+            }
+          },
+          "required": [
+            "username",
+            "password"
+          ]
+        }
+      }
+    },
+    "output": {
+      "default": {
+        "dir": ".visualice",
+        "keepRuns": 5
+      },
+      "type": "object",
+      "properties": {
+        "dir": {
+          "default": ".visualice",
+          "description": "Root output directory.",
+          "type": "string"
+        },
+        "keepRuns": {
+          "default": 5,
+          "description": "Prune all but the newest N runs.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "politeness": {
+      "default": {
+        "concurrency": 4,
+        "minDelayMs": 150,
+        "respectRobots": true,
+        "timeoutMs": 30000,
+        "retries": 1
+      },
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "default": 4,
+          "description": "Pages captured in parallel.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "minDelayMs": {
+          "default": 150,
+          "description": "Floor for the delay between requests to the target.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "respectRobots": {
+          "default": true,
+          "description": "Obey robots.txt Disallow/Allow rules and Crawl-delay during discovery.",
+          "type": "boolean"
+        },
+        "timeoutMs": {
+          "default": 30000,
+          "description": "Per-navigation timeout.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "retries": {
+          "default": 1,
+          "description": "Extra attempts for a failed navigation or capture before recording a failure.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

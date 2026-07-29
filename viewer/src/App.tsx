@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewerData } from "./types";
 import { computeLayout, type LayoutMode } from "./layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
@@ -28,9 +28,11 @@ export default function App() {
       .catch((e) => setError(String(e)));
   }, []);
 
+  // Deferred: typing in the search box must not recompute the full layout per keystroke.
+  const deferredQuery = useDeferredValue(query);
   const layout = useMemo(
-    () => (data ? computeLayout(data, mode, deviceFilter, query) : null),
-    [data, mode, deviceFilter, query],
+    () => (data ? computeLayout(data, mode, deviceFilter, deferredQuery) : null),
+    [data, mode, deviceFilter, deferredQuery],
   );
 
   const selected = useMemo(
@@ -91,6 +93,7 @@ export default function App() {
           </div>
           <input
             className="vc-search"
+            aria-label="Filter paths and states"
             placeholder="Filter paths / states…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

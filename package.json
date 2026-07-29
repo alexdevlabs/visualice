@@ -7,6 +7,11 @@
   "bin": {
     "visualice": "bin/visualice.mjs"
   },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config.schema.json": "./config.schema.json"
+  },
   "scripts": {
     "vc": "tsx src/cli.ts",
     "demo": "tsx src/cli.ts demo",
@@ -16,11 +21,16 @@
     "crawl": "tsx src/cli.ts crawl",
     "discover": "tsx src/cli.ts discover",
     "capture": "tsx src/cli.ts capture",
+    "auth": "tsx src/cli.ts auth",
     "serve": "tsx src/cli.ts serve",
+    "schema": "tsx scripts/gen-schema.ts",
     "viewer:build": "vite build viewer",
     "viewer:dev": "vite viewer",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p viewer/tsconfig.json",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:all": "npm run test && npm run test:integration",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

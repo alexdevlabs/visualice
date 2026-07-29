@@ -70,7 +70,12 @@ export async function serveFileFromRoot(
   if (!stat || !stat.isFile()) return false;
 
   res.setHeader("Content-Type", contentType(filePath));
-  res.setHeader("Cache-Control", "no-store");
+  // Screenshots and fonts are immutable per run (a re-crawl gets a new run dir), so
+  // let the browser cache them — re-panning over a region must not re-download
+  // multi-MB PNGs. HTML/JSON/JS stay uncached so `latest` always serves fresh data.
+  const ext = path.extname(filePath).toLowerCase();
+  const immutable = [".png", ".jpg", ".jpeg", ".webp", ".woff", ".woff2", ".ico"].includes(ext);
+  res.setHeader("Cache-Control", immutable ? "public, max-age=31536000, immutable" : "no-store");
   await new Promise<void>((resolve) => {
     const stream = createReadStream(filePath);
     stream.on("error", () => {

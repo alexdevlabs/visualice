@@ -1,17 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Layout, Bounds } from "./layout";
+import { cullLabels, cullTiles, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
+import type { Transform } from "./lod";
 
 export interface CanvasHandle {
   fit: () => void;
   focusRect: (b: Bounds) => void;
   zoomBy: (factor: number) => void;
   getScale: () => number;
-}
-
-interface Transform {
-  scale: number;
-  x: number;
-  y: number;
 }
 
 const MIN_SCALE = 0.02;
@@ -108,6 +104,14 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
   // pointer pan + click-to-select
   const drag = useRef<{ x: number; y: number; t0: Transform; moved: boolean } | null>(null);
+  const panRaf = useRef<number | null>(null);
+  const pendingPan = useRef<Transform | null>(null);
+  useEffect(
+    () => () => {
+      if (panRaf.current != null) cancelAnimationFrame(panRaf.current);
+    },
+    [],
+  );
   const onPointerDown = (e: React.PointerEvent) => {
     // Capture on the canvas itself, not the tile under the cursor — a tile can be
     // unmounted by virtualization mid-drag, which would drop the capture and strand
@@ -121,7 +125,13 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) > 3) d.moved = true;
-    if (d.moved) setT({ ...d.t0, x: d.t0.x + dx, y: d.t0.y + dy });
+    if (!d.moved) return;
+    // Coalesce to one setT per frame — pointermove can fire far faster than 60Hz.
+    pendingPan.current = { ...d.t0, x: d.t0.x + dx, y: d.t0.y + dy };
+    panRaf.current ??= requestAnimationFrame(() => {
+      panRaf.current = null;
+      if (pendingPan.current) setT(pendingPan.current);
+    });
   };
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current;
@@ -132,34 +142,59 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     }
   };
 
+  // keyboard: arrows pan, +/- zoom, 0 fits, Escape clears the selection
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const PAN = 90;
+    switch (e.key) {
+      case "+":
+      case "=":
+        zoomAt(vp.w / 2, vp.h / 2, 1.25);
+        break;
+      case "-":
+      case "_":
+        zoomAt(vp.w / 2, vp.h / 2, 0.8);
+        break;
+      case "0":
+        fitTo(layout.bounds);
+        break;
+      case "ArrowLeft":
+        setT((c) => ({ ...c, x: c.x + PAN }));
+        break;
+      case "ArrowRight":
+        setT((c) => ({ ...c, x: c.x - PAN }));
+        break;
+      case "ArrowUp":
+        setT((c) => ({ ...c, y: c.y + PAN }));
+        break;
+      case "ArrowDown":
+        setT((c) => ({ ...c, y: c.y - PAN }));
+        break;
+      case "Escape":
+        onSelect(null);
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+  };
+
   // virtualization: only render tiles intersecting the viewport (+ margin)
-  const visible = useMemo(() => {
-    const margin = 400 / t.scale;
-    const x0 = -t.x / t.scale - margin;
-    const y0 = -t.y / t.scale - margin;
-    const x1 = (vp.w - t.x) / t.scale + margin;
-    const y1 = (vp.h - t.y) / t.scale + margin;
-    return layout.placed.filter(
-      (p) => p.x + p.w >= x0 && p.x <= x1 && p.y + p.h >= y0 && p.y <= y1,
-    );
-  }, [layout, t, vp]);
+  const visible = useMemo(() => cullTiles(layout.placed, t, vp), [layout, t, vp]);
+  const labelsVisible = useMemo(() => cullLabels(layout.labels, t, vp), [layout, t, vp]);
 
-  const labelsVisible = useMemo(() => {
-    const x1 = (vp.w - t.x) / t.scale + 200;
-    const y0 = -t.y / t.scale - 200;
-    const y1 = (vp.h - t.y) / t.scale + 200;
-    return layout.labels.filter((l) => l.y <= y1 && l.y + 60 >= y0 && l.x <= x1);
-  }, [layout, t, vp]);
-
-  const showTileLabels = t.scale > 0.18;
+  const showTileLabels = t.scale > TILE_LABEL_MIN_SCALE;
 
   return (
     <div
       ref={elRef}
       className="vc-canvas"
+      role="application"
+      aria-label="Screenshot canvas — arrow keys pan, plus and minus zoom, 0 fits all"
+      tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onKeyDown={onKeyDown}
     >
       <div
         className="vc-world"
@@ -176,9 +211,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
           </div>
         ))}
         {visible.map((p) => {
-          const onScreenW = p.w * t.scale;
-          const useFull = onScreenW > 460 || !p.tile.thumb;
-          const src = DATA + (useFull ? p.tile.full : p.tile.thumb);
+          const src = DATA + lodFor(p.tile, p.w * t.scale);
           const selected = p.tile.id === selectedId;
           return (
             <div

@@ -1,0 +1,578 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://visualice.dev/manifest.schema.json",
+  "title": "Visualice crawl manifest",
+  "description": "A site model: routes, their UI states, and the replayable recipes that reach them. Written by discovery, hand-edited in Explore mode, replayed by capture.",
+  "type": "object",
+  "properties": {
+    "site": {
+      "type": "object",
+      "properties": {
+        "baseUrl": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "framework": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "generatedAt": {
+          "type": "string"
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method"
+      ]
+    },
+    "hints": {
+      "type": "object",
+      "properties": {
+        "stableSelectors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "flakyRegions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "skipTriggers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Route path (or absolute URL) as authored."
+          },
+          "finalUrl": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "depth": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "discoveredFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "states": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Unique within the route; used as the folder slug."
+                },
+                "kind": {
+                  "default": "other",
+                  "type": "string",
+                  "enum": [
+                    "default",
+                    "menu",
+                    "modal",
+                    "drawer",
+                    "accordion",
+                    "tab",
+                    "popover",
+                    "toast",
+                    "hover",
+                    "other"
+                  ]
+                },
+                "label": {
+                  "default": "",
+                  "type": "string"
+                },
+                "trigger": {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "description": "ARIA role, resolved via getByRole.",
+                      "type": "string"
+                    },
+                    "name": {
+                      "description": "Accessible name to match alongside `role`.",
+                      "type": "string"
+                    },
+                    "testId": {
+                      "description": "data-testid value (highest priority).",
+                      "type": "string"
+                    },
+                    "label": {
+                      "description": "Form-control label text.",
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Visible text content.",
+                      "type": "string"
+                    },
+                    "selector": {
+                      "description": "CSS selector (last resort).",
+                      "type": "string"
+                    },
+                    "exact": {
+                      "description": "Exact-match text/name instead of substring.",
+                      "type": "boolean"
+                    },
+                    "nth": {
+                      "description": "Pick the nth match (0-based).",
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "description": "A robust element locator, resolved in priority order (see selectors.ts)."
+                },
+                "recipe": {
+                  "default": [],
+                  "type": "array",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "navigate"
+                          },
+                          "url": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "url"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "click"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "description": "ARIA role, resolved via getByRole.",
+                                "type": "string"
+                              },
+                              "name": {
+                                "description": "Accessible name to match alongside `role`.",
+                                "type": "string"
+                              },
+                              "testId": {
+                                "description": "data-testid value (highest priority).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "description": "Form-control label text.",
+                                "type": "string"
+                              },
+                              "text": {
+                                "description": "Visible text content.",
+                                "type": "string"
+                              },
+                              "selector": {
+                                "description": "CSS selector (last resort).",
+                                "type": "string"
+                              },
+                              "exact": {
+                                "description": "Exact-match text/name instead of substring.",
+                                "type": "boolean"
+                              },
+                              "nth": {
+                                "description": "Pick the nth match (0-based).",
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "description": "A robust element locator, resolved in priority order (see selectors.ts)."
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "target"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "hover"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "description": "ARIA role, resolved via getByRole.",
+                                "type": "string"
+                              },
+                              "name": {
+                                "description": "Accessible name to match alongside `role`.",
+                                "type": "string"
+                              },
+                              "testId": {
+                                "description": "data-testid value (highest priority).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "description": "Form-control label text.",
+                                "type": "string"
+                              },
+                              "text": {
+                                "description": "Visible text content.",
+                                "type": "string"
+                              },
+                              "selector": {
+                                "description": "CSS selector (last resort).",
+                                "type": "string"
+                              },
+                              "exact": {
+                                "description": "Exact-match text/name instead of substring.",
+                                "type": "boolean"
+                              },
+                              "nth": {
+                                "description": "Pick the nth match (0-based).",
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "description": "A robust element locator, resolved in priority order (see selectors.ts)."
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "target"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "fill"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "description": "ARIA role, resolved via getByRole.",
+                                "type": "string"
+                              },
+                              "name": {
+                                "description": "Accessible name to match alongside `role`.",
+                                "type": "string"
+                              },
+                              "testId": {
+                                "description": "data-testid value (highest priority).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "description": "Form-control label text.",
+                                "type": "string"
+                              },
+                              "text": {
+                                "description": "Visible text content.",
+                                "type": "string"
+                              },
+                              "selector": {
+                                "description": "CSS selector (last resort).",
+                                "type": "string"
+                              },
+                              "exact": {
+                                "description": "Exact-match text/name instead of substring.",
+                                "type": "boolean"
+                              },
+                              "nth": {
+                                "description": "Pick the nth match (0-based).",
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "description": "A robust element locator, resolved in priority order (see selectors.ts)."
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "target",
+                          "value"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "press"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "description": "ARIA role, resolved via getByRole.",
+                                "type": "string"
+                              },
+                              "name": {
+                                "description": "Accessible name to match alongside `role`.",
+                                "type": "string"
+                              },
+                              "testId": {
+                                "description": "data-testid value (highest priority).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "description": "Form-control label text.",
+                                "type": "string"
+                              },
+                              "text": {
+                                "description": "Visible text content.",
+                                "type": "string"
+                              },
+                              "selector": {
+                                "description": "CSS selector (last resort).",
+                                "type": "string"
+                              },
+                              "exact": {
+                                "description": "Exact-match text/name instead of substring.",
+                                "type": "boolean"
+                              },
+                              "nth": {
+                                "description": "Pick the nth match (0-based).",
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "description": "A robust element locator, resolved in priority order (see selectors.ts)."
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "key"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "waitFor"
+                          },
+                          "selector": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "visible",
+                              "hidden",
+                              "attached",
+                              "detached"
+                            ]
+                          },
+                          "timeoutMs": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "action"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "scroll"
+                          },
+                          "to": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "const": "top"
+                              },
+                              {
+                                "type": "string",
+                                "const": "bottom"
+                              },
+                              {
+                                "type": "number"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "to"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "wait"
+                          },
+                          "ms": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "ms"
+                        ]
+                      }
+                    ],
+                    "description": "One replayable interaction step."
+                  }
+                },
+                "signature": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "auto",
+                    "authored"
+                  ]
+                },
+                "devices": {
+                  "description": "Capture this state only on these device names (default: all devices).",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "shots": {
+                  "default": {},
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "full": {
+                        "type": "string"
+                      },
+                      "viewport": {
+                        "type": "string"
+                      },
+                      "thumb": {
+                        "type": "string"
+                      },
+                      "meta": {
+                        "type": "string"
+                      },
+                      "width": {
+                        "type": "number"
+                      },
+                      "height": {
+                        "type": "number"
+                      },
+                      "error": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "url"
+        ]
+      }
+    }
+  },
+  "required": [
+    "routes"
+  ]
+}

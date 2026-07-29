@@ -8,6 +8,10 @@ export interface Device {
   mobile?: boolean;
   touch?: boolean;
   userAgent?: string;
+  colorScheme?: "light" | "dark" | "no-preference";
+  reducedMotion?: "reduce" | "no-preference";
+  locale?: string;
+  timezoneId?: string;
 }
 
 /** A robust way to point at an element. Resolved in priority order (see selectors.ts). */
@@ -57,6 +61,15 @@ export interface ShotRef {
   meta?: string; // path of sidecar json
   width?: number; // intrinsic px dims of the full shot
   height?: number;
+  error?: string; // capture was attempted but failed (after retries); no image written
+}
+
+/** One route×state×device capture that failed after all retries. */
+export interface CaptureFailure {
+  route: string;
+  state: string;
+  device: string;
+  error: string;
 }
 
 export interface StateNode {
@@ -73,13 +86,18 @@ export interface StateNode {
    * entries are protected by default.
    */
   source?: "auto" | "authored";
+  /**
+   * Restrict capture to these device names (e.g. a hamburger menu that only exists
+   * on mobile viewports). Absent = capture on every configured device.
+   */
+  devices?: string[];
   shots: Record<string, ShotRef>; // keyed by device name
 }
 
 export interface RouteNode {
   id: string;
   url: string; // path or absolute, as authored
-  finalUrl?: string; // post-redirect absolute url (filled at capture)
+  finalUrl?: string; // post-redirect location: an origin-relative path, or an absolute url if it left the origin
   title?: string;
   status?: number;
   depth: number;
@@ -104,7 +122,14 @@ export interface Manifest {
   devices: Device[];
   auth?: { method: string; notes?: string };
   routes: RouteNode[];
-  stats?: { routes: number; states: number; shots: number; durationMs: number };
+  stats?: {
+    routes: number;
+    states: number;
+    shots: number;
+    failed: number;
+    durationMs: number;
+    failures: CaptureFailure[];
+  };
   hints?: {
     stableSelectors?: string[];
     flakyRegions?: string[];

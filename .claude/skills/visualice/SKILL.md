@@ -25,6 +25,11 @@ npm install && npx playwright install chromium
 - A config file controls scope, devices, stabilization, and auth; sensible defaults
   apply if it is absent. For large sites, confirm scope with the user and set
   `scope.include` / `scope.exclude` globs and `scope.maxPages`, and the `devices` list.
+- One-off tweaks don't need a config file — flags override it:
+  `--max-pages=<n> --include=<globs> --exclude=<globs> --devices=<names> --timeout=<ms>`.
+- Always add `--json` (machine-readable one-line summary on stdout) and `--quiet`
+  (suppress progress noise) when running non-interactively. Add `--fail-on-error` when a
+  failed capture should fail the command (exit 3).
 
 ## 3. Choose a mode
 
@@ -64,7 +69,16 @@ own context — that is the engine's job; you only discover the tricky parts.
     "shots": {}
   }
   ```
-- Then capture everything via Replay: `npm run crawl -- --base=<url> --replay`.
+- After editing the cache, ALWAYS check it before capturing:
+  `npm run vc -- validate --json` — it lists every problem with a JSON-path pointer
+  (`manifest.schema.json` documents the shape). A state can carry
+  `"devices": ["mobile"]` to capture only on those devices (mobile-only navs).
+- Then capture everything via Replay: `npm run crawl -- --base=<url> --replay --json`.
+
+Note the heuristics are stronger than they look: hover dropdowns are probed
+automatically, and a second discovery pass runs at the first mobile device's viewport so
+hamburger navs are found without Explore mode. Escalate to Explore only for what is
+still missing after an Auto run.
 
 ## 5. Auth (when the site requires login)
 
@@ -87,15 +101,23 @@ auth: {
 ```
 
 - Secrets come from env (`${VC_USER}`, `${VC_PASS}`) — never hardcode or commit them.
+- Add `verify: { url: "**/dashboard" }` (and/or a `selector`) to the login block — the
+  engine then refuses to save a logged-out session when the login silently fails.
 - `npm run auth` runs the recipe and saves `auth.json`; `crawl` reuses it automatically
   and re-runs the login when the session goes stale (`login.maxAgeHours`).
+- Password-protected staging: set `http.httpCredentials` / `http.extraHTTPHeaders`
+  (values may use `${ENV_VAR}`) and `http.ignoreHTTPSErrors` for self-signed TLS.
 
 ## 6. Capture, report, view
 
 - Output lands in `.visualice/runs/<id>/`: `screenshots/<path>/<state>/<device>.*`,
   `crawl-map.json`, `viewer-data.json`, `crawl-report.md`.
-- Summarize the run for the user from `crawl-report.md`: route/state/shot counts and any
-  capture failures (these usually mean a recipe needs an Explore-mode tweak).
+- With `--json` the run summary (route/state/shot counts + a `failures` array of
+  `{route, state, device, error}`) arrives on stdout — no report parsing needed.
+  `crawl-report.md` has the same data human-formatted, failures in a `## Failures`
+  section. A failing state usually means its recipe needs an Explore-mode tweak.
+- Failed captures were already retried (`politeness.retries`); don't blindly re-run the
+  whole crawl for one flaky shot — fix or mask the cause.
 - Open the viewer: `npm run serve -- --open` (or `--shoot=out.png` to grab a headless
   screenshot of the viewer itself). Grouped vs all-at-once; thumbnails when zoomed out,
   full resolution as you zoom in.

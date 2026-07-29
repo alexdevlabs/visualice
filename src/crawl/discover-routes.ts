@@ -2,86 +2,58 @@ import type { BrowserContext } from "playwright";
 import type { Config } from "../shared/config";
 import type { RouteNode } from "../shared/types";
 import { inScope } from "../shared/glob";
-import { pathSlug } from "../shared/slug";
+import {
+  canonicalPath,
+  dedupeLinks,
+  relativeToOrigin,
+  routeId,
+  scopePath,
+  uniqueId,
+} from "../shared/url";
+import { ALLOW_ALL, fetchRobots, isAllowed, type RobotsRules } from "../shared/robots";
+import { politeFetch } from "../shared/http";
 import { sleep } from "../shared/pool";
 
-function routeId(canonical: string): string {
-  return pathSlug(canonical).replace(/\//g, "-");
-}
+/** Sanity bound on how many sitemap files one crawl will fetch (index recursion). */
+const MAX_SITEMAP_FETCHES = 20;
 
-// Tracking params that don't identify a distinct page — dropped so they don't
-// explode the crawl, while *meaningful* query params still separate routes.
-const TRACKING = /^(utm_|mc_|fbclid$|gclid$|gbraid$|wbraid$|msclkid$|yclid$|igshid$|_ga$|ref$)/i;
-
-function scopePath(u: URL): string {
-  return u.pathname.replace(/\/+$/, "") || "/";
-}
-
-/** Path + meaningful, sorted query — the identity used for dedup and output. */
-function canonicalPath(u: URL): string {
-  const p = scopePath(u);
-  const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING.test(k));
-  if (!params.length) return p;
-  params.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-  const search = params
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join("&");
-  return `${p}?${search}`;
-}
-
-function uniqueRouteId(base: string, routes: RouteNode[]): string {
-  if (!routes.some((r) => r.id === base)) return base;
-  let n = 2;
-  while (routes.some((r) => r.id === `${base}-${n}`)) n++;
-  return `${base}-${n}`;
-}
-
-function dedupeLinks(links: string[], origin: string): string[] {
-  const out = new Set<string>();
-  for (const href of links) {
-    try {
-      const u = new URL(href);
-      if (u.origin === origin) out.add(canonicalPath(u));
-    } catch {
-      /* skip */
-    }
-  }
-  return [...out];
-}
-
-async function fetchSitemapUrls(baseUrl: string, origin: string): Promise<string[]> {
-  const candidates = [new URL("/sitemap.xml", baseUrl).href];
-  try {
-    const robots = await fetch(new URL("/robots.txt", baseUrl).href);
-    if (robots.ok) {
-      const txt = await robots.text();
-      for (const m of txt.matchAll(/sitemap:\s*(\S+)/gi)) candidates.push(m[1]);
-    }
-  } catch {
-    /* no robots */
-  }
+async function fetchSitemapUrls(
+  baseUrl: string,
+  origin: string,
+  declared: string[],
+  cap: number,
+): Promise<string[]> {
+  const queue = [new URL("/sitemap.xml", baseUrl).href, ...declared];
+  const fetched = new Set<string>();
   const out: string[] = [];
-  for (const sm of candidates) {
+  while (queue.length && out.length < cap && fetched.size < MAX_SITEMAP_FETCHES) {
+    const sm = queue.shift()!;
+    if (fetched.has(sm)) continue;
+    fetched.add(sm);
     try {
-      const r = await fetch(sm);
+      const r = await politeFetch(sm);
       if (!r.ok) continue;
       const xml = await r.text();
+      // A <sitemapindex> lists further sitemap files in its <loc>s, not pages.
+      const isIndex = /<sitemapindex[\s>]/i.test(xml);
       for (const m of xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
         const u = m[1].trim();
         try {
-          if (new URL(u).origin === origin) out.push(u);
+          if (new URL(u).origin !== origin) continue;
         } catch {
-          /* skip */
+          continue;
         }
+        if (isIndex) queue.push(u);
+        else if (out.length < cap) out.push(u);
       }
     } catch {
-      /* skip */
+      /* unreachable / timed out sitemap — the BFS still finds pages via links */
     }
   }
   return out;
 }
 
-/** BFS link crawl (+ sitemap) confined to the target origin and scope rules. */
+/** BFS link crawl (+ sitemap) confined to the target origin, scope rules and robots.txt. */
 export async function discoverRoutes(
   context: BrowserContext,
   config: Config,
@@ -90,6 +62,23 @@ export async function discoverRoutes(
 ): Promise<RouteNode[]> {
   const origin = new URL(baseUrl).origin;
   const { include, exclude, maxDepth, maxPages, sameOriginOnly } = config.scope;
+  const { respectRobots } = config.politeness;
+
+  // One fetch serves both consumers: the crawl rules and the declared sitemaps.
+  const robots: RobotsRules =
+    respectRobots || config.discovery.useSitemap ? await fetchRobots(baseUrl, log) : ALLOW_ALL;
+  if (respectRobots && robots.rules.length) {
+    log(`  robots.txt: ${robots.rules.length} rule(s) apply`);
+  }
+
+  // A site-declared Crawl-delay only ever slows us down, never speeds us up.
+  const delayMs = Math.max(
+    config.politeness.minDelayMs,
+    (respectRobots && robots.crawlDelayMs) || 0,
+  );
+  if (delayMs > config.politeness.minDelayMs) {
+    log(`  robots.txt: honouring Crawl-delay → ${delayMs}ms between requests`);
+  }
 
   const visited = new Set<string>();
   const routes: RouteNode[] = [];
@@ -106,9 +95,11 @@ export async function discoverRoutes(
     }
   }
   if (config.discovery.useSitemap) {
-    for (const u of await fetchSitemapUrls(baseUrl, origin)) enqueue(u, 0, null);
+    const fromSitemap = await fetchSitemapUrls(baseUrl, origin, robots.sitemaps, maxPages);
+    for (const u of fromSitemap) enqueue(u, 0, null);
   }
 
+  let blocked = 0;
   const page = await context.newPage();
   try {
     while (queue.length && routes.length < maxPages) {
@@ -125,33 +116,54 @@ export async function discoverRoutes(
       }
       const key = origin + canon;
       if (visited.has(key)) continue;
-      if (!inScope(scope, include, exclude)) continue;
+      // Mark before filtering so a rejected URL is only evaluated (and logged) once.
       visited.add(key);
+      if (!inScope(scope, include, exclude)) continue;
+      if (respectRobots && !isAllowed(canon, robots)) {
+        blocked++;
+        log(`  ⊘ ${canon} — disallowed by robots.txt`);
+        continue;
+      }
 
       let status: number | undefined;
       let title: string | undefined;
       let links: string[] = [];
-      try {
-        const resp = await page.goto(item.url, {
-          waitUntil: "domcontentloaded",
-          timeout: config.politeness.timeoutMs,
-        });
-        status = resp?.status();
-        title = await page.title().catch(() => undefined);
-        if (item.depth < maxDepth) {
-          links = await page.$$eval("a[href]", (els) =>
-            els.map((e) => (e as HTMLAnchorElement).href),
+      let navigated = false;
+      for (let attempt = 0; attempt <= config.politeness.retries && !navigated; attempt++) {
+        try {
+          const resp = await page.goto(item.url, {
+            waitUntil: "domcontentloaded",
+            timeout: config.politeness.timeoutMs,
+          });
+          navigated = true;
+          status = resp?.status();
+          title = await page.title().catch(() => undefined);
+          if (item.depth < maxDepth) {
+            // Playwright's $$eval (DOM query in the page context), not JS eval().
+            links = await page.$$eval("a[href]", (els) =>
+              els.map((e) => (e as HTMLAnchorElement).href),
+            );
+          }
+        } catch (e) {
+          const msg = (e as Error).message.split("\n")[0];
+          log(
+            attempt < config.politeness.retries
+              ? `  ↻ ${canon}: retrying — ${msg}`
+              : `  ! ${canon}: ${msg}`,
           );
         }
-      } catch (e) {
-        log(`  ! ${canon}: ${(e as Error).message.split("\n")[0]}`);
       }
 
-      const id = uniqueRouteId(routeId(canon), routes);
+      const id = uniqueId(
+        routeId(canon),
+        routes.map((r) => r.id),
+      );
       routes.push({
         id,
         url: canon,
-        finalUrl: page.url(),
+        // page.url() is only meaningful if the navigation landed — after a failed
+        // goto it still points at the *previous* page.
+        finalUrl: navigated ? relativeToOrigin(page.url(), origin) : undefined,
         title,
         status,
         depth: item.depth,
@@ -175,10 +187,11 @@ export async function discoverRoutes(
           }
         }
       }
-      await sleep(config.politeness.minDelayMs);
+      await sleep(delayMs);
     }
   } finally {
     await page.close().catch(() => {});
   }
+  if (blocked) log(`  robots.txt blocked ${blocked} URL(s)`);
   return routes;
 }

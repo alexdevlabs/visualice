@@ -3,11 +3,19 @@ import type { Page } from "playwright";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Config } from "../shared/config";
-import type { Manifest, RouteNode, StateNode, Device, ShotRef } from "../shared/types";
+import type {
+  Manifest,
+  RouteNode,
+  StateNode,
+  Device,
+  ShotRef,
+  CaptureFailure,
+} from "../shared/types";
 import { pathSlug, stateSlug } from "../shared/slug";
 import { applyContextInit, stabilizePage } from "./stabilize";
 import { makeThumb, imageSize, writeFull, writeViewportCrop } from "./thumbnails";
 import { applyRecipe, resolveUrl } from "./recipe";
+import { httpContextOptions } from "./context-options";
 import { mapPool, sleep } from "../shared/pool";
 
 export interface CaptureOptions {
@@ -22,6 +30,7 @@ export interface CaptureOptions {
 export interface CaptureResult {
   manifest: Manifest;
   shots: number;
+  failures: CaptureFailure[];
   durationMs: number;
 }
 
@@ -118,16 +127,24 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
 
   const browser = await chromium.launch();
   let shotCount = 0;
+  const failures: CaptureFailure[] = [];
 
   try {
     for (const device of config.devices) {
       log(`▸ ${device.name} (${device.width}×${device.height} @${device.dpr})`);
       const context = await browser.newContext({
+        ...httpContextOptions(config),
         viewport: { width: device.width, height: device.height },
         deviceScaleFactor: device.dpr,
         isMobile: device.mobile ?? false,
         hasTouch: device.touch ?? device.mobile ?? false,
         userAgent: device.userAgent,
+        colorScheme: device.colorScheme ?? "light",
+        reducedMotion: device.reducedMotion ?? "reduce",
+        // Pinned locale + timezone: Date is frozen by the stabilizer, but
+        // Intl/toLocaleString would otherwise still render in the machine's TZ.
+        locale: device.locale ?? "en-US",
+        timezoneId: device.timezoneId ?? "UTC",
         storageState: opts.storageState,
       });
       context.setDefaultTimeout(config.politeness.timeoutMs);
@@ -135,30 +152,43 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
 
       const tasks: { route: RouteNode; state: StateNode }[] = [];
       for (const route of manifest.routes)
-        for (const state of route.states) tasks.push({ route, state });
+        for (const state of route.states) {
+          if (state.devices && !state.devices.includes(device.name)) continue;
+          tasks.push({ route, state });
+        }
 
       await mapPool(tasks, config.politeness.concurrency, async ({ route, state }) => {
-        const page = await context.newPage();
-        try {
-          const ref = await captureState(page, {
-            route,
-            state,
-            device,
-            baseUrl,
-            shotsDir,
-            runDir,
-            config,
-          });
-          state.shots[device.name] = ref;
-          shotCount++;
-          log(`  ✓ ${pathSlug(route.url)} / ${state.id}`);
-        } catch (e) {
-          log(
-            `  ✗ ${pathSlug(route.url)} / ${state.id} [${device.name}]: ${(e as Error).message.split("\n")[0]}`,
-          );
-        } finally {
-          await page.close().catch(() => {});
-          await sleep(config.politeness.minDelayMs);
+        // A fresh page per attempt: a retry should not inherit a wedged renderer.
+        for (let attempt = 0; ; attempt++) {
+          const page = await context.newPage();
+          try {
+            const ref = await captureState(page, {
+              route,
+              state,
+              device,
+              baseUrl,
+              shotsDir,
+              runDir,
+              config,
+            });
+            state.shots[device.name] = ref;
+            shotCount++;
+            log(`  ✓ ${pathSlug(route.url)} / ${state.id}`);
+            break;
+          } catch (e) {
+            const error = (e as Error).message.split("\n")[0];
+            if (attempt < config.politeness.retries) {
+              log(`  ↻ ${pathSlug(route.url)} / ${state.id} [${device.name}]: retrying — ${error}`);
+            } else {
+              state.shots[device.name] = { error };
+              failures.push({ route: route.url, state: state.id, device: device.name, error });
+              log(`  ✗ ${pathSlug(route.url)} / ${state.id} [${device.name}]: ${error}`);
+              break;
+            }
+          } finally {
+            await page.close().catch(() => {});
+            await sleep(config.politeness.minDelayMs);
+          }
         }
       });
 
@@ -172,8 +202,10 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
     routes: manifest.routes.length,
     states: manifest.routes.reduce((n, r) => n + r.states.length, 0),
     shots: shotCount,
+    failed: failures.length,
     durationMs: Date.now() - started,
+    failures,
   };
 
-  return { manifest, shots: shotCount, durationMs: manifest.stats.durationMs };
+  return { manifest, shots: shotCount, failures, durationMs: manifest.stats.durationMs };
 }

@@ -4,24 +4,15 @@ import path from "node:path";
 import type { Config } from "../shared/config";
 import type { RecipeStep } from "../shared/types";
 import { applyRecipe, resolveUrl } from "./recipe";
-
-function resolveEnvString(s: string, missing: Set<string>): string {
-  return s.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, key) => {
-    const v = process.env[key];
-    if (v === undefined) {
-      missing.add(key);
-      return "";
-    }
-    return v;
-  });
-}
+import { httpContextOptions } from "./context-options";
+import { resolveEnvString } from "../shared/env";
 
 /**
  * Substitute ${ENV_VAR} placeholders in fill values so secrets stay out of config
  * files. Throws if any referenced var is unset — submitting blank credentials would
  * otherwise save a logged-out session as if authentication succeeded.
  */
-function resolveEnvSteps(steps: RecipeStep[]): RecipeStep[] {
+export function resolveEnvSteps(steps: RecipeStep[]): RecipeStep[] {
   const missing = new Set<string>();
   const out = steps.map((step) =>
     step.action === "fill" ? { ...step, value: resolveEnvString(step.value, missing) } : step,
@@ -60,13 +51,35 @@ export async function ensureStorageState(
   log("authenticating (running login recipe)…");
   const browser = await chromium.launch();
   try {
-    const context = await browser.newContext();
+    const context = await browser.newContext(httpContextOptions(config));
     const page = await context.newPage();
     const startUrl = login?.url
       ? resolveUrl(config.target ?? "http://localhost", login.url)
       : config.target;
     if (startUrl) await page.goto(startUrl, { waitUntil: "domcontentloaded" });
     await applyRecipe(page, resolveEnvSteps((login?.steps ?? []) as RecipeStep[]));
+
+    // Verify success BEFORE saving — otherwise a changed login form quietly persists
+    // a logged-out session and the whole run screenshots the login wall.
+    const verify = login?.verify;
+    if (verify?.url || verify?.selector) {
+      try {
+        if (verify.url) await page.waitForURL(verify.url, { timeout: verify.timeoutMs });
+        if (verify.selector) {
+          await page
+            .locator(verify.selector)
+            .first()
+            .waitFor({ state: "visible", timeout: verify.timeoutMs });
+        }
+      } catch {
+        throw new Error(
+          `auth login: post-login verification failed (still at ${page.url()}) — ` +
+            `expected ${verify.url ? `url "${verify.url}"` : `visible "${verify.selector}"`}. ` +
+            `Session NOT saved; check credentials or update auth.login.steps.`,
+        );
+      }
+    }
+
     await fs.mkdir(path.dirname(abs), { recursive: true });
     await context.storageState({ path: abs });
     log(`saved auth storage state → ${abs}`);
