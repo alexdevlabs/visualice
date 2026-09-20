@@ -17,6 +17,19 @@ import {
 } from "./routes-file";
 import { pathExists } from "../shared/fsx";
 import { pathSlug } from "../shared/slug";
+import {
+  findResumableRun,
+  latestRunId,
+  listRuns,
+  markRunComplete,
+  markRunIncomplete,
+  runIdTime,
+} from "./runs";
+import { redactConfig } from "../shared/redact";
+import { acquireLock } from "../shared/lock";
+import { applyHints, describeHints } from "../shared/hints";
+
+type Log = (msg: string) => void;
 
 export function makeRunId(date = new Date()): string {
   // Keep milliseconds so back-to-back/parallel runs don't share a run dir and
@@ -33,6 +46,10 @@ export interface CapturePipelineOptions {
   storageState?: string;
   /** Pre-parsed routes-file intent; if omitted, read from config.routesFile. */
   routesIntent?: RoutesIntent;
+  /** Take the output-directory lock (default true; false when a caller holds it). */
+  lock?: boolean;
+  /** Reuse an interrupted run's directory and keep the shots it already produced. */
+  resume?: string;
   log?: (msg: string) => void;
 }
 
@@ -41,13 +58,26 @@ export interface CapturePipelineResult {
   manifest: Manifest;
 }
 
-function toViewerData(m: Manifest): ViewerData {
+/**
+ * Flatten the manifest into the viewer's tile index.
+ *
+ * Failed captures become tiles too, carrying `error` instead of an image: a state
+ * that silently vanishes from the canvas reads as "this UI doesn't exist", which is
+ * the opposite of what a failure means. Their size falls back to the device
+ * viewport so the layout can still reserve a place for them.
+ */
+export function toViewerData(m: Manifest): ViewerData {
   const tiles: ViewerTile[] = [];
+  const deviceByName = new Map(m.devices.map((d) => [d.name, d]));
+  let failed = 0;
+
   for (const r of m.routes) {
     const routePath = pathSlug(r.url);
     for (const s of r.states) {
       for (const [device, ref] of Object.entries(s.shots)) {
-        if (!ref.full) continue;
+        if (!ref.full && !ref.error) continue;
+        const profile = deviceByName.get(device);
+        if (ref.error) failed++;
         tiles.push({
           id: `${r.id}__${s.id}__${device}`,
           routeId: r.id,
@@ -59,17 +89,23 @@ function toViewerData(m: Manifest): ViewerData {
           device,
           full: ref.full,
           thumb: ref.thumb,
-          width: ref.width,
-          height: ref.height,
+          mid: ref.mid,
+          viewport: ref.viewport,
+          width: ref.width ?? (profile ? profile.width * profile.dpr : undefined),
+          height: ref.height ?? (profile ? profile.height * profile.dpr : undefined),
+          clamped: ref.clamped,
+          error: ref.error,
         });
       }
     }
   }
+
   return {
     site: m.site,
     devices: m.devices,
     tiles,
     groups: m.routes.map((r) => ({ path: pathSlug(r.url), routeId: r.id, title: r.title })),
+    failed,
   };
 }
 
@@ -79,15 +115,44 @@ async function updateLatest(outRoot: string, id: string): Promise<void> {
   await fs.symlink(id, link, "dir").catch(() => {});
 }
 
-async function pruneRuns(outRoot: string, keep: number): Promise<void> {
+/**
+ * Keep the newest `keep` runs. Ordering comes from the run ids' timestamps rather
+ * than a lexical sort, and a failed delete is reported: silently keeping runs is
+ * survivable, silently deleting the wrong one is not.
+ */
+async function pruneRuns(outRoot: string, keep: number, log: Log): Promise<void> {
   const runsDir = path.join(outRoot, "runs");
-  const entries = await fs.readdir(runsDir, { withFileTypes: true }).catch(() => []);
-  const dirs = entries
-    .filter((e) => e.isDirectory() && e.name !== "latest")
-    .map((e) => e.name)
-    .sort();
-  for (const d of dirs.slice(0, Math.max(0, dirs.length - keep))) {
-    await fs.rm(path.join(runsDir, d), { recursive: true, force: true }).catch(() => {});
+  const current = await latestRunId(outRoot);
+  // Only runs this tool generated are pruned *or counted*. A hand-named directory
+  // (a copied-in baseline, say) is not ours to delete, and letting it occupy a slot
+  // in the keep budget would silently push a real run out instead.
+  const ids = (await listRuns(outRoot)).filter((id) => runIdTime(id) !== undefined);
+  const doomed = ids.slice(0, Math.max(0, ids.length - keep)).filter((id) => id !== current);
+  for (const id of doomed) {
+    try {
+      await fs.rm(path.join(runsDir, id), { recursive: true, force: true });
+    } catch (e) {
+      log(`⚠ could not prune old run ${id}: ${(e as Error).message.split("\n")[0]}`);
+    }
+  }
+}
+
+/**
+ * Hold the output directory's lock for the duration of `fn`, unless a caller up the
+ * stack already holds it (crawl → capture is one run, not two).
+ */
+async function withLock<T>(
+  outRoot: string,
+  log: Log,
+  enabled: boolean,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!enabled) return fn();
+  const lock = await acquireLock(outRoot, { log });
+  try {
+    return await fn();
+  } finally {
+    await lock.release();
   }
 }
 
@@ -95,13 +160,26 @@ async function pruneRuns(outRoot: string, keep: number): Promise<void> {
 export async function capturePipeline(
   opts: CapturePipelineOptions,
 ): Promise<CapturePipelineResult> {
-  const { config, baseUrl } = opts;
   const log = opts.log ?? (() => {});
-  const id = makeRunId();
+  const outRoot = path.resolve(opts.config.output.dir);
+  return withLock(outRoot, log, opts.lock !== false, () => captureRun(opts));
+}
+
+async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipelineResult> {
+  const { baseUrl } = opts;
+  const log = opts.log ?? (() => {});
+  const id = opts.resume ?? makeRunId();
   const origin = new URL(baseUrl).origin;
-  const outRoot = path.resolve(config.output.dir);
+  const outRoot = path.resolve(opts.config.output.dir);
   const runDir = path.join(outRoot, "runs", id);
   await fs.mkdir(runDir, { recursive: true });
+  await markRunIncomplete(runDir);
+
+  // Site hints (Explore-mode advice carried in the cached model) fold into the
+  // config that drives this run.
+  const config = applyHints(opts.config, opts.inputManifest.hints);
+  const hintNote = describeHints(opts.inputManifest.hints);
+  if (hintNote) log(hintNote);
 
   // The routes file subtracts (skip:) before capture, and its unmet requests
   // ([ ] lines) surface as `wanted` — the Explore-mode queue.
@@ -119,7 +197,7 @@ export async function capturePipeline(
       runId: id,
       generatedAt: new Date().toISOString(),
     },
-    configSnapshot: config,
+    configSnapshot: redactConfig(config),
     devices: config.devices,
     auth: inputManifest.auth,
     routes: inputManifest.routes,
@@ -128,7 +206,15 @@ export async function capturePipeline(
 
   const storageState = opts.storageState ?? (await ensureStorageState(config, log));
 
-  const result = await runCapture({ config, manifest, baseUrl, runDir, storageState, log });
+  const result = await runCapture({
+    config,
+    manifest,
+    baseUrl,
+    runDir,
+    storageState,
+    resume: opts.resume !== undefined,
+    log,
+  });
 
   if (result.manifest.stats && wanted.length) {
     result.manifest.stats.wanted = wanted;
@@ -139,8 +225,9 @@ export async function capturePipeline(
   await saveJson(path.join(runDir, "viewer-data.json"), toViewerData(result.manifest));
   await fs.writeFile(path.join(runDir, "crawl-report.md"), renderReport(result.manifest));
 
+  await markRunComplete(runDir);
   await updateLatest(outRoot, id);
-  await pruneRuns(outRoot, config.output.keepRuns);
+  await pruneRuns(outRoot, config.output.keepRuns, log);
 
   return { runDir, manifest: result.manifest };
 }
@@ -150,6 +237,8 @@ export interface CrawlPipelineOptions {
   baseUrl: string;
   /** Reuse the cached site model (skip discovery) when available. */
   replay?: boolean;
+  /** Continue the newest unfinished run instead of starting a new one. */
+  resume?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -159,10 +248,26 @@ export interface CrawlPipelineOptions {
  * is what makes subsequent `--replay` runs fast and deterministic.
  */
 export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<CapturePipelineResult> {
+  const log = opts.log ?? (() => {});
+  const outRoot = path.resolve(opts.config.output.dir);
+  // One lock for discovery *and* capture: they share the cache and the auth state.
+  return withLock(outRoot, log, true, () => crawlRun(opts, outRoot));
+}
+
+async function crawlRun(
+  opts: CrawlPipelineOptions,
+  outRoot: string,
+): Promise<CapturePipelineResult> {
   const { config, baseUrl, replay } = opts;
   const log = opts.log ?? (() => {});
-  const outRoot = path.resolve(config.output.dir);
   const cachePath = path.join(outRoot, "crawl-map.cache.json");
+
+  let resume: string | undefined;
+  if (opts.resume) {
+    resume = await findResumableRun(outRoot);
+    if (resume) log(`resuming run ${resume}`);
+    else log("nothing to resume — starting a new run");
+  }
 
   // Routes-file intent: listed routes seed discovery, skip: globs exclude.
   const intent = await loadRoutesIntent(config);
@@ -180,8 +285,13 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
     log(`replay: reusing cached site model → ${cachePath}`);
     inputManifest = await loadInputManifest(cachePath);
   } else {
+    // Hints cached from earlier runs steer discovery too (skipTriggers), so read
+    // them before probing rather than only on the way into capture.
+    const cachedHints = (await pathExists(cachePath))
+      ? (await loadInputManifest(cachePath)).hints
+      : undefined;
     const discovered = await discoverPipeline({
-      config: effectiveConfig,
+      config: applyHints(effectiveConfig, cachedHints),
       baseUrl,
       storageState,
       log,
@@ -214,6 +324,8 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
     baseUrl,
     storageState,
     routesIntent: intent,
+    lock: false,
+    resume,
     log,
   });
 }

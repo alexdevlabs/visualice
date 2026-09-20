@@ -19,6 +19,14 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
       case "hover":
         await locatorFor(page, step.target).hover();
         break;
+      case "focus":
+        await locatorFor(page, step.target).focus();
+        break;
+      case "blur":
+        // Blur whatever is focused without moving focus somewhere that could open
+        // its own state — a Tab press would land on the next control and focus that.
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        break;
       case "fill":
         await locatorFor(page, step.target).fill(step.value);
         break;

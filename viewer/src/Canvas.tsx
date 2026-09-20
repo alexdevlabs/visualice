@@ -1,7 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { Layout, Bounds } from "./layout";
-import { cullLabels, cullTiles, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
+import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
 import type { Transform } from "./lod";
+import { Minimap } from "./Minimap";
+import { nextTileId } from "./nav";
 
 export interface CanvasHandle {
   fit: () => void;
@@ -12,7 +14,6 @@ export interface CanvasHandle {
 
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 8;
-const DATA = "./data/";
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -23,10 +24,13 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onScaleChange?: (scale: number) => void;
+  /** URL prefix for shot paths — the run being viewed. */
+  base: string;
+  showMinimap?: boolean;
 }
 
 export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
-  { layout, selectedId, onSelect, onScaleChange },
+  { layout, selectedId, onSelect, onScaleChange, base, showMinimap = true },
   ref,
 ) {
   const elRef = useRef<HTMLDivElement>(null);
@@ -65,6 +69,11 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       const wy = (sy - cur.y) / cur.scale;
       return { scale: ns, x: sx - wx * ns, y: sy - wy * ns };
     });
+  };
+
+  /** Centre a world point without changing zoom — used by the minimap and tile nav. */
+  const centerOn = (wx: number, wy: number) => {
+    setT((cur) => ({ ...cur, x: vp.w / 2 - wx * cur.scale, y: vp.h / 2 - wy * cur.scale }));
   };
 
   useImperativeHandle(ref, () => ({
@@ -145,7 +154,16 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     }
   };
 
-  // keyboard: arrows pan, +/- zoom, 0 fits, Escape clears the selection
+  /** Move the selection one tile in a direction and bring it on screen. */
+  const stepSelection = (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => {
+    const id = nextTileId(layout.placed, selectedId, dx, dy);
+    if (!id) return;
+    onSelect(id);
+    const target = layout.placed.find((p) => p.tile.id === id);
+    if (target) centerOn(target.x + target.w / 2, target.y + target.h / 2);
+  };
+
+  // keyboard: arrows pan, shift+arrows walk tiles, +/- zoom, 0 fits, Escape clears
   const onKeyDown = (e: React.KeyboardEvent) => {
     const PAN = 90;
     switch (e.key) {
@@ -161,16 +179,20 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
         fitTo(layout.bounds);
         break;
       case "ArrowLeft":
-        setT((c) => ({ ...c, x: c.x + PAN }));
+        if (e.shiftKey) stepSelection(-1, 0);
+        else setT((c) => ({ ...c, x: c.x + PAN }));
         break;
       case "ArrowRight":
-        setT((c) => ({ ...c, x: c.x - PAN }));
+        if (e.shiftKey) stepSelection(1, 0);
+        else setT((c) => ({ ...c, x: c.x - PAN }));
         break;
       case "ArrowUp":
-        setT((c) => ({ ...c, y: c.y + PAN }));
+        if (e.shiftKey) stepSelection(0, -1);
+        else setT((c) => ({ ...c, y: c.y + PAN }));
         break;
       case "ArrowDown":
-        setT((c) => ({ ...c, y: c.y - PAN }));
+        if (e.shiftKey) stepSelection(0, 1);
+        else setT((c) => ({ ...c, y: c.y - PAN }));
         break;
       case "Escape":
         onSelect(null);
@@ -182,7 +204,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   };
 
   // virtualization: only render tiles intersecting the viewport (+ margin)
-  const visible = useMemo(() => cullTiles(layout.placed, t, vp), [layout, t, vp]);
+  const index = useMemo(() => buildTileIndex(layout.placed), [layout]);
+  const visible = useMemo(() => cullTilesIndexed(index, t, vp), [index, t, vp]);
   const labelsVisible = useMemo(() => cullLabels(layout.labels, t, vp), [layout, t, vp]);
 
   const showTileLabels = t.scale > TILE_LABEL_MIN_SCALE;
@@ -192,7 +215,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       ref={elRef}
       className="vc-canvas"
       role="application"
-      aria-label="Screenshot canvas — arrow keys pan, plus and minus zoom, 0 fits all"
+      aria-label="Screenshot canvas — arrow keys pan, shift+arrows move between shots, plus and minus zoom, 0 fits all"
       tabIndex={0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -214,33 +237,55 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
           </div>
         ))}
         {visible.map((p) => {
-          const src = DATA + lodFor(p.tile, p.w * t.scale);
+          const src = lodFor(p.tile, p.w * t.scale);
           const selected = p.tile.id === selectedId;
+          const failed = p.tile.error !== undefined;
           return (
             <div
               key={p.tile.id}
               data-tile-id={p.tile.id}
-              className={"vc-tile" + (selected ? " is-selected" : "")}
+              className={
+                "vc-tile" + (selected ? " is-selected" : "") + (failed ? " is-failed" : "")
+              }
               style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
             >
-              <img
-                src={src}
-                draggable={false}
-                loading="lazy"
-                decoding="async"
-                alt={p.tile.stateLabel}
-              />
+              {failed || !src ? (
+                // A failed capture still occupies its place in the catalog: dropping
+                // it would read as "this state doesn't exist".
+                <div className="vc-tile-failed">
+                  <span className="vc-tile-failed-mark">!</span>
+                  {showTileLabels && <span className="vc-tile-failed-msg">{p.tile.error}</span>}
+                </div>
+              ) : (
+                <img
+                  src={base + src}
+                  draggable={false}
+                  loading="lazy"
+                  decoding="async"
+                  alt={p.tile.stateLabel}
+                />
+              )}
               {showTileLabels && (
                 <div className="vc-tile-meta">
                   <span className="vc-badge">{p.tile.device}</span>
                   <span className="vc-tile-state">{p.tile.stateLabel}</span>
                   {p.cropped && <span className="vc-badge vc-badge-warn">tall</span>}
+                  {p.tile.clamped && <span className="vc-badge vc-badge-warn">cropped</span>}
                 </div>
               )}
             </div>
           );
         })}
       </div>
+      {showMinimap && (
+        <Minimap
+          layout={layout}
+          transform={t}
+          viewport={vp}
+          selectedId={selectedId}
+          onJump={centerOn}
+        />
+      )}
     </div>
   );
 });

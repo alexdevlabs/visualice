@@ -18,8 +18,13 @@ export async function writeFull(
   }
 }
 
-export async function makeThumb(buf: Buffer, destPath: string, thumb: Thumb): Promise<void> {
-  let img = sharp(buf).resize({ width: thumb.width, withoutEnlargement: true });
+export async function makeThumb(
+  buf: Buffer,
+  destPath: string,
+  thumb: Thumb,
+  width = thumb.width,
+): Promise<void> {
+  let img = sharp(buf).resize({ width, withoutEnlargement: true });
   if (thumb.format === "webp") img = img.webp({ quality: thumb.quality });
   else if (thumb.format === "jpeg") img = img.jpeg({ quality: thumb.quality });
   else img = img.png();

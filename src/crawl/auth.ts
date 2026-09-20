@@ -23,9 +23,39 @@ export function resolveEnvSteps(steps: RecipeStep[]): RecipeStep[] {
   return out;
 }
 
+/** The shape Playwright writes; only the cookie expiries matter here. */
+interface StorageState {
+  cookies?: { name: string; expires?: number }[];
+}
+
+/**
+ * When the saved session's own cookies say it expires, in ms since the epoch.
+ *
+ * File mtime only says when the session was *written*, which is a guess at when it
+ * stops working. The cookies carry the real answer, so a short-lived session is
+ * refreshed when it actually expires rather than when a fixed age elapses. Session
+ * cookies (`expires` of -1) have no expiry to read and are ignored; the soonest
+ * real expiry wins, since that's what logs the crawl out.
+ */
+export async function storageStateExpiry(file: string): Promise<number | undefined> {
+  const raw = await fs.readFile(file, "utf8").catch(() => undefined);
+  if (raw === undefined) return undefined;
+  let state: StorageState;
+  try {
+    state = JSON.parse(raw) as StorageState;
+  } catch {
+    return undefined; // unreadable: fall back to mtime
+  }
+  const expiries = (state.cookies ?? [])
+    .map((c) => c.expires)
+    .filter((e): e is number => typeof e === "number" && e > 0)
+    .map((e) => e * 1000); // Playwright stores seconds
+  return expiries.length ? Math.min(...expiries) : undefined;
+}
+
 /**
  * Ensure a Playwright storageState file exists for authenticated crawls.
- * - Reuses a recent storageState if present.
+ * - Reuses a stored session while it is still valid (by cookie expiry, else by age).
  * - Otherwise, if a login recipe is configured, runs it once and saves the session.
  * - Returns the absolute path to use as `storageState`, or undefined for anonymous crawls.
  */
@@ -42,8 +72,21 @@ export async function ensureStorageState(
 
   const stat = await fs.stat(abs).catch(() => null);
   if (stat) {
-    const ageHours = (Date.now() - stat.mtimeMs) / 3.6e6;
-    if (ageHours < maxAgeHours || !login) return abs; // fresh, or no recipe to refresh with
+    if (!login) return abs; // no recipe to refresh with — use what we have
+    // Cookie expiry is the session's own answer; `maxAgeHours` is the fallback for
+    // sessions whose cookies don't carry one. A minute of slack keeps a crawl from
+    // starting with a session that expires while it runs.
+    const expiry = await storageStateExpiry(abs);
+    const fresh =
+      expiry !== undefined
+        ? expiry - Date.now() > 60_000
+        : (Date.now() - stat.mtimeMs) / 3.6e6 < maxAgeHours;
+    if (fresh) return abs;
+    log(
+      expiry !== undefined
+        ? `saved session expired (cookies expired ${new Date(expiry).toISOString()})`
+        : `saved session is older than ${maxAgeHours}h`,
+    );
   } else if (!login) {
     return undefined; // nothing saved and no way to create it
   }

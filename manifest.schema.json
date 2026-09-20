@@ -139,6 +139,8 @@
                     "popover",
                     "toast",
                     "hover",
+                    "focus",
+                    "validation",
                     "other"
                   ]
                 },
@@ -311,6 +313,71 @@
                         "required": [
                           "action",
                           "target"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "focus"
+                          },
+                          "target": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "description": "ARIA role, resolved via getByRole.",
+                                "type": "string"
+                              },
+                              "name": {
+                                "description": "Accessible name to match alongside `role`.",
+                                "type": "string"
+                              },
+                              "testId": {
+                                "description": "data-testid value (highest priority).",
+                                "type": "string"
+                              },
+                              "label": {
+                                "description": "Form-control label text.",
+                                "type": "string"
+                              },
+                              "text": {
+                                "description": "Visible text content.",
+                                "type": "string"
+                              },
+                              "selector": {
+                                "description": "CSS selector (last resort).",
+                                "type": "string"
+                              },
+                              "exact": {
+                                "description": "Exact-match text/name instead of substring.",
+                                "type": "boolean"
+                              },
+                              "nth": {
+                                "description": "Pick the nth match (0-based).",
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "description": "A robust element locator, resolved in priority order (see selectors.ts)."
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "target"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "const": "blur"
+                          }
+                        },
+                        "required": [
+                          "action"
                         ]
                       },
                       {
@@ -551,6 +618,12 @@
                       },
                       "height": {
                         "type": "number"
+                      },
+                      "mid": {
+                        "type": "string"
+                      },
+                      "clamped": {
+                        "type": "boolean"
                       },
                       "error": {
                         "type": "string"

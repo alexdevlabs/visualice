@@ -12,13 +12,29 @@ concurrency:
 
 jobs:
   check:
-    name: typecheck · lint · unit tests
-    runs-on: ubuntu-latest
+    name: typecheck · lint · unit tests (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One OS/node combo failing shouldn't hide failures on the others.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [22]
+        include:
+          # Windows is the point of this matrix: symlink creation (src/shared/fsx.ts,
+          # src/crawl/runs.ts) and the `open`-based browser shim behave differently
+          # there than on POSIX, and neither is exercised by macOS/Linux alone. We
+          # don't also need windows x node-20 — the node-version axis and the OS axis
+          # are independent concerns, so one extra leg (oldest supported engine, on
+          # the OS we already trust) is enough to cover both without a full cross
+          # product of CI minutes.
+          - os: ubuntu-latest
+            node: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -26,6 +42,68 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run viewer:build
+
+      # Coverage reporting. @vitest/coverage-v8 isn't a devDependency of this repo
+      # yet, and this workflow is only allowed to touch files under .github/, so it
+      # can't be added to package.json here. Installing it ad hoc with --no-save
+      # pulls it into node_modules for this job only, without writing to
+      # package.json or package-lock.json — once someone adds it as a real
+      # devDependency, this step keeps working unchanged (npm just skips the
+      # redundant install). Pinned to the exact vitest version already in
+      # package-lock.json because vitest requires its coverage provider to match.
+      # Runs once, not once per matrix leg, since the report would just be
+      # identical noise duplicated across OS/node combinations.
+      - name: Coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: |
+          npm i -D --no-save @vitest/coverage-v8@3.2.6
+          npm test -- --coverage
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Bin smoke test: exercises the *packaged* entry point (bin/visualice.mjs),
+      # not `tsx src/cli.ts`, on every matrix leg — this is what would have caught a
+      # Windows-only path or shebang problem in the published CLI. `npm run build`
+      # produces dist/cli.js so bin/visualice.mjs runs the built path instead of
+      # falling back to tsx.
+      - run: npm run build
+      - name: bin smoke test — --help / --version
+        # Explicit bash (Windows runners ship Git Bash): pwsh only fails a step on
+        # the *last* line's exit code, so a failing `--help` followed by a
+        # succeeding `--version` would silently report success there. Bash's
+        # default `-e` stops the step at the first failing line on every OS.
+        shell: bash
+        run: |
+          node bin/visualice.mjs --help
+          node bin/visualice.mjs --version
+      - name: bin smoke test — doctor --json --no-fix
+        # Use bash explicitly (Windows runners ship Git Bash) so this script is
+        # identical on every OS instead of forking into a separate pwsh version.
+        shell: bash
+        run: |
+          # This job never installs a Playwright browser (that only happens in the
+          # `integration` job below), so the chromium check is *expected* to fail
+          # here and `doctor` correctly exits 1 to report "not ready". That's not a
+          # bug — it's the deliberate case we're testing: with --no-fix, doctor must
+          # report the problem as JSON and exit non-zero rather than hang or crash.
+          # We only treat this step as failed if doctor exits with something other
+          # than 0 (all checks passed) or 1 (some checks failed, reported cleanly) —
+          # e.g. an uncaught exception or a signal — which would be an actual bug.
+          set +e
+          node bin/visualice.mjs doctor --json --no-fix
+          code=$?
+          set -e
+          echo "doctor exited with code $code"
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
+            echo "::error::doctor --json --no-fix exited with unexpected code $code"
+            exit 1
+          fi
 
   integration:
     name: browser integration tests
@@ -44,4 +122,53 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:integration
+      # Tee to a log file (in addition to the normal console output) purely so
+      # there's something to attach to the failure-artifact upload below —
+      # `pipefail` (bash's default on GitHub-hosted runners) keeps the step's exit
+      # code the test run's, not tee's.
+      - run: npm run test:integration 2>&1 | tee integration-test-output.log
+      # Failure-only: these tests write their crawl/capture output under the OS
+      # temp dir rather than the repo (see tests/integration/helpers.ts), and most
+      # tests clean that up in a try/finally even when an assertion fails, so
+      # there's normally nothing there worth keeping. On a genuine pass this step
+      # is a no-op; we only pay the upload cost when something actually broke and
+      # a human needs to look at it. `/tmp/vc-*` best-effort catches any temp
+      # output a hard crash left behind (skipping its own cleanup); if-no-files-found
+      # ignore means an empty match there doesn't fail the step.
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-diagnostics
+          path: |
+            integration-test-output.log
+            /tmp/vc-*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  fixture-and-schema:
+    name: fixture + schema drift check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # tests/fixture is generated from tests/fixture-src and committed (so tests
+      # don't need a build step to run). If rebuilding it here produces a diff,
+      # someone edited fixture-src without regenerating the committed output —
+      # `git diff --exit-code` turns that drift into a CI failure instead of a
+      # silently-stale fixture.
+      - name: Rebuild fixture and check for drift
+        run: |
+          npm run fixture:build
+          git diff --exit-code tests/fixture
+      # Same idea for the zod-generated JSON schemas: regenerate and diff against
+      # what's committed, so a schema edited by hand (or a zod change that wasn't
+      # followed by `npm run schema`) fails CI instead of shipping stale.
+      - name: Regenerate schemas and check for drift
+        run: |
+          npm run schema
+          git diff --exit-code config.schema.json manifest.schema.json

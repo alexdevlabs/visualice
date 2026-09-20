@@ -5,6 +5,7 @@ import { locatorFor } from "../shared/selectors";
 import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe } from "./recipe";
+import { discoverFormStates } from "./discover-forms";
 
 interface RawCandidate {
   target: Target;
@@ -507,6 +508,22 @@ export async function discoverStates(
         next.push(...(await probeFrom(ctx, parent)));
       }
       frontier = next;
+    }
+
+    // Form probing runs last and on a clean page: it leaves fields focused and
+    // possibly showing errors, which would poison any subsequent trigger probe.
+    if (interactions.formStates && states.length - 1 < interactions.maxPerPage) {
+      await page.goto(routeUrl, { waitUntil });
+      const { states: formStates, note } = await discoverFormStates(
+        page,
+        interactions.clickTimeoutMs,
+      );
+      for (const state of formStates) {
+        if (states.length - 1 >= interactions.maxPerPage) break;
+        states.push(state);
+        log(`    + ${state.kind}: ${state.label}`);
+      }
+      if (note && !formStates.length) log(`    · forms: ${note}`);
     }
   } finally {
     await page.close().catch(() => {});

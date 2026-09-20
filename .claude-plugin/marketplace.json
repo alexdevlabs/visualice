@@ -1,0 +1,13 @@
+{
+  "name": "visualice",
+  "owner": {
+    "name": "Alexecus"
+  },
+  "plugins": [
+    {
+      "name": "visualice",
+      "source": "./",
+      "description": "Crawl a website, capture every page and UI state (modals, menus, drawers, accordions, tabs) across device profiles, and browse the screenshots on a zoomable canvas."
+    }
+  ]
+}

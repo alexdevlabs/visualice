@@ -16,6 +16,7 @@ const FLAG_TYPES: Record<string, FlagType> = {
   base: "string",
   manifest: "string",
   replay: "boolean",
+  resume: "boolean",
   run: "string",
   port: "string",
   open: "boolean",
@@ -32,6 +33,12 @@ const FLAG_TYPES: Record<string, FlagType> = {
   timeout: "string",
   out: "string",
   "no-save": "boolean",
+  "no-fix": "boolean",
+  from: "string",
+  to: "string",
+  threshold: "string",
+  "min-ratio": "string",
+  "diff-out": "string",
 };
 
 /** Commands that accept one bare positional, mapped onto a flag (crawl <url>). */
@@ -57,6 +64,7 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
     "config",
     "base",
     "replay",
+    "resume",
     "json",
     "quiet",
     "fail-on-error",
@@ -73,6 +81,19 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   fixture: ["port", "open", "quiet"],
   demo: ["config", "json", "quiet", "fail-on-error"],
   "demo-crawl": ["config", "replay", "json", "quiet", "fail-on-error"],
+  doctor: ["json", "quiet", "no-fix"],
+  diff: [
+    "config",
+    "from",
+    "to",
+    "threshold",
+    "min-ratio",
+    "diff-out",
+    "json",
+    "quiet",
+    "fail-on-error",
+    "out",
+  ],
 };
 
 /**
@@ -125,6 +146,17 @@ export function intFlag(flags: Flags, name: string): number | undefined {
   const n = Number(v);
   if (!Number.isInteger(n) || n <= 0) {
     throw new UsageError(`--${name} must be a positive integer (got "${v}")`);
+  }
+  return n;
+}
+
+/** A non-negative decimal flag (a ratio/fraction), rejecting junk loudly. */
+export function floatFlag(flags: Flags, name: string): number | undefined {
+  const v = str(flags, name);
+  if (v === undefined) return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new UsageError(`--${name} must be a non-negative number (got "${v}")`);
   }
   return n;
 }

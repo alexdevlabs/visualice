@@ -4,7 +4,16 @@ import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import { loadConfig, type Config } from "./shared/config";
-import { COMMAND_FLAGS, UsageError, applyOverrides, parseFlags, str, type Flags } from "./cli-args";
+import {
+  COMMAND_FLAGS,
+  UsageError,
+  applyOverrides,
+  floatFlag,
+  intFlag,
+  parseFlags,
+  str,
+  type Flags,
+} from "./cli-args";
 import { loadInputManifest, saveJson } from "./crawl/manifest";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
 import { capturePipeline, crawlPipeline } from "./crawl/orchestrator";
@@ -20,6 +29,9 @@ import { ensureStorageState } from "./crawl/auth";
 import { pathExists } from "./shared/fsx";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
+import { formatDoctor, runDoctor } from "./doctor";
+import { diffRuns } from "./diff";
+import { latestRunId, listRuns, runDir } from "./crawl/runs";
 import type { Manifest } from "./shared/types";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +77,8 @@ Usage:
   visualice demo              Capture the bundled fixture from a hand-written manifest
   visualice demo-crawl        Full discover→capture run against the bundled fixture
   visualice fixture [opts]    Serve the bundled fixture blog so you can browse it
+  visualice doctor [--no-fix] Check Node/Playwright/viewer deps and self-heal
+  visualice diff [opts]       Pixel-diff two runs → diff-report.md (default: last two)
   visualice serve [opts]      Launch the zoomable results viewer
   visualice --version         Print the version
 
@@ -78,6 +92,7 @@ Options (flags accept --name=value or --name value):
   --no-save            for 'crawl': don't scaffold a config on first run
   --manifest=<path>    input manifest for 'capture' / 'validate'
   --replay             for 'crawl': reuse cached site model, skip discovery
+  --resume             for 'crawl': continue the newest interrupted run
   --json               print a machine-readable JSON summary to stdout
   --quiet              suppress progress output on stderr
   --fail-on-error      exit 3 if any capture failed
@@ -92,8 +107,15 @@ Options (flags accept --name=value or --name value):
   --port=<n>           for 'serve'/'fixture': fixed port (default: random)
   --open               for 'serve'/'fixture': open in your browser
   --shoot=<file>       for 'serve': headless-screenshot the viewer to a file, then exit
+  --no-fix             for 'doctor': report problems without repairing them
+  --from=<runId>       for 'diff': baseline run (default: the run before --to)
+  --to=<runId>         for 'diff': new run (default: latest)
+  --threshold=<n>      for 'diff': per-channel tolerance, 0-255 (default 12)
+  --min-ratio=<f>      for 'diff': fraction of pixels that must differ (default 0)
+  --diff-out=<dir>     for 'diff': where to write the report (default .visualice/diffs/…)
 
-Exit codes: 0 ok · 1 error · 2 usage · 3 capture failures (with --fail-on-error)
+Exit codes: 0 ok · 1 error · 2 usage · 3 capture failures / visual differences
+(with --fail-on-error)
 
 Output lands under <config.output.dir>/runs/<runId>/ (default .visualice/).`);
 }
@@ -179,8 +201,18 @@ async function cmdValidate(flags: Flags): Promise<void> {
   if (issues.length) process.exitCode = 1;
 }
 
+/**
+ * A published package ships `viewer/dist` prebuilt. In a source checkout it may be
+ * missing, so build it once — but only when the sources are actually there; an
+ * installed package with no dist is a broken install, not a build opportunity.
+ */
 async function ensureViewerBuilt(viewerDist: string, log: Log): Promise<void> {
   if (await pathExists(path.join(viewerDist, "index.html"))) return;
+  if (!(await pathExists(path.join(PROJECT_ROOT, "viewer", "index.html")))) {
+    throw new Error(
+      `the viewer is missing from this install (${viewerDist}) — reinstall visualice, or run 'visualice doctor'`,
+    );
+  }
   log("building viewer (first run)…");
   await new Promise<void>((resolve, reject) => {
     const child = spawn("npx", ["vite", "build", "viewer"], {
@@ -191,6 +223,21 @@ async function ensureViewerBuilt(viewerDist: string, log: Log): Promise<void> {
       code === 0 ? resolve() : reject(new Error(`vite build failed (${code})`)),
     );
   });
+}
+
+async function cmdDoctor(flags: Flags): Promise<void> {
+  const log = makeLog(flags);
+  const result = await runDoctor({
+    projectRoot: PROJECT_ROOT,
+    fix: flags["no-fix"] !== true,
+    log,
+  });
+  if (flags.json === true) {
+    console.log(JSON.stringify(result));
+  } else {
+    for (const line of formatDoctor(result)) console.log(line);
+  }
+  if (!result.ok) process.exitCode = 1;
 }
 
 async function shootViewer(url: string, outFile: string): Promise<void> {
@@ -238,6 +285,98 @@ function untilInterrupted(): Promise<void> {
   });
 }
 
+/**
+ * Resolve --from/--to into run directories. Each may be a run id or a path; with
+ * neither, the two most recent runs are compared (the "what did my last change do?"
+ * case, which should need no arguments at all).
+ */
+async function resolveDiffRuns(
+  outRoot: string,
+  flags: Flags,
+): Promise<{ fromDir: string; toDir: string; fromId: string; toId: string }> {
+  const runs = await listRuns(outRoot);
+  const resolveOne = (v: string): { id: string; dir: string } =>
+    v.includes(path.sep) || v.startsWith(".")
+      ? { id: path.basename(path.resolve(v)), dir: path.resolve(v) }
+      : { id: v, dir: runDir(outRoot, v) };
+
+  const toFlag = str(flags, "to");
+  const fromFlag = str(flags, "from");
+  const to = toFlag
+    ? resolveOne(toFlag)
+    : await (async () => {
+        const id = await latestRunId(outRoot);
+        if (!id) throw new UsageError(`no runs under ${outRoot}/runs — run a crawl first`);
+        return { id, dir: runDir(outRoot, id) };
+      })();
+
+  const from = fromFlag
+    ? resolveOne(fromFlag)
+    : (() => {
+        const before = runs.filter((r) => r !== to.id);
+        const id = before.at(-1);
+        if (!id) {
+          throw new UsageError(
+            `only one run under ${outRoot}/runs — a diff needs two (pass --from=<runId>)`,
+          );
+        }
+        return { id, dir: runDir(outRoot, id) };
+      })();
+
+  if (from.dir === to.dir) throw new UsageError(`--from and --to are the same run (${from.id})`);
+  for (const r of [from, to]) {
+    if (!(await pathExists(path.join(r.dir, "crawl-map.json")))) {
+      throw new UsageError(`no run manifest at ${r.dir}/crawl-map.json`);
+    }
+  }
+  return { fromDir: from.dir, toDir: to.dir, fromId: from.id, toId: to.id };
+}
+
+async function cmdDiff(flags: Flags): Promise<void> {
+  const log = makeLog(flags);
+  const config = await loadConfigWithOverrides(flags);
+  const outRoot = path.resolve(config.output.dir);
+  const { fromDir, toDir, fromId, toId } = await resolveDiffRuns(outRoot, flags);
+
+  const outDir = str(flags, "diff-out") ?? path.join(outRoot, "diffs", `${fromId}__${toId}`);
+  log(`diffing ${fromId} → ${toId}`);
+  const diff = await diffRuns({
+    fromDir,
+    toDir,
+    outDir,
+    threshold: intFlag(flags, "threshold"),
+    minRatio: floatFlag(flags, "min-ratio"),
+    concurrency: config.politeness.concurrency,
+    log,
+  });
+
+  const { summary } = diff;
+  if (flags.json === true) {
+    console.log(
+      JSON.stringify({
+        from: fromId,
+        to: toId,
+        outDir,
+        report: path.join(outDir, "diff-report.md"),
+        ...summary,
+        changedShots: diff.shots
+          .filter((s) => s.status === "changed")
+          .map((s) => ({ route: s.route, state: s.state, device: s.device, ratio: s.ratio })),
+      }),
+    );
+  } else {
+    log("");
+    log(
+      `${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged`,
+    );
+    console.log(path.join(outDir, "diff-report.md"));
+  }
+  if (flags["fail-on-error"] === true && summary.changed + summary.added + summary.removed > 0) {
+    log("visual differences found — exiting 3 (--fail-on-error)");
+    process.exitCode = 3;
+  }
+}
+
 async function cmdServe(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
@@ -253,7 +392,14 @@ async function cmdServe(flags: Flags): Promise<void> {
   const viewerDist = path.join(PROJECT_ROOT, "viewer", "dist");
   await ensureViewerBuilt(viewerDist, log);
 
-  const server = await serveViewer({ runDir, viewerDist, port: parsePort(flags) });
+  const server = await serveViewer({
+    runDir,
+    viewerDist,
+    // Sibling runs are exposed too, so the viewer's run switcher has somewhere to go.
+    outRoot,
+    runId: runId === "latest" ? ((await latestRunId(outRoot)) ?? runId) : runId,
+    port: parsePort(flags),
+  });
 
   const shoot = str(flags, "shoot");
   if (shoot !== undefined) {
@@ -324,6 +470,7 @@ async function cmdCrawl(flags: Flags): Promise<void> {
     config,
     baseUrl,
     replay: flags.replay === true,
+    resume: flags.resume === true,
     log,
   });
   reportDone(runDir, manifest, flags, log);
@@ -496,6 +643,10 @@ async function main(): Promise<void> {
       return cmdCapture(flags);
     case "serve":
       return cmdServe(flags);
+    case "doctor":
+      return cmdDoctor(flags);
+    case "diff":
+      return cmdDiff(flags);
   }
 }
 

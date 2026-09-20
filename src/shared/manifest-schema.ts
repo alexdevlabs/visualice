@@ -25,6 +25,8 @@ export const RecipeStepSchema = z
     z.object({ action: z.literal("navigate"), url: z.string() }),
     z.object({ action: z.literal("click"), target: TargetSchema }),
     z.object({ action: z.literal("hover"), target: TargetSchema }),
+    z.object({ action: z.literal("focus"), target: TargetSchema }),
+    z.object({ action: z.literal("blur") }),
     z.object({ action: z.literal("fill"), target: TargetSchema, value: z.string() }),
     z.object({ action: z.literal("press"), key: z.string(), target: TargetSchema.optional() }),
     z.object({
@@ -52,6 +54,8 @@ export const StateKindSchema = z.enum([
   "popover",
   "toast",
   "hover",
+  "focus",
+  "validation",
   "other",
 ]);
 
@@ -62,6 +66,8 @@ export const ShotRefSchema = z.object({
   meta: z.string().optional(),
   width: z.number().optional(),
   height: z.number().optional(),
+  mid: z.string().optional(),
+  clamped: z.boolean().optional(),
   error: z.string().optional(),
 });
 

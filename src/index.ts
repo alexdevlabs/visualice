@@ -11,8 +11,9 @@
  * const { runDir } = await crawlPipeline({ config, baseUrl: "https://example.com" });
  * ```
  *
- * The package ships TypeScript sources (no build step) — run consumers with
- * `tsx`, or through any bundler that compiles TS.
+ * The package ships built ESM plus type declarations in `dist/` (`npm run build`,
+ * run automatically on publish), so consumers need no TypeScript toolchain of their
+ * own. Node 20.12+.
  */
 
 export { loadConfig, ConfigSchema, DeviceSchema } from "./shared/config";

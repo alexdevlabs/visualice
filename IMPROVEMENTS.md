@@ -1,120 +1,126 @@
 # Visualice — Roadmap
 
-> What's left to build, prioritized (updated 2026-08-05). The full 2026-07-28 code
-> review produced ~43 findings; everything not listed here was implemented in the
-> Tier 1–4 pass (agent contract: failures end-to-end, `--json`, exit codes, strict
-> flags, `validate` + manifest schema, retries; CLI ergonomics: override flags,
-> cross-platform open, SIGINT handling; discovery: hover + mobile passes, parallel
-> probing, dark-mode/locale/TZ pinning, auth verify, `http` config, sitemap/robots
-> hardening; viewer: deferred search, indexed layout, rAF pan, immutable caching,
-> keyboard nav; 31 new tests). The **project-file UX** (PLAN.md §9 — editable
-> `visualice.routes.md` with `skip:`/`[ ]` steering, `wanted` surfacing, `init` +
-> `routes` commands, config auto-detection, auto-scaffold on first crawl) shipped
-> 2026-08-05. See git history for details.
+> Updated 2026-09-21. The 2026-07-28 code review's ~43 findings and the
+> **project-file UX** (PLAN.md §9, shipped 2026-08-05) are done. The 2026-09-21
+> roadmap pass — everything that used to be §1–§5 of this file — is done too, and
+> is summarised below so the remaining items have context.
 >
-> `PLAN.md` holds the design rationale (architecture, pipeline, viewer design).
+> `PLAN.md` holds the design rationale (architecture, pipeline, viewer design);
+> §10 there covers the distribution and diffing decisions from this pass.
 
-## 1. Distribution — the make-or-break cluster
+## ⚠ Status: this work is uncommitted
 
-The whole premise is "an on-demand crawler any agent can invoke against whatever
-project it's in" — but today visualice only works from this repo's root, through
-`tsx`. These four items are really one job:
+Everything below marked ✅ exists in the working tree but **has not been committed**
+(78 changed/new paths at last count). Nothing here is in git history yet.
 
-- [ ] **Location independence.** Run from any cwd: write `.visualice/` into the
-      _target project_, resolve viewer assets / fixture relative to the install
-      (not `process.cwd()` / `PROJECT_ROOT` assumptions in `cli.ts`).
-- [ ] **Build to JS / publish.** `package.json` is `private: true` and ships raw TS;
-      `bin/visualice.mjs` re-spawns `npx tsx` (a devDependency required at runtime —
-      breaks when installed as a dependency). Ship a `dist/` build with a real `bin`
-      entry, npx-able or globally linkable.
-- [ ] **Plugin restructure.** Package skill + engine as a marketplace-installable
-      Claude Code plugin instead of a cloned repo + symlinked SKILL.md. Focused entry
-      points: `/visualice <url>` (crawl), `/visualice-view`, later `/visualice-diff`;
-      shared reference material in `references/`.
-- [ ] **`visualice doctor`** — idempotent preflight that checks Node version + deps +
-      Playwright chromium and self-heals (`npx playwright install chromium`), so the
-      skill's first run doesn't die cryptically. Replaces the manual
-      `npm install && npx playwright install chromium` step.
+**Verification as of the last run:**
 
-**Open decision:** packaging shape — plugin-with-embedded-engine vs. npm package
-that a thin skill wrapper shells out to. Leaning npm-package + wrapper (keeps the
-engine usable outside Claude).
+- `npm run check` (typecheck · lint · format · unit): green — **322 unit tests**.
+- `npm run test:integration`: green at **36 tests**, before the 3 form-state tests
+  below were added. Not re-run since.
+- `npx tsc --noEmit` and `eslint` on the in-flight form work: clean.
 
-## 2. Run diffing — the headline feature
+### One thing is finished but unverified — start here
 
-- [ ] **Run diff (Phase 2 headline).** The skill/README promise "visual regression
-      between runs" and nothing implements it. Minimal version: compare two run dirs'
-      manifests, pixel-diff matching shots, emit `diff-report.md` with
-      changed/added/removed states; surface in the viewer later. This is what makes
-      the tool more than a screenshot script.
+**Form-state discovery (`src/crawl/discover-forms.ts`)** is written, wired into
+`discoverStates`, and has 10 unit + 3 integration tests, all passing. A full crawl
+then showed a bug, and **the fix is applied but was never verified** because the
+confirming crawl got interrupted:
 
-## 3. Worth doing, not urgent
+- **The bug:** `discoverFormStates` returned states with no `signature`.
+  `mergeMobileStates` (`src/crawl/discover.ts:31-35`) dedupes the mobile discovery
+  pass by `signature`, so the form states survived it and `uniqueId` renamed them —
+  producing **two `focus` states per form route**. Observed on `/contact` and
+  `/login`; the fixture crawl went from 68 to 74 shots.
+- **The fix, already in the tree:** `discover-forms.ts` now sets
+  `signature: "focus:<target>"` and `signature: "validation:<targets>"` via
+  `describeTarget`. It typechecks and lints.
+- **To confirm:** `npm run demo:crawl`, then check each of `/contact` and `/login`
+  has exactly **one** `focus` state and the run is **72 shots** (68 + 2 routes × 2
+  devices). Then run the full `npm run check` and `npm run test:integration`.
 
-- [ ] **Capture page-reuse.** Fresh `page.goto` per route×state×device
-      (`capture.ts`) — group states by route×device and reuse the page where safe;
-      roughly halves capture time on big sites.
-- [ ] **Consume `hints`.** `stableSelectors`/`flakyRegions`/`skipTriggers`
-      (`types.ts`) are merged, stored, and validated — but never read by the engine,
-      so Explore-mode advice silently does nothing. Same for `site.framework`.
-- [ ] **Run lock.** Two concurrent runs sharing `crawl-map.cache.json` / `auth.json`
-      corrupt each other (`orchestrator.ts`, `auth.ts`).
-- [ ] **Run pruning.** `output.keepRuns` is configured but `pruneRuns` relies on
-      lexical dir sort and swallows rm errors (`orchestrator.ts`).
-- [ ] **Screenshot safety.** Unbounded full-page shots on infinite-scroll pages
-      (clamp height); invalid `maskSelectors` throw at screenshot time with no
-      pre-validation.
-- [ ] **Config snapshot redaction pass** before writing run artifacts
-      (`orchestrator.ts`) — defense in depth on top of the `${ENV_VAR}`
-      placeholder convention.
-- [ ] **Progress/ETA output + resume** of an interrupted crawl.
+Also worth knowing: the fixture's own contact form validates on submit, not on blur,
+so no `validation` state is discovered there — correct behaviour (discovery never
+submits), and the reason the validation path is covered by a synthetic
+blur-validating page in `tests/integration/discover-forms.test.ts` instead.
 
-## 4. Viewer polish (deferrable)
+## ✅ Shipped in the 2026-09-21 pass
 
-- [ ] **Run switcher** (today requires restarting the server with `--run=`).
-- [ ] **Minimap/overview.**
-- [ ] **Failed-capture indicators** (failures are in `viewer-data` inputs now;
-      `toViewerData` should surface them).
-- [ ] **Robustness:** error boundary + schema validation on `viewer-data.json`
-      (`App.tsx`); constrain `?data=` (currently accepts arbitrary URLs); pagination
-      for huge runs.
-- [ ] **Type drift:** `viewer/src/types.ts` is a hand-maintained duplicate of
-      `src/shared/types.ts` — share the types or add a drift test.
-- [ ] **LOD mid-tier:** only 480px thumb ↔ full multi-MB PNG (`lod.ts`); add a
-      ~1024px tier (or DZI tiles) for dpr-3 full-page shots.
-- [ ] **Smaller features:** state-kind filter (data already in
-      `ViewerTile.stateKind`); side-by-side device compare; deep-linkable URL state;
-      viewport-crop display (`toViewerData` drops `ref.viewport` + `ref.meta`);
-      per-tile keyboard focus nav; spatial grid for culling.
+- **Distribution.** Publishable npm package (`dist/` ESM bundle + declarations via
+  `npm run build`, `prepack`, `files`, `engines`); `bin/visualice.mjs` runs the build
+  and falls back to `tsx` only in a source checkout whose sources are newer than it.
+  `visualice doctor` is the self-healing preflight. The repo root is now a Claude
+  Code plugin _and_ marketplace (`.claude-plugin/`, `commands/`, `skills/`),
+  replacing the cloned-repo + symlinked-SKILL.md arrangement. Location independence
+  is held down end-to-end by `tests/integration/cli-bin.test.ts`.
+- **Run diffing.** `visualice diff` pairs two runs by route|state|device, pixel-diffs
+  each pair (overlap-only when a page's height changed), writes `diff-report.md` +
+  `diff.json` + magenta-highlighted diff images, and exits 3 under `--fail-on-error`.
+- **Engine.** Page reuse per worker; `hints` consumed (flakyRegions → masks,
+  stableSelectors → waits, skipTriggers → discovery denials); output-directory lock;
+  pruning by parsed run time that never counts or deletes directories it didn't
+  create; `screenshot.maxHeight` clamp + selector pre-validation; credential
+  redaction in the config snapshot; progress + ETA; `crawl --resume`; `http.proxy`;
+  auth freshness from cookie expiry rather than file mtime; focus/validation form
+  states (see the caveat above).
+- **Viewer.** Grouped layout wraps into columns (Fit went from 2% to ~17% on the
+  fixture); run switcher; minimap; failed captures as placeholder tiles with a filter
+  toggle; error boundary + `viewer-data.json` validation; `?data=` restricted to
+  same-origin; mid-resolution LOD tier (56 KB vs 735 KB at reading zoom);
+  spatial-grid culling; state-kind filter; deep-linkable URL state; shift+arrow tile
+  navigation; viewport-crop link; tile cap for huge runs; types shared with the
+  engine instead of duplicated.
+- **Tests & CI.** 322 unit + 39 integration tests. CI runs a Windows leg, a bin smoke
+  test against the built CLI, coverage, failure-only artifact upload and a
+  fixture/schema drift check; `release.yml` publishes on a `v*` tag.
 
-## 5. Tests & CI
+Two bugs were found and fixed by this work rather than reported by anyone:
 
-- [ ] **Orchestration seam coverage:** `orchestrator.ts` (`makeRunId`, `pruneRuns`,
-      `updateLatest`, **`toViewerData`** — the viewer data contract), capture failure
-      paths, `thumbnails.ts`, auth flow (staleness, `--force`, verify), sitemap /
-      `maxDepth`/`maxPages` boundaries, `pool.ts`, `file-serve` MIME/streaming.
-- [ ] **CI matrix:** Windows runner (would catch symlink/`open` issues before a user
-      does), artifact upload on integration failure, `visualice --help` bin smoke
-      test, coverage reporting, fixture rebuild+diff check, release/publish workflow.
+- **Page reuse leaked `:hover` between shots.** A reused page keeps its pointer
+  position, and the browser re-applies `:hover` at that position to each newly
+  loaded document — a phantom hover painted into unrelated screenshots. Caught by
+  `visualice diff` itself (9 of 68 shots changed against the pre-rework baseline),
+  fixed by parking the pointer off-viewport after navigation, and pinned by
+  `tests/integration/capture-pool.test.ts` (60,000 leaked pixels without the fix).
+- **`clip` without `fullPage` silently clamps to the viewport**, so the first cut of
+  `screenshot.maxHeight` produced 300px-tall images instead of 1000px ones.
 
-## Leftover engine niceties (backlog)
+## 1. Engine niceties still open
 
-- Focus/validation-state probing in discovery (hover is done; focus states and form
-  validation states are not).
-- Real hash-SPA support (hash-routed SPAs collapse into one route; the dead
-  `followSpaNav` knob was removed).
-- Signature dedupe is id-dependent — anonymous dialogs can collapse
-  (`discover-states.ts`).
-- Cookie-expiry–based auth freshness (currently mtime-only).
-- Proxy config in the `http` section.
-- Per-candidate re-navigation inside `probeFrom` (route-level parallelism is done;
-  within-route probing still re-navigates often).
-- SKILL.md: run-size estimation guidance before crawling a large site; `.visualice/`
-  cleanup guidance.
+- [ ] **Real hash-SPA support.** Hash-routed SPAs still collapse into one route.
+- [ ] **Signature dedupe is id-dependent** (`discover-states.ts`) — two anonymous
+      dialogs can still collapse into one state.
+- [ ] **Per-candidate re-navigation inside `probeFrom`.** Route-level parallelism is
+      done; within-route probing still re-navigates more than it needs to.
+- [ ] **Page reuse didn't pay off as hoped.** Measured on the bundled fixture it made
+      no difference (30.2s before and after, 68 shots): the cost is navigation plus
+      stabilization, not the page lifecycle. The reuse is worth keeping — the
+      retry/recycle path is built on it — but the remaining win is in skipping
+      redundant _navigation_, which needs the engine to know when a recipe can run on
+      the page already loaded.
+- [ ] **`stabilize.waitForSelectors` timeout is per-selector, not per-shot.** Eight
+      stale selectors cost 8 × 5s on every shot. A shared budget would be better.
+
+## 2. Viewer polish still open
+
+- [ ] **Diff results in the viewer.** `visualice diff` writes images and a report; the
+      viewer can't show them. A third layout mode showing before/after/diff per changed
+      shot is the natural home, and would finish the regression story.
+- [ ] **Side-by-side device compare.** Pick one state, see every device aligned.
+- [ ] **Virtualized sidebar** for runs with hundreds of routes.
+
+## 3. Serving & infrastructure
+
+- [ ] **Range requests in `file-serve.ts`.** No `Accept-Ranges`, no `Content-Length`;
+      a `Range` header gets a 200 with the whole body. Fine for PNGs over localhost,
+      wrong if the viewer is ever proxied or serves video.
+- [ ] **`@vitest/coverage-v8` as a real devDependency.** CI installs it ad hoc with
+      `npm i -D --no-save` so coverage runs without it being in `package.json`.
+- [ ] **Windows integration leg.** The `check` job runs on Windows; the browser
+      integration job does not.
 
 ## Suggested order
 
-1. Distribution cluster (§1) — decide packaging shape first, then all four items in
-   one pass. This is what turns it from a repo into a skill.
-2. Run diff (§2).
-3. Capture page-reuse + hints + run lock/pruning (§3).
-4. Viewer + tests/CI as time allows.
+1. **Confirm the form-state fix** (top of this file) and run the full suite.
+2. Diff results in the viewer (§2) — the data exists but stops at the report.
+3. Everything else as it gets in the way.

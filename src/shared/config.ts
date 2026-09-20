@@ -96,6 +96,12 @@ const InteractionsSchema = z.object({
     .array(z.string())
     .default([])
     .describe("Extra selectors to treat as candidate triggers."),
+  formStates: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Also probe forms for a focused state (when the page styles a focus ring) and a validation-error state (by touching required fields, never by submitting).",
+    ),
 });
 
 const DiscoveryViewportSchema = z.object({
@@ -122,6 +128,14 @@ const DiscoverySchema = z.object({
 
 const ThumbnailSchema = z.object({
   width: z.number().int().positive().default(480).describe("Thumbnail width in px."),
+  midWidth: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(1024)
+    .describe(
+      "Width of a mid-resolution step between the thumbnail and the full image, so zooming doesn't jump straight to a multi-MB PNG. 0 disables it.",
+    ),
   format: z.enum(["webp", "jpeg", "png"]).default("webp").describe("Thumbnail image format."),
   quality: z.number().int().min(1).max(100).default(70).describe("Thumbnail encoder quality."),
 });
@@ -140,6 +154,14 @@ const ScreenshotSchema = z.object({
     .max(100)
     .default(90)
     .describe("Encoder quality for lossy formats."),
+  maxHeight: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(20000)
+    .describe(
+      "Clamp for full-page shots, in CSS px; taller pages are cropped to this and flagged. 0 disables the clamp (infinite-scroll pages can then exhaust memory).",
+    ),
   thumbnail: ThumbnailSchema.default(ThumbnailSchema.parse({})),
 });
 
@@ -157,6 +179,20 @@ const StabilizeSchema = z.object({
     .array(z.string())
     .default([])
     .describe("Selectors painted over with an opaque box (ads, clocks, carousels)."),
+  waitForSelectors: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Selectors that must be visible before a screenshot is taken — the shot waits for the page's own 'ready' markers instead of a fixed delay.",
+    ),
+  waitForSelectorsTimeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .default(5000)
+    .describe(
+      "How long to wait for each `waitForSelectors` entry. Deliberately short: a stale selector should cost a moment and a warning, not the full navigation timeout on every shot.",
+    ),
   waitStrategy: z
     .enum(["load", "domcontentloaded", "networkidle"])
     .default("networkidle")
@@ -231,6 +267,22 @@ const HttpSchema = z.object({
     })
     .optional()
     .describe("HTTP basic-auth credentials for password-protected environments."),
+  proxy: z
+    .object({
+      server: z
+        .string()
+        .describe("Proxy URL, e.g. http://proxy:3128 or socks5://proxy:1080; may use ${ENV_VAR}."),
+      bypass: z
+        .string()
+        .optional()
+        .describe('Comma-separated hosts to reach directly, e.g. "localhost,*.internal".'),
+      username: z.string().optional().describe("Proxy username; may use ${ENV_VAR}."),
+      password: z.string().optional().describe("Proxy password; may use ${ENV_VAR}."),
+    })
+    .optional()
+    .describe(
+      "Route browser traffic through a proxy — needed on corporate networks and to reach an environment only visible behind one.",
+    ),
 });
 
 const OutputSchema = z.object({

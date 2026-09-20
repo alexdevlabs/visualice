@@ -83,8 +83,31 @@ async function autoScroll(page: Page): Promise<void> {
   await page.waitForTimeout(120);
 }
 
-/** Quiet the page down right before a screenshot. */
-export async function stabilizePage(page: Page, stab: Stabilize): Promise<void> {
+/**
+ * Quiet the page down right before a screenshot.
+ *
+ * `log` is optional so callers that don't care stay terse, but a `waitForSelectors`
+ * entry that never appears is worth saying out loud: silently absorbing it would
+ * add its timeout to every single shot with nothing in the output to explain why
+ * the run got slower.
+ */
+export async function stabilizePage(
+  page: Page,
+  stab: Stabilize,
+  log?: (msg: string) => void,
+): Promise<void> {
+  // The page's own "I'm ready" markers (hints.stableSelectors / config) beat any
+  // fixed delay: wait for them before spending time on the rest.
+  for (const selector of stab.waitForSelectors) {
+    try {
+      await page
+        .locator(selector)
+        .first()
+        .waitFor({ state: "visible", timeout: stab.waitForSelectorsTimeoutMs });
+    } catch {
+      log?.(`  ⚠ waitForSelectors: "${selector}" never became visible — continuing`);
+    }
+  }
   if (stab.animations === "disabled") {
     await page
       .addStyleTag({

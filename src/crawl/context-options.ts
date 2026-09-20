@@ -9,7 +9,7 @@ import { resolveEnvRecord } from "../shared/env";
  * creation — the config snapshot in run artifacts keeps the placeholder.
  */
 export function httpContextOptions(config: Config): BrowserContextOptions {
-  const { ignoreHTTPSErrors, extraHTTPHeaders, httpCredentials } = config.http;
+  const { ignoreHTTPSErrors, extraHTTPHeaders, httpCredentials, proxy } = config.http;
   const opts: BrowserContextOptions = {};
   if (ignoreHTTPSErrors) opts.ignoreHTTPSErrors = true;
   if (Object.keys(extraHTTPHeaders).length) {
@@ -18,6 +18,23 @@ export function httpContextOptions(config: Config): BrowserContextOptions {
   if (httpCredentials) {
     const { username, password } = resolveEnvRecord(httpCredentials, "http.httpCredentials");
     opts.httpCredentials = { username, password };
+  }
+  if (proxy) {
+    // Only the fields that were set are resolved: `resolveEnvRecord` throws on an
+    // unset variable, and an absent optional field has no variable to miss.
+    const resolved = resolveEnvRecord(
+      Object.fromEntries(Object.entries(proxy).filter(([, v]) => v !== undefined)) as Record<
+        string,
+        string
+      >,
+      "http.proxy",
+    );
+    opts.proxy = {
+      server: resolved.server,
+      ...(resolved.bypass ? { bypass: resolved.bypass } : {}),
+      ...(resolved.username ? { username: resolved.username } : {}),
+      ...(resolved.password ? { password: resolved.password } : {}),
+    };
   }
   return opts;
 }

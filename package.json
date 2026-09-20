@@ -1,19 +1,29 @@
 {
   "name": "visualice",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Crawl a website and capture every page and UI state across devices, then view them on a zoomable canvas.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.12.0"
+  },
   "bin": {
     "visualice": "bin/visualice.mjs"
   },
-  "types": "./src/index.ts",
+  "types": "./dist/types/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./config.schema.json": "./config.schema.json"
   },
   "scripts": {
     "vc": "tsx src/cli.ts",
+    "build": "npm run build:node && npm run build:types && npm run viewer:build",
+    "build:node": "vite build --config vite.node.config.ts",
+    "build:types": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "demo": "tsx src/cli.ts demo",
     "demo:crawl": "tsx src/cli.ts demo-crawl",
     "fixture": "tsx src/cli.ts fixture",
@@ -38,8 +48,6 @@
   },
   "dependencies": {
     "playwright": "^1.61.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "sharp": "^0.34.2",
     "zod": "^4.0.5"
   },
@@ -56,11 +64,22 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0",
     "vite": "^6.0.7",
     "vitest": "^3.0.0"
-  }
+  },
+  "files": [
+    "bin",
+    "dist",
+    "viewer/dist",
+    "tests/fixture",
+    "config.schema.json",
+    "README.md",
+    "LICENSE"
+  ]
 }

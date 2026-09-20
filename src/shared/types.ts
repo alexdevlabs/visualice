@@ -30,6 +30,9 @@ export type RecipeStep =
   | { action: "navigate"; url: string }
   | { action: "click"; target: Target }
   | { action: "hover"; target: Target }
+  | { action: "focus"; target: Target }
+  /** Move focus off whatever holds it — what makes a "touched" field show its error. */
+  | { action: "blur" }
   | { action: "fill"; target: Target; value: string }
   | { action: "press"; key: string; target?: Target }
   | {
@@ -52,15 +55,20 @@ export type StateKind =
   | "popover"
   | "toast"
   | "hover"
+  | "focus"
+  | "validation"
   | "other";
 
 export interface ShotRef {
   full?: string; // path (relative to run dir) of full-page screenshot
   viewport?: string; // path of viewport-only screenshot
   thumb?: string; // path of thumbnail (of full)
+  mid?: string; // path of the mid-resolution step between thumb and full
   meta?: string; // path of sidecar json
   width?: number; // intrinsic px dims of the full shot
   height?: number;
+  /** The page exceeded `screenshot.maxHeight` and was cropped to it. */
+  clamped?: boolean;
   error?: string; // capture was attempted but failed (after retries); no image written
 }
 
@@ -166,10 +174,19 @@ export interface ViewerTile {
   stateLabel: string;
   stateKind: StateKind;
   device: string;
-  full: string;
+  /** Absent on a failed capture — `error` says why. */
+  full?: string;
   thumb?: string;
+  /** Mid-resolution step between `thumb` and `full`. */
+  mid?: string;
+  /** Above-the-fold crop, when `screenshot.alsoViewport` is on. */
+  viewport?: string;
   width?: number;
   height?: number;
+  /** The page was taller than `screenshot.maxHeight` and the shot was cropped. */
+  clamped?: boolean;
+  /** Capture failed after retries; the tile is a placeholder carrying the reason. */
+  error?: string;
 }
 
 export interface ViewerData {
@@ -177,4 +194,6 @@ export interface ViewerData {
   devices: Device[];
   tiles: ViewerTile[];
   groups: { path: string; routeId: string; title?: string }[];
+  /** How many tiles are failed captures, so the UI can say so without a scan. */
+  failed?: number;
 }

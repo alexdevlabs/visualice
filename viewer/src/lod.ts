@@ -50,16 +50,104 @@ export function cullLabels(
   return labels.filter((l) => l.y <= y1 && l.y + labelH >= y0 && l.x <= x1);
 }
 
+// ---- Spatial index ----
+
+/**
+ * A uniform grid over the placed tiles.
+ *
+ * Culling by scanning every tile is O(all tiles) on every pan frame, which is the
+ * one piece of per-frame work that grows with run size. Bucketing by cell makes it
+ * proportional to what's actually on screen. Tiles spanning several cells are
+ * listed in each, so lookups dedupe.
+ */
+export interface TileIndex {
+  cell: number;
+  buckets: Map<string, Placed[]>;
+  all: Placed[];
+}
+
+/** Cells sized to a few typical tiles: small enough to be selective, few enough to be cheap. */
+const DEFAULT_CELL = 1200;
+
+export function buildTileIndex(placed: Placed[], cell = DEFAULT_CELL): TileIndex {
+  const buckets = new Map<string, Placed[]>();
+  for (const p of placed) {
+    const cx0 = Math.floor(p.x / cell);
+    const cy0 = Math.floor(p.y / cell);
+    const cx1 = Math.floor((p.x + p.w) / cell);
+    const cy1 = Math.floor((p.y + p.h) / cell);
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const key = `${cx},${cy}`;
+        const bucket = buckets.get(key);
+        if (bucket) bucket.push(p);
+        else buckets.set(key, [p]);
+      }
+    }
+  }
+  return { cell, buckets, all: placed };
+}
+
+/** Same result as `cullTiles`, but only touching the cells the viewport covers. */
+export function cullTilesIndexed(
+  index: TileIndex,
+  t: Transform,
+  vp: Viewport,
+  margin = 400,
+): Placed[] {
+  const { x0, y0, x1, y1 } = visibleWorldRect(t, vp, margin);
+  const { cell, buckets } = index;
+  const cx0 = Math.floor(x0 / cell);
+  const cy0 = Math.floor(y0 / cell);
+  const cx1 = Math.floor(x1 / cell);
+  const cy1 = Math.floor(y1 / cell);
+
+  // Zoomed far enough out that the viewport spans more cells than there are
+  // buckets: scanning the tiles directly is then the cheaper of the two.
+  const cellsCovered = (cx1 - cx0 + 1) * (cy1 - cy0 + 1);
+  if (cellsCovered > buckets.size) return cullTiles(index.all, t, vp, margin);
+
+  const seen = new Set<Placed>();
+  const out: Placed[] = [];
+  for (let cx = cx0; cx <= cx1; cx++) {
+    for (let cy = cy0; cy <= cy1; cy++) {
+      const bucket = buckets.get(`${cx},${cy}`);
+      if (!bucket) continue;
+      for (const p of bucket) {
+        if (seen.has(p)) continue;
+        seen.add(p);
+        if (p.x + p.w >= x0 && p.x <= x1 && p.y + p.h >= y0 && p.y <= y1) out.push(p);
+      }
+    }
+  }
+  // Preserve layout order so React keys and the DOM stay stable while panning.
+  return out.sort((a, b) => index.all.indexOf(a) - index.all.indexOf(b));
+}
+
+// ---- Level of detail ----
+
 /** Below this on-screen width a thumbnail is indistinguishable from the full image. */
 export const FULL_RES_WIDTH_PX = 460;
 
+/** Above this on-screen width the mid tier stops being enough and the full image wins. */
+export const MID_RES_WIDTH_PX = 1100;
+
+export interface LodSources {
+  full?: string;
+  thumb?: string;
+  mid?: string;
+}
+
 /**
- * Which source to draw for a tile: the thumbnail while it is small on screen,
- * the full-resolution image once it is big enough to show the difference (or
- * when no thumbnail was generated).
+ * Which source to draw for a tile, smallest that still looks right:
+ * thumbnail → mid → full. The mid step exists because jumping from a 480px
+ * thumbnail straight to a multi-megabyte dpr-3 full-page PNG stalls the canvas at
+ * exactly the zoom level where someone is trying to read the page.
  */
-export function lodFor(tile: { full: string; thumb?: string }, onScreenWidth: number): string {
-  return onScreenWidth > FULL_RES_WIDTH_PX || !tile.thumb ? tile.full : tile.thumb;
+export function lodFor(tile: LodSources, onScreenWidth: number): string | undefined {
+  if (onScreenWidth <= FULL_RES_WIDTH_PX && tile.thumb) return tile.thumb;
+  if (onScreenWidth <= MID_RES_WIDTH_PX && tile.mid) return tile.mid;
+  return tile.full ?? tile.mid ?? tile.thumb;
 }
 
 /** Tile captions become noise once tiles are tiny. */

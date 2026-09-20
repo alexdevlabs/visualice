@@ -17,6 +17,30 @@ export function renderReport(m: Manifest): string {
   lines.push(
     `- **Devices:** ${m.devices.map((d) => `${d.name} ${d.width}×${d.height}@${d.dpr}`).join(", ")}`,
   );
+  if (m.site.framework) lines.push(`- **Framework:** ${m.site.framework}`);
+  const hints = m.hints;
+  if (
+    hints?.flakyRegions?.length ||
+    hints?.stableSelectors?.length ||
+    hints?.skipTriggers?.length
+  ) {
+    const applied = [
+      hints.flakyRegions?.length ? `${hints.flakyRegions.length} masked region(s)` : undefined,
+      hints.stableSelectors?.length
+        ? `${hints.stableSelectors.length} awaited selector(s)`
+        : undefined,
+      hints.skipTriggers?.length ? `${hints.skipTriggers.length} skipped trigger(s)` : undefined,
+    ].filter(Boolean);
+    lines.push(`- **Hints applied:** ${applied.join(", ")}`);
+  }
+  const clamped = m.routes.flatMap((r) =>
+    r.states.flatMap((s) => Object.entries(s.shots).filter(([, ref]) => ref.clamped)),
+  ).length;
+  if (clamped) {
+    lines.push(
+      `- **Clamped:** ${clamped} shot(s) hit the ${m.devices.length ? "" : ""}max-height limit and were cropped`,
+    );
+  }
   lines.push("");
   lines.push(`## Routes`);
   lines.push("");

@@ -5,6 +5,9 @@ import {
   lodFor,
   visibleWorldRect,
   FULL_RES_WIDTH_PX,
+  MID_RES_WIDTH_PX,
+  buildTileIndex,
+  cullTilesIndexed,
 } from "../viewer/src/lod";
 import type { Placed, GroupLabel } from "../viewer/src/layout";
 
@@ -95,19 +98,73 @@ describe("cullLabels", () => {
 });
 
 describe("lodFor", () => {
-  const tile = { full: "full.png", thumb: "thumb.webp" };
+  const tile = { full: "full.png", thumb: "thumb.webp", mid: "mid.webp" };
 
   it("draws the thumbnail while the tile is small on screen", () => {
     expect(lodFor(tile, 200)).toBe("thumb.webp");
     expect(lodFor(tile, FULL_RES_WIDTH_PX)).toBe("thumb.webp");
   });
 
+  it("steps through the mid tier before loading a multi-megabyte full image", () => {
+    expect(lodFor(tile, FULL_RES_WIDTH_PX + 1)).toBe("mid.webp");
+    expect(lodFor(tile, MID_RES_WIDTH_PX)).toBe("mid.webp");
+  });
+
   it("swaps to full resolution once the tile is big enough to show detail", () => {
-    expect(lodFor(tile, FULL_RES_WIDTH_PX + 1)).toBe("full.png");
+    expect(lodFor(tile, MID_RES_WIDTH_PX + 1)).toBe("full.png");
     expect(lodFor(tile, 4000)).toBe("full.png");
   });
 
-  it("falls back to the full image when no thumbnail exists", () => {
+  it("skips a tier that was never generated", () => {
+    const noMid = { full: "full.png", thumb: "thumb.webp" };
+    expect(lodFor(noMid, FULL_RES_WIDTH_PX + 1)).toBe("full.png");
     expect(lodFor({ full: "full.png" }, 10)).toBe("full.png");
+  });
+
+  it("has nothing to draw for a failed capture", () => {
+    expect(lodFor({}, 500)).toBeUndefined();
+  });
+});
+
+describe("spatial index", () => {
+  // A grid big enough that a viewport sees a small fraction of it — the case the
+  // index exists for.
+  const grid: Placed[] = [];
+  for (let row = 0; row < 20; row++) {
+    for (let col = 0; col < 20; col++) grid.push(placed(`t${row}-${col}`, col * 400, row * 500));
+  }
+
+  it("returns exactly what a full scan would", () => {
+    const index = buildTileIndex(grid);
+    for (const t of [at(1, 0, 0), at(0.5, -900, -1200), at(2, -3000, -4000), at(0.2, 100, 50)]) {
+      expect(cullTilesIndexed(index, t, vp).map((p) => p.tile.id)).toEqual(
+        cullTiles(grid, t, vp).map((p) => p.tile.id),
+      );
+    }
+  });
+
+  it("counts a tile spanning several cells only once", () => {
+    const index = buildTileIndex([placed("wide", 0, 0, 5000, 5000)], 1000);
+    expect(cullTilesIndexed(index, at(1, 0, 0), vp)).toHaveLength(1);
+  });
+
+  it("keeps layout order so React keys stay stable while panning", () => {
+    const index = buildTileIndex(grid);
+    const ids = cullTilesIndexed(index, at(0.4, -500, -500), vp).map((p) => p.tile.id);
+    expect(
+      [...ids].sort(
+        (a, b) => grid.findIndex((p) => p.tile.id === a) - grid.findIndex((p) => p.tile.id === b),
+      ),
+    ).toEqual(ids);
+  });
+
+  it("still works zoomed all the way out, where every cell is on screen", () => {
+    const index = buildTileIndex(grid);
+    const t = at(0.02, 0, 0);
+    expect(cullTilesIndexed(index, t, vp).length).toBe(cullTiles(grid, t, vp).length);
+  });
+
+  it("handles an empty layout", () => {
+    expect(cullTilesIndexed(buildTileIndex([]), at(1), vp)).toEqual([]);
   });
 });

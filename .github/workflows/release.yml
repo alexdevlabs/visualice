@@ -1,0 +1,76 @@
+name: Release
+
+# Two ways in: pushing a `v*` tag (the normal release path) and a manual
+# workflow_dispatch (for re-running a publish that failed after the tag was
+# already pushed, without having to delete/re-push the tag). The version guard
+# below requires the ref actually be a `v*` tag either way, so a manual
+# dispatch can't accidentally publish an untagged branch.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for `npm publish --provenance`: npm exchanges this OIDC token for
+  # a signed provenance attestation instead of a long-lived credential.
+  id-token: write
+
+jobs:
+  publish:
+    name: publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          # Writes an .npmrc that reads the auth token from NODE_AUTH_TOKEN,
+          # which `npm publish` below picks up automatically.
+          registry-url: https://registry.npmjs.org
+
+      # Fail fast, before installing anything: publishing a tag whose version
+      # doesn't match package.json is exactly the mistake this workflow exists
+      # to prevent (e.g. `v1.2.3` pushed against a package.json still at
+      # 1.2.2 — npm would happily publish 1.2.2 under a v1.2.3 tag). Also
+      # covers workflow_dispatch: it only proceeds if it was run against a
+      # tag ref (selectable in the "Use workflow from" dropdown), not a
+      # branch, so manual re-runs can't skip the same check.
+      - name: Verify tag matches package.json version
+        run: |
+          if [ "${{ github.ref_type }}" != "tag" ]; then
+            echo "::error::this workflow must be run against a 'v*' tag ref (got ref_type='${{ github.ref_type }}'). For workflow_dispatch, pick the tag in the 'Use workflow from' selector."
+            exit 1
+          fi
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${pkg_version}"
+            exit 1
+          fi
+          echo "OK: tag ${GITHUB_REF_NAME} matches package.json version ${pkg_version}"
+
+      - run: npm ci
+
+      - run: npm run check
+
+      # Browsers are cached by version so a rerun skips the ~100MB download.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:integration
+
+      # No separate `npm run build` step: package.json's `prepack` script already
+      # runs the full build (build:node + build:types + viewer:build), and both
+      # `npm pack` and `npm publish` invoke `prepack` automatically before
+      # packing the tarball. Building again here would just duplicate it.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
