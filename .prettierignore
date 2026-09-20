@@ -16,3 +16,4 @@ tests/fixture-src
 config.schema.json
 manifest.schema.json
 visualice.routes.md
+.playwright-mcp/

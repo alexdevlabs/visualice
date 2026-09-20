@@ -137,7 +137,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     const d = drag.current;
     drag.current = null;
     if (d && !d.moved) {
-      const tileEl = (e.target as HTMLElement).closest("[data-tile-id]") as HTMLElement | null;
+      // Hit-test by coordinate, not `e.target`: the pointer capture above retargets
+      // every event to the canvas, so the tile under the cursor is only findable here.
+      const hit = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+      const tileEl = hit?.closest("[data-tile-id]") as HTMLElement | null;
       onSelect(tileEl?.dataset.tileId ?? null);
     }
   };
