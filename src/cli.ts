@@ -9,6 +9,13 @@ import { loadInputManifest, saveJson } from "./crawl/manifest";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
 import { capturePipeline, crawlPipeline } from "./crawl/orchestrator";
 import { discoverPipeline } from "./crawl/discover";
+import {
+  applyRoutesIntent,
+  computeWanted,
+  loadRoutesIntent,
+  routesFilePath,
+  writeRoutesFile,
+} from "./crawl/routes-file";
 import { ensureStorageState } from "./crawl/auth";
 import { pathExists } from "./shared/fsx";
 import { serveDirectory } from "./shared/static-server";
@@ -19,8 +26,26 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, "..");
 const FIXTURE_DIR = path.join(PROJECT_ROOT, "tests", "fixture");
 
+/** Config files picked up automatically from the working directory. */
+const CONFIG_CANDIDATES = [
+  "visualice.config.ts",
+  "visualice.config.mjs",
+  "visualice.config.js",
+  "visualice.config.json",
+];
+
+async function detectConfigFile(): Promise<string | undefined> {
+  for (const c of CONFIG_CANDIDATES) if (await pathExists(path.resolve(c))) return c;
+  return undefined;
+}
+
+/** Explicit --config wins; otherwise a visualice.config.* in the cwd is picked up. */
+async function resolveConfigPath(flags: Flags): Promise<string | undefined> {
+  return str(flags, "config") ?? (await detectConfigFile());
+}
+
 async function loadConfigWithOverrides(flags: Flags): Promise<Config> {
-  return applyOverrides(await loadConfig(str(flags, "config")), flags);
+  return applyOverrides(await loadConfig(await resolveConfigPath(flags)), flags);
 }
 
 type Log = (msg: string) => void;
@@ -30,8 +55,10 @@ function printHelp(): void {
   console.log(`visualice — crawl a site and capture pages + UI states across devices
 
 Usage:
-  visualice crawl [opts]      Discover routes + UI states, then capture across devices
-  visualice discover [opts]   Auto-discover routes + UI states (no screenshots)
+  visualice init [url]        Scaffold visualice.config.json (+ .gitignore entry)
+  visualice crawl [url]       Discover routes + UI states, then capture across devices
+  visualice discover [url]    Auto-discover routes + UI states (no screenshots)
+  visualice routes [opts]     Regenerate the routes file from the cached site model
   visualice validate [opts]   Validate a crawl manifest / cached site model
   visualice auth [--force]    Run the configured login recipe → save storage state
   visualice capture [opts]    Replay a given manifest's recipes and capture screenshots
@@ -41,9 +68,14 @@ Usage:
   visualice serve [opts]      Launch the zoomable results viewer
   visualice --version         Print the version
 
+Project files: visualice.config.json controls behavior; visualice.routes.md lists
+pages + UI states and is regenerated after every crawl (edit it: 'skip:' excludes,
+'[ ]' requests a state). A visualice.config.* in the cwd is picked up automatically.
+
 Options (flags accept --name=value or --name value):
-  --config=<path>      config file (.ts/.js/.json); defaults applied if omitted
-  --base=<url>         base URL (overrides config.target)
+  --config=<path>      config file (.ts/.js/.json); cwd auto-detection if omitted
+  --base=<url>         base URL (overrides config.target); also the bare [url] arg
+  --no-save            for 'crawl': don't scaffold a config on first run
   --manifest=<path>    input manifest for 'capture' / 'validate'
   --replay             for 'crawl': reuse cached site model, skip discovery
   --json               print a machine-readable JSON summary to stdout
@@ -81,6 +113,7 @@ function reportDone(runDir: string, manifest: Manifest, flags: Flags, log: Log):
         shots: stats?.shots ?? 0,
         failed: stats?.failed ?? 0,
         failures: stats?.failures ?? [],
+        wanted: stats?.wanted ?? [],
       }),
     );
   } else {
@@ -238,11 +271,55 @@ async function cmdServe(flags: Flags): Promise<void> {
   await server.close();
 }
 
+/** Write the minimal project config + make sure `.visualice/` is gitignored. */
+async function scaffoldProject(target: string | undefined, log: Log): Promise<string> {
+  const file = path.resolve("visualice.config.json");
+  const body = {
+    $schema: "node_modules/visualice/config.schema.json",
+    ...(target ? { target } : {}),
+  };
+  await fs.writeFile(file, JSON.stringify(body, null, 2) + "\n");
+  log(`wrote ${file}`);
+
+  const gitignore = path.resolve(".gitignore");
+  const existing = await fs.readFile(gitignore, "utf8").catch(() => undefined);
+  const has = existing?.split("\n").some((l) => l.trim().replace(/\/$/, "") === ".visualice");
+  if (!has) {
+    const next =
+      existing === undefined ? ".visualice/\n" : `${existing.replace(/\n?$/, "\n")}.visualice/\n`;
+    await fs.writeFile(gitignore, next);
+    log("added .visualice/ to .gitignore");
+  }
+  return file;
+}
+
+async function cmdInit(flags: Flags): Promise<void> {
+  const log = makeLog(flags);
+  const target = str(flags, "base");
+  const file = path.resolve("visualice.config.json");
+  if ((await pathExists(file)) && flags.force !== true) {
+    throw new UsageError(`${file} already exists — pass --force to overwrite`);
+  }
+  await scaffoldProject(target, log);
+  console.log(file);
+  if (!target) log(`set "target" in the config, or rerun: visualice init <url>`);
+  log(`next: visualice crawl`);
+}
+
 async function cmdCrawl(flags: Flags): Promise<void> {
   const log = makeLog(flags);
-  const config = await loadConfigWithOverrides(flags);
+  const configPath = await resolveConfigPath(flags);
+  const config = applyOverrides(await loadConfig(configPath), flags);
   const baseUrl = str(flags, "base") ?? config.target;
-  if (!baseUrl) throw new UsageError("no base URL: pass --base=<url> or set target in config");
+  if (!baseUrl)
+    throw new UsageError(
+      "no base URL: pass a url (visualice crawl <url>) or run 'visualice init <url>'",
+    );
+  // First crawl in a fresh project: persist the target so `visualice crawl` alone
+  // works from now on. --no-save opts out.
+  if (!configPath && str(flags, "base") && flags["no-save"] !== true) {
+    await scaffoldProject(baseUrl, log);
+  }
   const { runDir, manifest } = await crawlPipeline({
     config,
     baseUrl,
@@ -250,6 +327,29 @@ async function cmdCrawl(flags: Flags): Promise<void> {
     log,
   });
   reportDone(runDir, manifest, flags, log);
+}
+
+async function cmdRoutes(flags: Flags): Promise<void> {
+  const log = makeLog(flags);
+  const config = await loadConfigWithOverrides(flags);
+  const file = routesFilePath(config);
+  if (!file) throw new UsageError("routesFile is disabled (false) in the config");
+  const cachePath = path.join(path.resolve(config.output.dir), "crawl-map.cache.json");
+  if (!(await pathExists(cachePath))) {
+    throw new UsageError(`no cached site model at ${cachePath} — run 'visualice crawl' first`);
+  }
+  const model = await loadInputManifest(cachePath);
+  const intent = await loadRoutesIntent(config);
+  const target = config.target ?? intent.target ?? "unknown";
+  await writeRoutesFile(config, model, intent, target, log);
+  const wanted = computeWanted(model, intent);
+  const states = model.routes.reduce((n, r) => n + r.states.length, 0);
+  if (flags.json === true) {
+    console.log(JSON.stringify({ file, routes: model.routes.length, states, wanted }));
+  } else {
+    console.log(file);
+    if (wanted.length) log(`${wanted.length} wanted state(s) still need authoring`);
+  }
 }
 
 async function cmdAuth(flags: Flags): Promise<void> {
@@ -270,9 +370,15 @@ async function cmdDiscover(flags: Flags): Promise<void> {
   const config = await loadConfigWithOverrides(flags);
   const baseUrl = str(flags, "base") ?? config.target;
   if (!baseUrl) throw new UsageError("no base URL: pass --base=<url> or set target in config");
-  const inputManifest = await discoverPipeline({ config, baseUrl, log });
+  const intent = await loadRoutesIntent(config);
+  const inputManifest = await discoverPipeline({
+    config: applyRoutesIntent(config, intent),
+    baseUrl,
+    log,
+  });
   const cachePath = path.join(path.resolve(config.output.dir), "crawl-map.cache.json");
   await saveJson(cachePath, inputManifest);
+  await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
   const states = inputManifest.routes.reduce((n, r) => n + r.states.length, 0);
   if (flags.json === true) {
     console.log(JSON.stringify({ cachePath, routes: inputManifest.routes.length, states }));
@@ -288,7 +394,8 @@ async function cmdDemoCrawl(flags: Flags): Promise<void> {
   const server = await serveDirectory(FIXTURE_DIR);
   log(`fixture served at ${server.url}`);
   try {
-    const config = await loadConfig(str(flags, "config"));
+    // Demos run inside this repo — never scaffold a routes file here.
+    const config = { ...(await loadConfig(str(flags, "config"))), routesFile: false as const };
     const { runDir, manifest } = await crawlPipeline({
       config,
       baseUrl: server.url,
@@ -317,7 +424,7 @@ async function cmdDemo(flags: Flags): Promise<void> {
   const server = await serveDirectory(FIXTURE_DIR);
   log(`fixture served at ${server.url}`);
   try {
-    const config = await loadConfig(str(flags, "config"));
+    const config = { ...(await loadConfig(str(flags, "config"))), routesFile: false as const };
     const inputManifest = await loadInputManifest(path.join(FIXTURE_DIR, "crawl-map.input.json"));
     const { runDir, manifest } = await capturePipeline({
       config,
@@ -367,8 +474,12 @@ async function main(): Promise<void> {
   }
   const flags = parseFlags(cmd, rest);
   switch (cmd) {
+    case "init":
+      return cmdInit(flags);
     case "crawl":
       return cmdCrawl(flags);
+    case "routes":
+      return cmdRoutes(flags);
     case "discover":
       return cmdDiscover(flags);
     case "validate":

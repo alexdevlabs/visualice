@@ -49,5 +49,25 @@ export function renderReport(m: Manifest): string {
     }
     lines.push("");
   }
+
+  const wanted = m.stats?.wanted ?? [];
+  if (wanted.length) {
+    lines.push(`## Wanted`);
+    lines.push("");
+    lines.push(
+      `${wanted.length} state(s) requested in the routes file have no recipe yet.`,
+      `Author them via Explore mode (add the recipe to the cache under the same state id),`,
+      `or rerun discovery if the trigger is heuristic-reachable.`,
+    );
+    lines.push("");
+    lines.push(`| Path | State | Description |`);
+    lines.push(`|---|---|---|`);
+    for (const w of wanted) {
+      lines.push(
+        `| \`${w.route}\` | ${w.state} | ${(w.description ?? "").replace(/\|/g, "\\|")} |`,
+      );
+    }
+    lines.push("");
+  }
   return lines.join("\n");
 }

@@ -7,6 +7,14 @@ import { renderReport } from "./report";
 import { saveJson, mergeManifests, loadInputManifest } from "./manifest";
 import { discoverPipeline } from "./discover";
 import { ensureStorageState } from "./auth";
+import {
+  applyRoutesIntent,
+  applyStateSkips,
+  computeWanted,
+  loadRoutesIntent,
+  writeRoutesFile,
+  type RoutesIntent,
+} from "./routes-file";
 import { pathExists } from "../shared/fsx";
 import { pathSlug } from "../shared/slug";
 
@@ -23,6 +31,8 @@ export interface CapturePipelineOptions {
   baseUrl: string;
   /** Pre-resolved storageState path; if omitted, auth is resolved from config. */
   storageState?: string;
+  /** Pre-parsed routes-file intent; if omitted, read from config.routesFile. */
+  routesIntent?: RoutesIntent;
   log?: (msg: string) => void;
 }
 
@@ -85,13 +95,19 @@ async function pruneRuns(outRoot: string, keep: number): Promise<void> {
 export async function capturePipeline(
   opts: CapturePipelineOptions,
 ): Promise<CapturePipelineResult> {
-  const { config, inputManifest, baseUrl } = opts;
+  const { config, baseUrl } = opts;
   const log = opts.log ?? (() => {});
   const id = makeRunId();
   const origin = new URL(baseUrl).origin;
   const outRoot = path.resolve(config.output.dir);
   const runDir = path.join(outRoot, "runs", id);
   await fs.mkdir(runDir, { recursive: true });
+
+  // The routes file subtracts (skip:) before capture, and its unmet requests
+  // ([ ] lines) surface as `wanted` — the Explore-mode queue.
+  const intent = opts.routesIntent ?? (await loadRoutesIntent(config));
+  const inputManifest = applyStateSkips(opts.inputManifest, intent);
+  const wanted = computeWanted(opts.inputManifest, intent);
 
   const manifest: Manifest = {
     version: 1,
@@ -113,6 +129,11 @@ export async function capturePipeline(
   const storageState = opts.storageState ?? (await ensureStorageState(config, log));
 
   const result = await runCapture({ config, manifest, baseUrl, runDir, storageState, log });
+
+  if (result.manifest.stats && wanted.length) {
+    result.manifest.stats.wanted = wanted;
+    log(`${wanted.length} wanted state(s) still need authoring (see routes file / report)`);
+  }
 
   await saveJson(path.join(runDir, "crawl-map.json"), result.manifest);
   await saveJson(path.join(runDir, "viewer-data.json"), toViewerData(result.manifest));
@@ -143,6 +164,15 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
   const outRoot = path.resolve(config.output.dir);
   const cachePath = path.join(outRoot, "crawl-map.cache.json");
 
+  // Routes-file intent: listed routes seed discovery, skip: globs exclude.
+  const intent = await loadRoutesIntent(config);
+  const intentOrigin = intent.target ? safeOrigin(intent.target) : undefined;
+  if (intentOrigin && intentOrigin !== safeOrigin(baseUrl)) {
+    log(`⚠ routes file targets ${intent.target} but crawling ${baseUrl} — regenerating for it`);
+  }
+  for (const w of intent.warnings) log(`⚠ routes file: ${w}`);
+  const effectiveConfig = applyRoutesIntent(config, intent);
+
   const storageState = await ensureStorageState(config, log);
 
   let inputManifest: InputManifest;
@@ -150,7 +180,12 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
     log(`replay: reusing cached site model → ${cachePath}`);
     inputManifest = await loadInputManifest(cachePath);
   } else {
-    const discovered = await discoverPipeline({ config, baseUrl, storageState, log });
+    const discovered = await discoverPipeline({
+      config: effectiveConfig,
+      baseUrl,
+      storageState,
+      log,
+    });
     // Default crawl re-discovers from scratch, but MERGES into any existing cache
     // rather than overwriting it — auto states are refreshed, authored (hand-written /
     // Explore-mode) states are always preserved.
@@ -171,5 +206,22 @@ export async function crawlPipeline(opts: CrawlPipelineOptions): Promise<Capture
     await saveJson(cachePath, inputManifest); // shots-free model, cached for reuse
   }
 
-  return capturePipeline({ config, inputManifest, baseUrl, storageState, log });
+  await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
+
+  return capturePipeline({
+    config,
+    inputManifest,
+    baseUrl,
+    storageState,
+    routesIntent: intent,
+    log,
+  });
+}
+
+function safeOrigin(url: string): string | undefined {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
 }

@@ -18,14 +18,33 @@ Run all commands from the `visualice` project root (the directory containing its
 npm install && npx playwright install chromium
 ```
 
-## 2. Establish target & config
+## 2. Project files: config + routes file
 
-- Get the site URL from the user. Pass it as `--base=<url>`, or set `target` in
-  `visualice.config.ts`.
-- A config file controls scope, devices, stabilization, and auth; sensible defaults
-  apply if it is absent. For large sites, confirm scope with the user and set
-  `scope.include` / `scope.exclude` globs and `scope.maxPages`, and the `devices` list.
-- One-off tweaks don't need a config file — flags override it:
+Two committed files live at the target project's root; everything else is
+machine-owned under gitignored `.visualice/`:
+
+- **`visualice.config.json`** — behavior (scope, devices, auth, …). The first
+  `crawl <url>` scaffolds a minimal one automatically (and gitignores `.visualice/`);
+  `visualice init <url>` does the same without crawling. Any `visualice.config.*` in
+  the cwd is picked up automatically — no `--config` needed.
+- **`visualice.routes.md`** — the site index: pages as top-level bullets, their UI
+  states nested under them. Regenerated after every crawl. **Read THIS to orient,
+  never the cache JSON** — it is a few dozen lines and carries the same map.
+
+Steer the crawl by editing the routes file:
+
+- `- /path` — add a line to seed a page discovery missed.
+- `- skip: <state-id>` (nested) or `- skip: /path/**` (top-level) — exclude noise.
+  Deleting a line is NOT an exclusion (it gets re-added); `skip:` is the tombstone.
+- `- [ ] state-id — description` — request a state that has no recipe yet. Unmet
+  requests surface as `wanted` in `--json` and a `## Wanted` report section — that
+  is your Explore-mode work queue (§4).
+
+Other config notes:
+
+- For large sites, confirm scope with the user and set `scope.include`/`exclude`
+  globs, `scope.maxPages`, and the `devices` list in the config.
+- One-off tweaks don't need config edits — flags override:
   `--max-pages=<n> --include=<globs> --exclude=<globs> --devices=<names> --timeout=<ms>`.
 - Always add `--json` (machine-readable one-line summary on stdout) and `--quiet`
   (suppress progress noise) when running non-interactively. Add `--fail-on-error` when a
@@ -49,6 +68,10 @@ to Explore only for the gaps.
 Use the `browser_*` MCP tools to _author or augment_ the cached site model, then let the
 deterministic engine do the bulk capture. Do not screenshot the whole site through your
 own context — that is the engine's job; you only discover the tricky parts.
+
+Work from the `wanted` list (routes-file `[ ]` lines that nothing realizes yet): author
+each one's recipe into the cache **under the same state id**, and the next run flips its
+checkbox to a realized bullet automatically.
 
 - `browser_navigate` to a representative page, then `browser_snapshot` to read its
   accessibility tree.
@@ -112,8 +135,9 @@ auth: {
 
 - Output lands in `.visualice/runs/<id>/`: `screenshots/<path>/<state>/<device>.*`,
   `crawl-map.json`, `viewer-data.json`, `crawl-report.md`.
-- With `--json` the run summary (route/state/shot counts + a `failures` array of
-  `{route, state, device, error}`) arrives on stdout — no report parsing needed.
+- With `--json` the run summary (route/state/shot counts, a `failures` array of
+  `{route, state, device, error}`, and the `wanted` array of unmet routes-file
+  requests) arrives on stdout — no report parsing needed.
   `crawl-report.md` has the same data human-formatted, failures in a `## Failures`
   section. A failing state usually means its recipe needs an Explore-mode tweak.
 - Failed captures were already retried (`politeness.retries`); don't blindly re-run the

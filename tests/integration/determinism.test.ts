@@ -20,6 +20,7 @@ const FROZEN = "2025-01-01T00:00:00.000Z";
 
 const stable = (over: Partial<Config["stabilize"]> = {}) =>
   ConfigSchema.parse({
+    routesFile: false,
     devices: [{ name: "small", width: 420, height: 640, dpr: 1 }],
     stabilize: {
       freezeTime: FROZEN,
@@ -128,6 +129,7 @@ describe("determinism", () => {
 
       // Control: the same page is *not* reproducible without the shims.
       const loose = ConfigSchema.parse({
+        routesFile: false,
         devices: [{ name: "small", width: 420, height: 640, dpr: 1 }],
         stabilize: { animations: "allow", waitStrategy: "load", extraDelayMs: 50 },
         politeness: { minDelayMs: 0 },

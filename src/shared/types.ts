@@ -72,6 +72,13 @@ export interface CaptureFailure {
   error: string;
 }
 
+/** A state requested in the routes file that no cached recipe realizes yet. */
+export interface WantedState {
+  route: string;
+  state: string;
+  description?: string;
+}
+
 export interface StateNode {
   id: string;
   kind: StateKind;
@@ -129,6 +136,8 @@ export interface Manifest {
     failed: number;
     durationMs: number;
     failures: CaptureFailure[];
+    /** Routes-file requests still unmet after this run (the Explore-mode queue). */
+    wanted?: WantedState[];
   };
   hints?: {
     stableSelectors?: string[];

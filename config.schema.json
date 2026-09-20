@@ -574,6 +574,19 @@
         }
       }
     },
+    "routesFile": {
+      "default": "visualice.routes.md",
+      "description": "Human/LLM-editable site index (routes + states), regenerated after every crawl; `false` disables it.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "boolean",
+          "const": false
+        }
+      ]
+    },
     "output": {
       "default": {
         "dir": ".visualice",

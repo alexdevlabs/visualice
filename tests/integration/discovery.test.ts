@@ -27,6 +27,7 @@ const ROBOTS_SITE = {
 
 const baseConfig = (over: Record<string, unknown> = {}) =>
   ConfigSchema.parse({
+    routesFile: false,
     scope: { maxPages: 10, maxDepth: 2 },
     politeness: { minDelayMs: 0 },
     stabilize: { waitStrategy: "domcontentloaded" },

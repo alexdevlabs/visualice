@@ -40,6 +40,17 @@ export type {
   CapturePipelineResult,
 } from "./crawl/orchestrator";
 
+export {
+  parseRoutesFile,
+  renderRoutesFile,
+  computeWanted,
+  applyRoutesIntent,
+  applyStateSkips,
+  loadRoutesIntent,
+  writeRoutesFile,
+  routesFilePath,
+} from "./crawl/routes-file";
+export type { RoutesIntent, RoutesFileRoute, RoutesFileState } from "./crawl/routes-file";
 export { discoverPipeline } from "./crawl/discover";
 export type { DiscoverOptions } from "./crawl/discover";
 export { discoverRoutes } from "./crawl/discover-routes";

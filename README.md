@@ -5,7 +5,7 @@ across multiple device profiles, organize the screenshots, record a reusable cra
 the results on a zoomable Photoshop-like canvas.
 
 See [`PLAN.md`](./PLAN.md) for the full design and [`IMPROVEMENTS.md`](./IMPROVEMENTS.md)
-for the prioritized improvement backlog.
+for the prioritized roadmap.
 
 ## Quick start
 
@@ -21,28 +21,47 @@ npm test            # unit tests
 ## Crawl a real site
 
 ```bash
-# discover routes + UI states, then screenshot everything across devices:
-npm run crawl -- --base=https://your.site --config=visualice.config.ts
+# first run in a project — scaffolds visualice.config.json, gitignores .visualice/,
+# crawls, and generates visualice.routes.md:
+npm run crawl -- https://your.site
 
-# re-run later, reusing the cached site model (skips discovery, fast + deterministic):
-npm run crawl -- --base=https://your.site --replay
+# from then on the config is picked up from the cwd automatically:
+npm run crawl                      # re-discover + capture
+npm run crawl -- --replay          # reuse the cached site model (fast + deterministic)
 
-# discovery only (writes .visualice/crawl-map.cache.json, no screenshots):
-npm run discover -- --base=https://your.site
-
-# check a hand-edited site model before capturing with it:
-npm run vc -- validate
+# other commands:
+npm run discover -- https://your.site   # discovery only, no screenshots
+npm run vc -- init https://your.site    # scaffold the config without crawling
+npm run vc -- routes                    # regenerate visualice.routes.md from the cache
+npm run vc -- validate                  # check a hand-edited site model
 
 # one-off scope tweaks without touching the config file:
-npm run crawl -- --base=https://your.site --max-pages=20 --exclude=/admin/** --devices=mobile
+npm run crawl -- --max-pages=20 --exclude=/admin/** --devices=mobile
 ```
+
+### Project files
+
+A crawl maintains two committed files at the project root (all machine output stays
+under gitignored `.visualice/`):
+
+- **`visualice.config.json`** — behavior. Scaffolded minimal (`$schema` + `target`);
+  add options only when you need them.
+- **`visualice.routes.md`** — the site index: pages as top-level bullets, captured UI
+  states nested under them. Regenerated after every crawl, and **editable** — it's how
+  you steer the crawler:
+  - add a `- /path` line to seed a page discovery missed;
+  - `- skip: <state-id>` (or a top-level `- skip: /path/**`) excludes noise — deleting
+    a line is not an exclusion, `skip:` is the visible tombstone;
+  - `- [ ] state-id — description` requests a state that has no recipe yet; unmet
+    requests surface as `wanted` in `--json` output and a **Wanted** report section
+    (the Explore-mode work queue).
 
 States are probed at a desktop viewport _and_ (when a mobile device is configured) at the
 first mobile device's viewport, so mobile-only states like hamburger navs are discovered
 too — those capture only on mobile devices. Hover-revealed dropdowns are probed as well.
 
 For agents and CI: `--json` prints a single machine-readable summary to stdout
-(`{runId, runDir, routes, states, shots, failed, failures}`), `--quiet` silences progress,
+(`{runId, runDir, routes, states, shots, failed, failures, wanted}`), `--quiet` silences progress,
 and `--fail-on-error` exits 3 when any capture failed. Exit codes: 0 ok · 1 error ·
 2 usage · 3 capture failures. Failed captures are retried (`politeness.retries`), then
 recorded per-shot in the manifest and listed in a **Failures** section of the report.
@@ -86,21 +105,22 @@ Run `npm run schema` after changing the zod schema — a unit test fails if the 
 
 Options worth knowing:
 
-| Option                                      | Default         | What it does                                                                         |
-| ------------------------------------------- | --------------- | ------------------------------------------------------------------------------------ |
-| `politeness.respectRobots`                  | `true`          | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes       |
-| `politeness.retries`                        | `1`             | Extra attempts for a failed navigation/capture before recording a failure            |
-| `discovery.interactions.nestDepth`          | `1`             | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states |
-| `discovery.interactions.maxPerPage`         | `12`            | Hard cap on states per route, whatever the nesting depth                             |
-| `discovery.interactions.hover`              | `true`          | Also probe hover-revealed states (dropdown navs)                                     |
-| `discovery.mobileStates`                    | `true`          | Second probe pass at the first mobile device's viewport (finds hamburger navs)       |
-| `devices[].colorScheme`                     | `"light"`       | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog      |
-| `devices[].locale` / `timezoneId`           | `en-US` / `UTC` | Pinned so `Intl`/date rendering is machine-independent                               |
-| `stabilize.freezeTime` / `seedRandom`       | unset           | Pin `Date` / `Math.random` in the page so reruns are byte-identical                  |
-| `stabilize.maskSelectors`                   | `[]`            | Paint opaque boxes over volatile regions (ads, clocks, carousels)                    |
-| `screenshot.alsoViewport`                   | `false`         | Also write an above-the-fold crop next to each full-page shot                        |
-| `http.ignoreHTTPSErrors`                    | `false`         | Accept self-signed TLS (staging environments)                                        |
-| `http.httpCredentials` / `extraHTTPHeaders` | unset           | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                      |
+| Option                                      | Default               | What it does                                                                         |
+| ------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------ |
+| `politeness.respectRobots`                  | `true`                | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes       |
+| `politeness.retries`                        | `1`                   | Extra attempts for a failed navigation/capture before recording a failure            |
+| `discovery.interactions.nestDepth`          | `1`                   | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states |
+| `discovery.interactions.maxPerPage`         | `12`                  | Hard cap on states per route, whatever the nesting depth                             |
+| `discovery.interactions.hover`              | `true`                | Also probe hover-revealed states (dropdown navs)                                     |
+| `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)       |
+| `devices[].colorScheme`                     | `"light"`             | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog      |
+| `devices[].locale` / `timezoneId`           | `en-US` / `UTC`       | Pinned so `Intl`/date rendering is machine-independent                               |
+| `stabilize.freezeTime` / `seedRandom`       | unset                 | Pin `Date` / `Math.random` in the page so reruns are byte-identical                  |
+| `stabilize.maskSelectors`                   | `[]`                  | Paint opaque boxes over volatile regions (ads, clocks, carousels)                    |
+| `screenshot.alsoViewport`                   | `false`               | Also write an above-the-fold crop next to each full-page shot                        |
+| `http.ignoreHTTPSErrors`                    | `false`               | Accept self-signed TLS (staging environments)                                        |
+| `http.httpCredentials` / `extraHTTPHeaders` | unset                 | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                      |
+| `routesFile`                                | `visualice.routes.md` | Where the editable site index lives; `false` disables it entirely                    |
 
 ## Authenticated sites
 
@@ -180,8 +200,9 @@ npm run fixture:build     # rebuild tests/fixture from tests/fixture-src
 ```
 
 Unit tests are pure and fast. The browser-driven suites in `tests/integration/` cover the
-end-to-end crawl against the fixture, robots enforcement, nested state discovery, and the
-determinism guarantee (identical pixels across two runs of a deliberately volatile page).
+end-to-end crawl against the fixture, robots enforcement, nested state discovery, the
+routes-file steering loop (edit → rerun respects it), and the determinism guarantee
+(identical pixels across two runs of a deliberately volatile page).
 
 ## Scope & ethics
 

@@ -33,8 +33,19 @@ describe("parseFlags", () => {
     expect(() => parseFlags("crawl", ["--replay=yes"])).toThrow(/--replay takes no value/);
   });
 
-  it("rejects bare positional arguments", () => {
-    expect(() => parseFlags("crawl", ["https://x.dev"])).toThrow(/unexpected argument/);
+  it("maps one bare positional to --base for crawl/discover/init", () => {
+    expect(parseFlags("crawl", ["https://x.dev"])).toEqual({ base: "https://x.dev" });
+    expect(parseFlags("init", ["https://x.dev", "--quiet"])).toEqual({
+      base: "https://x.dev",
+      quiet: true,
+    });
+  });
+
+  it("rejects a second positional and positionals on other commands", () => {
+    expect(() => parseFlags("crawl", ["https://a.dev", "https://b.dev"])).toThrow(
+      /unexpected argument/,
+    );
+    expect(() => parseFlags("serve", ["https://x.dev"])).toThrow(/unexpected argument/);
   });
 
   it("mixes forms", () => {

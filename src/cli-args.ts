@@ -31,6 +31,14 @@ const FLAG_TYPES: Record<string, FlagType> = {
   concurrency: "string",
   timeout: "string",
   out: "string",
+  "no-save": "boolean",
+};
+
+/** Commands that accept one bare positional, mapped onto a flag (crawl <url>). */
+const POSITIONAL: Record<string, string> = {
+  crawl: "base",
+  discover: "base",
+  init: "base",
 };
 
 const OVERRIDE_FLAGS = [
@@ -45,9 +53,20 @@ const OVERRIDE_FLAGS = [
 
 /** Which flags each command accepts; anything else is an error, not a silent no-op. */
 export const COMMAND_FLAGS: Record<string, string[]> = {
-  crawl: ["config", "base", "replay", "json", "quiet", "fail-on-error", ...OVERRIDE_FLAGS],
+  crawl: [
+    "config",
+    "base",
+    "replay",
+    "json",
+    "quiet",
+    "fail-on-error",
+    "no-save",
+    ...OVERRIDE_FLAGS,
+  ],
   discover: ["config", "base", "json", "quiet", ...OVERRIDE_FLAGS],
   capture: ["config", "base", "manifest", "json", "quiet", "fail-on-error", ...OVERRIDE_FLAGS],
+  init: ["base", "force", "quiet"],
+  routes: ["config", "json", "quiet", "out"],
   auth: ["config", "force", "quiet"],
   validate: ["config", "manifest", "json", "quiet", "out"],
   serve: ["config", "run", "port", "open", "shoot", "quiet", "out"],
@@ -67,6 +86,11 @@ export function parseFlags(cmd: string, argv: string[]): Flags {
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (!token.startsWith("--")) {
+      const positional = POSITIONAL[cmd];
+      if (positional && flags[positional] === undefined) {
+        flags[positional] = token;
+        continue;
+      }
       throw new UsageError(`unexpected argument "${token}" — flags look like --name=value`);
     }
     const eq = token.indexOf("=");

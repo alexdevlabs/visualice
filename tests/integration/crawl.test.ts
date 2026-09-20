@@ -20,6 +20,7 @@ let runDir: string;
 let manifest: Manifest;
 
 const config = ConfigSchema.parse({
+  routesFile: false,
   scope: { maxPages: 3, maxDepth: 1 },
   devices: [{ name: "small", width: 420, height: 640, dpr: 1 }],
   discovery: { interactions: { maxPerPage: 3 } },

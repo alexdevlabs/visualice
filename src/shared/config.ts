@@ -285,6 +285,12 @@ export const ConfigSchema = z.object({
   stabilize: StabilizeSchema.default(StabilizeSchema.parse({})),
   auth: AuthSchema.default(AuthSchema.parse({})),
   http: HttpSchema.default(HttpSchema.parse({})),
+  routesFile: z
+    .union([z.string(), z.literal(false)])
+    .default("visualice.routes.md")
+    .describe(
+      "Human/LLM-editable site index (routes + states), regenerated after every crawl; `false` disables it.",
+    ),
   output: OutputSchema.default(OutputSchema.parse({})),
   politeness: PolitenessSchema.default(PolitenessSchema.parse({})),
 });
