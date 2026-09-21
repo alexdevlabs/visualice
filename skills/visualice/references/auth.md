@@ -24,7 +24,11 @@ auth: {
 - Add `verify: { url: "**/dashboard" }` (and/or a `selector`) to the login block — the
   engine then refuses to save a logged-out session when the login silently fails.
 - `visualice auth` runs the recipe and saves `auth.json`; `crawl` reuses it automatically
-  and re-runs the login when the session goes stale (`login.maxAgeHours`). Use
-  `visualice auth --force` to re-run the login even if the saved session looks fresh.
+  and re-runs the login when the session goes stale (`login.maxAgeHours`, 12h by
+  default). If you know which cookie carries the session, name it —
+  `sessionCookies: ["sessionid"]` (a trailing `*` matches a prefix) — and staleness is
+  read from that cookie's own expiry instead. Other cookies the login set (CSRF,
+  consent, analytics) are never consulted. Use `visualice auth --force` to re-run the
+  login even if the saved session looks fresh.
 - Password-protected staging: set `http.httpCredentials` / `http.extraHTTPHeaders`
   (values may use `${ENV_VAR}`) and `http.ignoreHTTPSErrors` for self-signed TLS.

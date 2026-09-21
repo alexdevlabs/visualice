@@ -46,6 +46,34 @@ export async function listRuns(outRoot: string): Promise<string[]> {
 }
 
 /**
+ * The run a diff against `toId` should start from: the newest one strictly older
+ * than it, by the same ordering `listRuns` uses.
+ *
+ * Not "the newest run that isn't `toId`" — that is only the same thing when `toId`
+ * is the newest run. Pointed at an older one, it would pick a *newer* baseline and
+ * report every addition as a removal. `toId` doesn't have to be in `runs` (a run
+ * directory passed by path); it is placed where its id sorts.
+ */
+export function previousRunId(runs: string[], toId: string): string | undefined {
+  const ordered = sortRunIds([...new Set([...runs, toId])]);
+  return ordered[ordered.indexOf(toId) - 1];
+}
+
+/**
+ * Which of `ids` (oldest → newest) to delete so that `keep` runs remain.
+ *
+ * `current` — the run just written — survives whatever its age, and it spends one
+ * of the `keep` slots doing so. Filtering it out of the doomed set *after* choosing
+ * that set (or out of `ids` before, which comes to the same thing) spares it without
+ * reclaiming its slot, and the directory quietly holds `keep + 1` runs from then on.
+ */
+export function runsToPrune(ids: string[], keep: number, current?: string): string[] {
+  const others = ids.filter((id) => id !== current);
+  const budget = current !== undefined && ids.includes(current) ? keep - 1 : keep;
+  return others.slice(0, Math.max(0, others.length - budget));
+}
+
+/**
  * Diff directories under `<outRoot>/diffs`, newest first.
  *
  * `visualice diff` names them `<fromId>__<toId>`, so the *second* id is what
@@ -90,6 +118,14 @@ export async function markRunIncomplete(dir: string): Promise<void> {
 
 export async function markRunComplete(dir: string): Promise<void> {
   await fs.rm(path.join(dir, INCOMPLETE), { force: true }).catch(() => {});
+}
+
+/** Is the run in `dir` finished — not being written, and not waiting on `--resume`? */
+export async function isRunComplete(dir: string): Promise<boolean> {
+  return fs.access(path.join(dir, INCOMPLETE)).then(
+    () => false,
+    () => true,
+  );
 }
 
 /** Newest run that was never finished, if any. */

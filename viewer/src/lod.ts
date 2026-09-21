@@ -64,6 +64,8 @@ export interface TileIndex {
   cell: number;
   buckets: Map<string, Placed[]>;
   all: Placed[];
+  /** Each tile's position in `all`, so culled results can be put back in layout order. */
+  order: Map<Placed, number>;
 }
 
 /** Cells sized to a few typical tiles: small enough to be selective, few enough to be cheap. */
@@ -85,7 +87,7 @@ export function buildTileIndex(placed: Placed[], cell = DEFAULT_CELL): TileIndex
       }
     }
   }
-  return { cell, buckets, all: placed };
+  return { cell, buckets, all: placed, order: new Map(placed.map((p, i) => [p, i])) };
 }
 
 /** Same result as `cullTiles`, but only touching the cells the viewport covers. */
@@ -120,8 +122,11 @@ export function cullTilesIndexed(
       }
     }
   }
-  // Preserve layout order so React keys and the DOM stay stable while panning.
-  return out.sort((a, b) => index.all.indexOf(a) - index.all.indexOf(b));
+  // Preserve layout order so React keys and the DOM stay stable while panning. By
+  // lookup, not `indexOf`: this runs every frame, and a linear scan per comparison
+  // would cost more than the grid saved.
+  const { order } = index;
+  return out.sort((a, b) => order.get(a)! - order.get(b)!);
 }
 
 // ---- Level of detail ----

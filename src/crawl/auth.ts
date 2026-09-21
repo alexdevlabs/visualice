@@ -23,21 +23,36 @@ export function resolveEnvSteps(steps: RecipeStep[]): RecipeStep[] {
   return out;
 }
 
-/** The shape Playwright writes; only the cookie expiries matter here. */
+/** The shape Playwright writes; only the cookie names and expiries matter here. */
 interface StorageState {
   cookies?: { name: string; expires?: number }[];
+}
+
+/** Does a cookie name match one of the configured names? A trailing `*` matches a prefix. */
+export function isSessionCookie(name: string, patterns: string[]): boolean {
+  return patterns.some((p) => (p.endsWith("*") ? name.startsWith(p.slice(0, -1)) : name === p));
 }
 
 /**
  * When the saved session's own cookies say it expires, in ms since the epoch.
  *
- * File mtime only says when the session was *written*, which is a guess at when it
- * stops working. The cookies carry the real answer, so a short-lived session is
- * refreshed when it actually expires rather than when a fixed age elapses. Session
- * cookies (`expires` of -1) have no expiry to read and are ignored; the soonest
- * real expiry wins, since that's what logs the crawl out.
+ * Only the cookies named in `sessionCookies` are consulted, and with none named
+ * there is no answer. A login flow's storage state holds every cookie the site set
+ * on the way — CSRF tokens, consent banners, analytics — and their expiries say
+ * nothing about the session: taking the soonest of them lets a five-minute CSRF
+ * cookie force a fresh login on every run, and once any one of them lapses the
+ * session never looks fresh again. Which cookie *is* the session is something only
+ * the site's owner knows.
+ *
+ * Browser-session cookies (`expires` of -1) have no expiry to read and are ignored;
+ * among the named cookies the soonest real expiry wins, since that is what logs
+ * the crawl out.
  */
-export async function storageStateExpiry(file: string): Promise<number | undefined> {
+export async function storageStateExpiry(
+  file: string,
+  sessionCookies: string[] = [],
+): Promise<number | undefined> {
+  if (!sessionCookies.length) return undefined;
   const raw = await fs.readFile(file, "utf8").catch(() => undefined);
   if (raw === undefined) return undefined;
   let state: StorageState;
@@ -47,6 +62,7 @@ export async function storageStateExpiry(file: string): Promise<number | undefin
     return undefined; // unreadable: fall back to mtime
   }
   const expiries = (state.cookies ?? [])
+    .filter((c) => isSessionCookie(c.name, sessionCookies))
     .map((c) => c.expires)
     .filter((e): e is number => typeof e === "number" && e > 0)
     .map((e) => e * 1000); // Playwright stores seconds
@@ -55,7 +71,8 @@ export async function storageStateExpiry(file: string): Promise<number | undefin
 
 /**
  * Ensure a Playwright storageState file exists for authenticated crawls.
- * - Reuses a stored session while it is still valid (by cookie expiry, else by age).
+ * - Reuses a stored session while it is still valid — by the expiry of the cookies
+ *   named in `login.sessionCookies`, else by age (`login.maxAgeHours`).
  * - Otherwise, if a login recipe is configured, runs it once and saves the session.
  * - Returns the absolute path to use as `storageState`, or undefined for anonymous crawls.
  */
@@ -73,10 +90,10 @@ export async function ensureStorageState(
   const stat = await fs.stat(abs).catch(() => null);
   if (stat) {
     if (!login) return abs; // no recipe to refresh with — use what we have
-    // Cookie expiry is the session's own answer; `maxAgeHours` is the fallback for
-    // sessions whose cookies don't carry one. A minute of slack keeps a crawl from
-    // starting with a session that expires while it runs.
-    const expiry = await storageStateExpiry(abs);
+    // The named session cookie's expiry is the session's own answer; `maxAgeHours` is
+    // the fallback when none is named or it carries no expiry. A minute of slack keeps
+    // a crawl from starting with a session that expires while it runs.
+    const expiry = await storageStateExpiry(abs, login.sessionCookies);
     const fresh =
       expiry !== undefined
         ? expiry - Date.now() > 60_000
@@ -84,7 +101,7 @@ export async function ensureStorageState(
     if (fresh) return abs;
     log(
       expiry !== undefined
-        ? `saved session expired (cookies expired ${new Date(expiry).toISOString()})`
+        ? `saved session expired (session cookie expired ${new Date(expiry).toISOString()})`
         : `saved session is older than ${maxAgeHours}h`,
     );
   } else if (!login) {

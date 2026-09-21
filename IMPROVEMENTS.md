@@ -43,7 +43,8 @@ the working tree on top of those.
       pruning by parsed run time that never counts or deletes directories it didn't
       create; `screenshot.maxHeight` clamp + selector pre-validation; credential
       redaction in the config snapshot; progress + ETA; `crawl --resume`; `http.proxy`;
-      auth freshness from cookie expiry rather than file mtime; focus/validation form
+      auth freshness from cookie expiry rather than file mtime (since narrowed to the cookies
+      named in `login.sessionCookies` — see `REVIEW.md` finding 2); focus/validation form
       states.
 - [x] **Viewer.** Grouped layout wraps into columns (Fit went from 2% to ~17% on the
       fixture); run switcher; minimap; failed captures as placeholder tiles with a filter
@@ -165,6 +166,13 @@ Not roadmap items — things worth knowing before someone reports them as bugs.
 - **The Windows integration leg has never actually run.** It's wired and the code it
   exercises is OS-sensitive (symlinked `latest`, run directories, temp paths) — the
   first CI run on it is the one to watch.
-- **Region signatures fall back to a DOM path.** Deterministic for a given DOM, but a
-  node inserted above an anonymous dialog between two probes changes its key. Named
-  regions (`id`, `aria-label`, `aria-labelledby`) are unaffected, which is most of them.
+- **Unnamed region signatures are a DOM path plus a hash of what the region says.** The
+  hash is what tells apart two portal dialogs mounted in turn at the same spot (see
+  `REVIEW.md` finding 13). Two unnamed regions with the same opening text in the same
+  spot still collide, and a region whose text changes between probes (a live timer)
+  stops deduping against itself. Named regions (`id`, `aria-label`, `aria-labelledby`)
+  are unaffected, which is most of them.
+- **Stabilization can close what a recipe opened.** The lazy-load scroll runs after the
+  recipe, so a menu that closes on scroll is photographed closed. Page reuse now detects
+  this and reloads rather than building on it (`REVIEW.md` finding 11), but the shot of
+  the menu state itself is still taken after the scroll.

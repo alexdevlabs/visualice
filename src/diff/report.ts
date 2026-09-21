@@ -48,7 +48,9 @@ export function renderDiffReport(diff: RunDiff): string {
       (summary.uncomparable ? ` · ${summary.uncomparable} uncomparable` : ""),
   );
   if (diff.minRatio > 0) {
-    lines.push(`- **Threshold:** a shot counts as changed above ${pct(diff.minRatio)} of pixels`);
+    lines.push(
+      `- **Threshold:** a shot counts as changed above ${pct(diff.minRatio)} of pixels, or of page area gained or lost`,
+    );
   }
   lines.push("");
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Manifest, RouteNode, ShotRef, StateNode } from "../src/shared/types";
 import { pairShots, routeDelta } from "../src/diff/compare";
 import { renderDiffReport } from "../src/diff/report";
-import type { RunDiff } from "../src/diff";
+import { isChanged, sizeRatio, type RunDiff } from "../src/diff";
 
 const shot = (over: Partial<ShotRef> = {}): ShotRef => ({
   full: "screenshots/x.png",
@@ -44,6 +44,17 @@ describe("pairShots", () => {
     const pairs = pairShots(a, a);
     expect(pairs).toHaveLength(1);
     expect(pairs[0]).toMatchObject({ status: "both", route: "home", state: "default" });
+  });
+
+  it("pairs every hash route, including ones whose slugs used to collide", () => {
+    // `/#/a/b`, `/#/a-b` and `/#/a b` shared a slug, so they collapsed into one map
+    // entry and two of the three routes dropped out of the diff entirely.
+    const routes = ["/#/a/b", "/#/a-b", "/#/a%20b"].map((u) =>
+      route(u, [state("default", { desktop: shot() })]),
+    );
+    const pairs = pairShots(manifest(routes), manifest(routes));
+    expect(pairs).toHaveLength(3);
+    expect(new Set(pairs.map((p) => p.routeUrl))).toEqual(new Set(routes.map((r) => r.url)));
   });
 
   it("reports one-sided shots as added or removed", () => {
@@ -180,5 +191,36 @@ describe("renderDiffReport", () => {
     });
     expect(md).toContain("## Uncomparable");
     expect(md).toContain("failed in the new run (timeout)");
+  });
+});
+
+describe("isChanged", () => {
+  const same = { width: 1000, height: 2000 };
+
+  it("holds a size change to the same noise floor as the pixels", () => {
+    // The regression: any size change counted, so a page that grew by one pixel failed
+    // `--fail-on-error` whatever `--min-ratio` said.
+    const grewByOne = { ratio: 0, from: same, to: { width: 1000, height: 2001 } };
+    expect(isChanged(grewByOne, 0.001)).toBe(false);
+    expect(isChanged(grewByOne, 0)).toBe(true); // the default still counts everything
+  });
+
+  it("still catches a page that lost its footer, whose overlap is identical", () => {
+    const lostFooter = { ratio: 0, from: same, to: { width: 1000, height: 1700 } };
+    expect(isChanged(lostFooter, 0.001)).toBe(true);
+  });
+
+  it("judges pixels as before when the size didn't move", () => {
+    expect(isChanged({ ratio: 0.0005, from: same, to: same }, 0.001)).toBe(false);
+    expect(isChanged({ ratio: 0.002, from: same, to: same }, 0.001)).toBe(true);
+  });
+});
+
+describe("sizeRatio", () => {
+  it("is the share of the larger shot the other doesn't cover", () => {
+    expect(sizeRatio({ width: 100, height: 200 }, { width: 100, height: 200 })).toBe(0);
+    expect(sizeRatio({ width: 100, height: 200 }, { width: 100, height: 250 })).toBeCloseTo(0.2);
+    expect(sizeRatio({ width: 100, height: 250 }, { width: 100, height: 200 })).toBeCloseTo(0.2);
+    expect(sizeRatio({ width: 0, height: 0 }, { width: 0, height: 0 })).toBe(0);
   });
 });

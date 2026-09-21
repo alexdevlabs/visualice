@@ -16,6 +16,7 @@ import { pathSlug, stateSlug } from "../shared/slug";
 import { applyContextInit, stabilizePage } from "./stabilize";
 import { makeThumb, imageSize, writeFull, writeViewportCrop } from "./thumbnails";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
+import { takeSnapshot } from "./snapshot";
 import { httpContextOptions } from "./context-options";
 import { createProgress } from "../shared/progress";
 import { pathExists } from "../shared/fsx";
@@ -58,6 +59,72 @@ interface StateCtx {
 export interface PageState {
   url?: string;
   recipe?: RecipeStep[];
+  /** The open-region signature the recipe left, read before stabilization ran. */
+  sig?: string;
+}
+
+/**
+ * The `waitFor` steps a recipe ends on — what it promises is on screen once it has
+ * finished. Everything after its last interaction.
+ */
+export function closingPromises(
+  recipe: RecipeStep[],
+): Extract<RecipeStep, { action: "waitFor" }>[] {
+  const out: Extract<RecipeStep, { action: "waitFor" }>[] = [];
+  for (let i = recipe.length - 1; i >= 0; i--) {
+    const step = recipe[i];
+    if (step.action === "wait") continue;
+    if (step.action !== "waitFor") break;
+    if (step.selector) out.unshift(step);
+  }
+  return out;
+}
+
+/** Does `step`'s condition hold right now? Checked, not waited for. */
+async function holdsNow(
+  page: Page,
+  step: Extract<RecipeStep, { action: "waitFor" }>,
+): Promise<boolean> {
+  if (!step.selector) return true;
+  const all = page.locator(step.selector);
+  switch (step.state ?? "visible") {
+    case "visible":
+      return all.first().isVisible();
+    case "hidden":
+      return all.first().isHidden();
+    case "attached":
+      return (await all.count()) > 0;
+    case "detached":
+      return (await all.count()) === 0;
+  }
+}
+
+/**
+ * Is the page still what `shown.recipe` left it as?
+ *
+ * `reusePlan` settles which steps are left to run; this settles whether running
+ * only those is still equivalent to running them all from a fresh load. It is only
+ * if nothing that ran *between* the two changed what the remaining steps build on —
+ * and between them the page was stabilized and photographed. Stabilizing scrolls
+ * the whole page to trigger lazy loading, which is exactly what closes a
+ * Floating-UI popover or a Bootstrap dropdown: the next state's `click Submenu`
+ * then fails against a closed menu that a fresh load would have had open.
+ *
+ * Two cheap checks. The recipe's own closing promises (its trailing `waitFor`s)
+ * must still hold, and the open regions must be the ones it left. Either failing
+ * means a reload, which is never wrong — only slower.
+ */
+export async function stillShowing(page: Page, shown: PageState): Promise<boolean> {
+  if (shown.sig === undefined || !shown.recipe) return false;
+  try {
+    if ((await takeSnapshot(page)).sig !== shown.sig) return false;
+    for (const step of closingPromises(shown.recipe)) {
+      if (!(await holdsNow(page, step))) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -183,6 +250,8 @@ async function adoptExistingShot(ctx: StateCtx): Promise<ShotRef | undefined> {
 interface Captured {
   ref: ShotRef;
   reusedNavigation: boolean;
+  /** Reuse was planned, but the page had moved on since the previous shot. */
+  reuseDeclined: boolean;
 }
 
 async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promise<Captured> {
@@ -192,13 +261,17 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // Navigate by the (relative) route path resolved against the *current* base, not a
   // stored absolute finalUrl — that keeps a cached site model portable across runs/hosts.
   const url = resolveUrl(baseUrl, route.url);
-  const remaining = config.politeness.reuseNavigation ? reusePlan(shown, url, state.recipe) : null;
+  const reuse = config.politeness.reuseNavigation;
+  let remaining = reuse ? reusePlan(shown, url, state.recipe) : null;
+  const declined = remaining !== null && !(await stillShowing(page, shown));
+  if (declined) remaining = null;
 
   // From here on the page is being changed, so what it shows is unknown until the
   // recipe finishes — a step that throws half way must not leave a stale claim
   // behind for the next state to trust.
   shown.url = undefined;
   shown.recipe = undefined;
+  shown.sig = undefined;
 
   if (remaining === null) {
     const resp = await gotoRoute(page, url, config.stabilize.waitStrategy);
@@ -216,9 +289,16 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   }
 
   await applyRecipe(page, remaining ?? state.recipe);
-  await stabilizePage(page, config.stabilize, ctx.log);
+  // What the recipe left, read before stabilization has a chance to change it: the
+  // baseline `stillShowing` holds the next state's reuse to.
+  const left = reuse ? await takeSnapshot(page).catch(() => undefined) : undefined;
+  // A recipe that scrolls wants the shot taken from where it scrolled to; without
+  // this, stabilization's lazy-load pass would put the page back at the top.
+  const keepScroll = state.recipe.some((s) => s.action === "scroll");
+  await stabilizePage(page, config.stabilize, ctx.log, { keepScroll });
   shown.url = url;
   shown.recipe = state.recipe;
+  shown.sig = left?.sig;
 
   const dir = path.join(shotsDir, pathSlug(route.url), stateSlug(state.id));
   await fs.mkdir(dir, { recursive: true });
@@ -293,7 +373,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   };
   await fs.writeFile(metaPath, JSON.stringify(sidecar, null, 2));
 
-  return { ref, reusedNavigation: remaining !== null };
+  return { ref, reusedNavigation: remaining !== null, reuseDeclined: declined };
 }
 
 /**
@@ -367,6 +447,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
       log,
     });
     let reusedNavigations = 0;
+    let declinedReuses = 0;
 
     for (const { device, groups } of plan) {
       log(`▸ ${device.name} (${device.width}×${device.height} @${device.dpr})`);
@@ -422,12 +503,13 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
             }
             for (let attempt = 0; ; attempt++) {
               try {
-                const { ref, reusedNavigation } = await captureState(
+                const { ref, reusedNavigation, reuseDeclined } = await captureState(
                   current,
                   { route, state, device, baseUrl, shotsDir, runDir, config, log },
                   shown,
                 );
                 if (reusedNavigation) reusedNavigations++;
+                if (reuseDeclined) declinedReuses++;
                 state.shots[device.name] = ref;
                 shotCount++;
                 progress.tick();
@@ -438,6 +520,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
                 current = await recycle();
                 shown.url = undefined;
                 shown.recipe = undefined;
+                shown.sig = undefined;
                 if (attempt < config.politeness.retries) {
                   log(
                     `  ↻ ${pathSlug(route.url)} / ${state.id} [${device.name}]: retrying — ${error}`,
@@ -461,8 +544,13 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
     }
     progress.done();
     if (resumed) log(`resumed: ${resumed} shot(s) already on disk were kept`);
-    if (reusedNavigations) {
-      log(`page reuse: ${reusedNavigations} of ${shotCount} shot(s) needed no reload`);
+    if (reusedNavigations || declinedReuses) {
+      // Declines are worth a number: each is a page that stabilization changed under
+      // an open state, which usually means an overlay that closes on scroll.
+      const declined = declinedReuses
+        ? ` (${declinedReuses} more reloaded: the page had changed since the previous shot)`
+        : "";
+      log(`page reuse: ${reusedNavigations} of ${shotCount} shot(s) needed no reload${declined}`);
     }
   } finally {
     await browser.close();

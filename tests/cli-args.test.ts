@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFlags, applyOverrides, UsageError } from "../src/cli-args";
+import { parseFlags, applyOverrides, isCommand, UsageError } from "../src/cli-args";
 import { ConfigSchema } from "../src/shared/config";
 
 describe("parseFlags", () => {
@@ -54,6 +54,26 @@ describe("parseFlags", () => {
       "max-pages": "5",
       quiet: true,
     });
+  });
+});
+
+describe("isCommand", () => {
+  it("knows the real commands", () => {
+    for (const cmd of ["crawl", "diff", "serve", "doctor"]) expect(isCommand(cmd), cmd).toBe(true);
+  });
+
+  it("does not mistake Object.prototype's names for commands", () => {
+    // `in` said yes to these: `toString` exited 0 having done nothing, and
+    // `valueOf --json` crashed on `allowed.includes is not a function`.
+    for (const cmd of ["toString", "valueOf", "constructor", "hasOwnProperty", "__proto__"]) {
+      expect(isCommand(cmd), cmd).toBe(false);
+    }
+  });
+
+  it("keeps parseFlags from reaching the prototype either", () => {
+    expect(() => parseFlags("valueOf", ["--json"])).toThrow(UsageError);
+    expect(() => parseFlags("crawl", ["--toString"])).toThrow(UsageError);
+    expect(() => parseFlags("constructor", ["x"])).toThrow(UsageError);
   });
 });
 

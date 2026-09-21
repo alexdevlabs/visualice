@@ -158,6 +158,17 @@ describe("spatial index", () => {
     ).toEqual(ids);
   });
 
+  it("restores that order by lookup, not by scanning the layout per comparison", () => {
+    // At the 2,500-tile cap an `indexOf` per comparison was ~1.7M array steps a frame,
+    // on the line after the grid that exists to avoid exactly that.
+    const all = [...grid];
+    all.indexOf = () => {
+      throw new Error("linear scan in the per-frame cull");
+    };
+    const index = buildTileIndex(all);
+    expect(() => cullTilesIndexed(index, at(0.4, -500, -500), vp)).not.toThrow();
+  });
+
   it("still works zoomed all the way out, where every cell is on screen", () => {
     const index = buildTileIndex(grid);
     const t = at(0.02, 0, 0);

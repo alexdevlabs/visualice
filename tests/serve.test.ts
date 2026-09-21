@@ -109,6 +109,30 @@ describe("serveViewer comparisons", () => {
     expect(res.status).toBe(200);
   });
 
+  it("pins a run's images by id, but never through an alias for the newest run", async () => {
+    // `/data/` and `runs/latest/` put a different run's pixels behind the same URL
+    // after every crawl; caching them as immutable is what showed stale screenshots.
+    const id = "2026-01-01T00-00-00-000Z";
+    const runsDir = path.join(root, "runs");
+    await fs.writeFile(path.join(runsDir, id, "shot.png"), "PNG");
+    await fs.symlink(id, path.join(runsDir, "latest"), "dir").catch(() => {});
+    const header = async (url: string) => {
+      const res = await fetch(withDiffs.url + url);
+      await res.arrayBuffer();
+      return res.headers.get("cache-control");
+    };
+    expect(await header(`/runs/${id}/shot.png`)).toBe("public, max-age=31536000, immutable");
+    expect(await header("/data/shot.png")).toBe("no-cache");
+    expect(await header(`/diffs/${id}__2026-01-02T00-00-00-000Z/images/a.png`)).toBe("no-cache");
+    if (await fs.readlink(path.join(runsDir, "latest")).catch(() => undefined)) {
+      expect(await header("/runs/latest/shot.png")).toBe("no-cache");
+    }
+    // A run that is still being written (or awaits --resume) isn't final either.
+    await fs.writeFile(path.join(runsDir, id, ".incomplete"), "");
+    expect(await header(`/runs/${id}/shot.png`)).toBe("no-cache");
+    await fs.rm(path.join(runsDir, id, ".incomplete"));
+  });
+
   it("confines diff paths to the diffs directory", async () => {
     const res = await fetch(`${withDiffs.url}/diffs/%2e%2e%2fruns%2fsecret.txt`);
     expect(res.status).toBe(404);

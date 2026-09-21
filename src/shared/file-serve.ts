@@ -101,6 +101,31 @@ export function parseRange(header: string | undefined, size: number): RangeResul
 /** The parts of a request the file server reads, so callers can pass a real one. */
 export type ServableRequest = Pick<http.IncomingMessage, "headers" | "method">;
 
+export interface ServeOptions {
+  /**
+   * The URL names content that can never change, so images and fonts may be cached
+   * for a year without asking again. Only true for a path that names one run by its
+   * id: `/data/…` and `runs/latest/…` are aliases for whichever run is newest, and a
+   * re-crawl puts different pixels behind the very same URL.
+   */
+  immutable?: boolean;
+}
+
+/** Media the viewer loads by the hundred, and so the only files worth caching. */
+const CACHEABLE = new Set([".png", ".jpg", ".jpeg", ".webp", ".woff", ".woff2", ".ico"]);
+
+/** A validator that changes whenever the file is rewritten. */
+function etagFor(stat: { size: number; mtimeMs: number }): string {
+  return `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+}
+
+/** Does an `If-None-Match` header already name this version of the file? */
+function matchesEtag(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  const weak = (t: string) => t.trim().replace(/^W\//, "");
+  return header.split(",").some((t) => t.trim() === "*" || weak(t) === weak(etag));
+}
+
 /**
  * Serve a file confined to `root`. Returns false (caller decides 404) if the
  * resolved path escapes root or isn't a regular file.
@@ -112,12 +137,20 @@ export type ServableRequest = Pick<http.IncomingMessage, "headers" | "method">;
  * Pass `req` to get conditional-range behaviour: `Range` is honoured with a 206 and
  * `HEAD` returns the headers alone. Without it the whole file is streamed, which is
  * what every internal caller wanted before and still gets.
+ *
+ * Images and fonts are cached one of two ways. Under `immutable` the browser keeps
+ * them for a year without asking; otherwise it keeps them but revalidates, and an
+ * unchanged file costs a 304 rather than its bytes. The second is the default
+ * because it is the one that is never wrong: a path is only immutable if the caller
+ * knows it names one run, and guessing wrong shows the previous run's pixels with
+ * no error anywhere.
  */
 export async function serveFileFromRoot(
   res: http.ServerResponse,
   root: string,
   rel: string,
   req?: ServableRequest,
+  opts: ServeOptions = {},
 ): Promise<boolean> {
   const resolvedRoot = path.resolve(root);
   const filePath = path.resolve(resolvedRoot, rel.replace(/^\/+/, ""));
@@ -129,12 +162,25 @@ export async function serveFileFromRoot(
   res.setHeader("Content-Type", contentType(filePath));
   // Advertised unconditionally: a client that sees this may skip a probe request.
   res.setHeader("Accept-Ranges", "bytes");
-  // Screenshots and fonts are immutable per run (a re-crawl gets a new run dir), so
-  // let the browser cache them — re-panning over a region must not re-download
-  // multi-MB PNGs. HTML/JSON/JS stay uncached so `latest` always serves fresh data.
+  // Re-panning over a region must not re-download multi-MB PNGs, so media is always
+  // cacheable — for good when the URL is pinned to a run, and otherwise only until
+  // the file changes. HTML/JSON/JS are never cached, so `latest` serves fresh data.
   const ext = path.extname(filePath).toLowerCase();
-  const immutable = [".png", ".jpg", ".jpeg", ".webp", ".woff", ".woff2", ".ico"].includes(ext);
-  res.setHeader("Cache-Control", immutable ? "public, max-age=31536000, immutable" : "no-store");
+  if (!CACHEABLE.has(ext)) {
+    res.setHeader("Cache-Control", "no-store");
+  } else if (opts.immutable) {
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else {
+    const etag = etagFor(stat);
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("ETag", etag);
+    res.setHeader("Last-Modified", stat.mtime.toUTCString());
+    if (matchesEtag(req?.headers["if-none-match"], etag)) {
+      res.statusCode = 304;
+      res.end();
+      return true;
+    }
+  }
 
   const range = parseRange(req?.headers.range, stat.size);
   if (range.kind === "unsatisfiable") {

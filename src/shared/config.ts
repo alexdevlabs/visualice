@@ -228,7 +228,15 @@ const LoginSchema = z.object({
     .number()
     .positive()
     .default(12)
-    .describe("Re-run the login recipe once the saved session is older than this."),
+    .describe(
+      "Re-run the login recipe once the saved session is older than this. Ignored when `sessionCookies` names a cookie with an expiry.",
+    ),
+  sessionCookies: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Names of the cookie(s) that carry the session (a trailing * matches a prefix, e.g. wordpress_logged_in_*). When set, the session is refreshed when the soonest of these expires, instead of after maxAgeHours. Other cookies (CSRF, consent, analytics) never decide it.",
+    ),
   verify: z
     .object({
       url: z

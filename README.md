@@ -137,7 +137,9 @@ overlapping region is compared and the size change is reported separately; a cap
 failed in either run is listed as **uncomparable** with the reason.
 
 `--threshold=<n>` is the per-channel tolerance (0–255, default 12) and `--min-ratio=<f>`
-the fraction of pixels that must differ before a pair counts as changed (default 0).
+the noise floor: the fraction of pixels that must differ — or, when the height changed,
+the fraction of the page gained or lost — before a pair counts as changed (default 0,
+so any difference counts; `0.001` lets a page that grew by a few pixels through).
 `--json` prints the summary instead of the report path, `--diff-out=<dir>` moves the
 output, and `--fail-on-error` exits 3 when anything changed, appeared or disappeared —
 the CI gate.

@@ -15,7 +15,11 @@ export interface DiffOptions {
   outDir?: string;
   /** Per-channel tolerance passed to the pixel comparison. */
   threshold?: number;
-  /** Below this fraction of changed pixels a pair is reported as unchanged. Default 0. */
+  /**
+   * Noise floor: a pair is changed only when more than this fraction of its pixels
+   * differ, or more than this fraction of the page was gained or lost to a size
+   * change. Default 0 — any difference at all.
+   */
   minRatio?: number;
   concurrency?: number;
   log?: (msg: string) => void;
@@ -26,6 +30,32 @@ async function loadManifest(runDir: string): Promise<Manifest> {
   const m = await readManifest(file).catch(() => undefined);
   if (!m) throw new Error(`no run manifest at ${file}`);
   return m;
+}
+
+type Size = { width: number; height: number };
+
+/**
+ * The share of the larger shot that the other one doesn't cover — the area a size
+ * change added or removed. 0 when the two are the same size.
+ */
+export function sizeRatio(from: Size, to: Size): number {
+  const overlap = Math.min(from.width, to.width) * Math.min(from.height, to.height);
+  const larger = Math.max(from.width * from.height, to.width * to.height);
+  return larger > 0 ? 1 - overlap / larger : 0;
+}
+
+/**
+ * Does a compared pair count as changed?
+ *
+ * Two kinds of difference, one noise floor. The overlap's changed pixels are one;
+ * the area only one shot has is the other, and it matters — a page that lost its
+ * footer has an identical overlap and is still broken. But it is held to `minRatio`
+ * like the pixels are: counting *any* size change as a change let a page that grew
+ * by a pixel (a lazy image, a rotating testimonial) fail `--fail-on-error` with
+ * nothing `--min-ratio` could do about it.
+ */
+export function isChanged(cmp: { ratio: number; from: Size; to: Size }, minRatio: number): boolean {
+  return cmp.ratio > minRatio || sizeRatio(cmp.from, cmp.to) > minRatio;
 }
 
 /** Mirror the screenshot layout inside the diff dir: images/<route>/<state>/<device>.png */
@@ -90,7 +120,7 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
         path.join(opts.toDir, pair.to!.full!),
         { threshold: opts.threshold, renderDiff: opts.outDir !== undefined },
       );
-      const changed = cmp.ratio > minRatio || cmp.sizeChanged;
+      const changed = isChanged(cmp, minRatio);
       // An unchanged pair's diff image is a flat grey rectangle — only the changed
       // ones are worth a file (and a directory) on disk.
       if (changed && cmp.diff && opts.outDir) {
@@ -103,6 +133,7 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
         changedPixels: cmp.changedPixels,
         comparedPixels: cmp.comparedPixels,
         sizeChanged: cmp.sizeChanged || undefined,
+        sizeRatio: cmp.sizeChanged ? sizeRatio(cmp.from, cmp.to) : undefined,
         fromSize: cmp.from,
         toSize: cmp.to,
         image: opts.outDir && changed ? rel : undefined,

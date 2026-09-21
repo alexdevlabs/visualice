@@ -554,9 +554,16 @@
             },
             "maxAgeHours": {
               "default": 12,
-              "description": "Re-run the login recipe once the saved session is older than this.",
+              "description": "Re-run the login recipe once the saved session is older than this. Ignored when `sessionCookies` names a cookie with an expiry.",
               "type": "number",
               "exclusiveMinimum": 0
+            },
+            "sessionCookies": {
+              "description": "Names of the cookie(s) that carry the session (a trailing * matches a prefix, e.g. wordpress_logged_in_*). When set, the session is refreshed when the soonest of these expires, instead of after maxAgeHours. Other cookies (CSRF, consent, analytics) never decide it.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "verify": {
               "description": "Post-login success check. Without it, a silently-changed login form would save a logged-out session and produce a run of login-wall screenshots.",

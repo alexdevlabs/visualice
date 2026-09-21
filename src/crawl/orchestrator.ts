@@ -19,11 +19,11 @@ import { pathExists } from "../shared/fsx";
 import { pathSlug } from "../shared/slug";
 import {
   findResumableRun,
-  latestRunId,
   listRuns,
   markRunComplete,
   markRunIncomplete,
   runIdTime,
+  runsToPrune,
 } from "./runs";
 import { redactConfig } from "../shared/redact";
 import { acquireLock } from "../shared/lock";
@@ -116,19 +116,21 @@ async function updateLatest(outRoot: string, id: string): Promise<void> {
 }
 
 /**
- * Keep the newest `keep` runs. Ordering comes from the run ids' timestamps rather
- * than a lexical sort, and a failed delete is reported: silently keeping runs is
- * survivable, silently deleting the wrong one is not.
+ * Keep the newest `keep` runs, `current` among them. Ordering comes from the run ids'
+ * timestamps rather than a lexical sort, and a failed delete is reported: silently
+ * keeping runs is survivable, silently deleting the wrong one is not.
+ *
+ * `current` is the run just written, passed in rather than read back from `latest`:
+ * if the symlink couldn't be made, `latest` falls back to whichever id sorts newest,
+ * and under clock skew that isn't the run this crawl produced.
  */
-async function pruneRuns(outRoot: string, keep: number, log: Log): Promise<void> {
+async function pruneRuns(outRoot: string, keep: number, current: string, log: Log): Promise<void> {
   const runsDir = path.join(outRoot, "runs");
-  const current = await latestRunId(outRoot);
   // Only runs this tool generated are pruned *or counted*. A hand-named directory
   // (a copied-in baseline, say) is not ours to delete, and letting it occupy a slot
   // in the keep budget would silently push a real run out instead.
   const ids = (await listRuns(outRoot)).filter((id) => runIdTime(id) !== undefined);
-  const doomed = ids.slice(0, Math.max(0, ids.length - keep)).filter((id) => id !== current);
-  for (const id of doomed) {
+  for (const id of runsToPrune(ids, keep, current)) {
     try {
       await fs.rm(path.join(runsDir, id), { recursive: true, force: true });
     } catch (e) {
@@ -227,7 +229,7 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
 
   await markRunComplete(runDir);
   await updateLatest(outRoot, id);
-  await pruneRuns(outRoot, config.output.keepRuns, log);
+  await pruneRuns(outRoot, config.output.keepRuns, id, log);
 
   return { runDir, manifest: result.manifest };
 }

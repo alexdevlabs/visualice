@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderForReuse, reusePlan, type PageState } from "../src/crawl/capture";
+import { closingPromises, orderForReuse, reusePlan, type PageState } from "../src/crawl/capture";
 import type { RecipeStep, StateNode } from "../src/shared/types";
 
 const click = (id: string): RecipeStep => ({ action: "click", target: { selector: `#${id}` } });
@@ -138,5 +138,27 @@ describe("orderForReuse", () => {
 
   it("handles a route with no states at all", () => {
     expect(orderForReuse([])).toEqual([]);
+  });
+});
+
+describe("closingPromises", () => {
+  const open = click("a");
+  const waitA = { action: "waitFor", selector: "#panel-a", state: "visible" } as const;
+  const waitB = { action: "waitFor", selector: "#panel-b", state: "visible" } as const;
+
+  it("is what the recipe waits for after its last interaction", () => {
+    expect(closingPromises([open, waitA])).toEqual([waitA]);
+    expect(closingPromises([open, waitA, wait, waitB])).toEqual([waitA, waitB]);
+  });
+
+  it("ignores what an earlier step waited for — later steps may have moved on", () => {
+    expect(closingPromises([open, waitA, open])).toEqual([]);
+    expect(closingPromises([open, waitA, open, waitB])).toEqual([waitB]);
+  });
+
+  it("has nothing to check for a recipe that promises nothing", () => {
+    expect(closingPromises([])).toEqual([]);
+    expect(closingPromises([open, wait])).toEqual([]);
+    expect(closingPromises([open, { action: "waitFor", url: "**/done" }])).toEqual([]);
   });
 });

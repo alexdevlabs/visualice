@@ -97,17 +97,32 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
 };
 
 /**
+ * Is `cmd` a command this CLI has? An own-property check, not `in`: the tables are
+ * plain object literals, so `in` also answers yes for every name on
+ * `Object.prototype` — `visualice toString` would pass and do nothing, and
+ * `visualice valueOf --json` would crash looking its flags up.
+ */
+export function isCommand(cmd: string): boolean {
+  return Object.hasOwn(COMMAND_FLAGS, cmd);
+}
+
+/** A table lookup that can't reach `Object.prototype`. */
+function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/**
  * Parse `--flag=value`, `--flag value` and bare `--flag` forms, strictly: unknown
  * flags, missing values and values on boolean flags all throw instead of being
  * silently dropped (an agent's typo'd flag must fail loudly).
  */
 export function parseFlags(cmd: string, argv: string[]): Flags {
-  const allowed = COMMAND_FLAGS[cmd] ?? [];
+  const allowed = own(COMMAND_FLAGS, cmd) ?? [];
   const flags: Flags = {};
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (!token.startsWith("--")) {
-      const positional = POSITIONAL[cmd];
+      const positional = own(POSITIONAL, cmd);
       if (positional && flags[positional] === undefined) {
         flags[positional] = token;
         continue;
@@ -116,7 +131,7 @@ export function parseFlags(cmd: string, argv: string[]): Flags {
     }
     const eq = token.indexOf("=");
     const name = eq >= 0 ? token.slice(2, eq) : token.slice(2);
-    const type = FLAG_TYPES[name];
+    const type = own(FLAG_TYPES, name);
     if (!type || !allowed.includes(name)) {
       throw new UsageError(`unknown flag --${name} for '${cmd}' (see 'visualice help')`);
     }

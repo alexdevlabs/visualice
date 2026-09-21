@@ -117,12 +117,58 @@ describe("serveFileFromRoot", () => {
     expect(Buffer.from(await res.arrayBuffer())).toEqual(BINARY);
   });
 
-  it("lets the browser cache images and fonts for the life of the run", async () => {
+  it("caches images and fonts only until they change, unless told the URL is pinned", async () => {
     for (const file of ["/screenshots/home.png", "/font.woff2"]) {
       const res = await fetch(server.url + file);
-      expect(res.headers.get("cache-control"), file).toBe("public, max-age=31536000, immutable");
+      expect(res.headers.get("cache-control"), file).toBe("no-cache");
+      expect(res.headers.get("etag"), file).toMatch(/^W\/"[0-9a-f]+-[0-9a-f]+"$/);
       await res.arrayBuffer();
     }
+  });
+
+  it("answers a revalidation of an unchanged image with a bodiless 304", async () => {
+    const first = await fetch(`${server.url}/screenshots/home.png`);
+    const etag = first.headers.get("etag")!;
+    await first.arrayBuffer();
+    const again = await fetch(`${server.url}/screenshots/home.png`, {
+      headers: { "if-none-match": etag },
+    });
+    expect(again.status).toBe(304);
+    expect((await again.arrayBuffer()).byteLength).toBe(0);
+  });
+
+  it("gives a rewritten image a new validator, so a re-crawl is refetched", async () => {
+    // The bug this guards: `/data/…` URLs are identical across runs, so a validator
+    // that didn't track the file would keep serving the previous run's pixels.
+    const file = path.join(root, "screenshots", "rewritten.png");
+    await fs.writeFile(file, "run one");
+    const first = await fetch(`${server.url}/screenshots/rewritten.png`);
+    const before = first.headers.get("etag")!;
+    await first.text();
+    await fs.writeFile(file, "run two!");
+    const later = new Date(Date.now() + 5000);
+    await fs.utimes(file, later, later);
+    const res = await fetch(`${server.url}/screenshots/rewritten.png`, {
+      headers: { "if-none-match": before },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("run two!");
+  });
+
+  it("marks media immutable only when the caller says the path is pinned", async () => {
+    const cacheControl = async (rel: string) => {
+      const headers: Record<string, string> = {};
+      const res = fakeRes();
+      res.setHeader = (name: string, value: number | string | readonly string[]) => {
+        headers[name.toLowerCase()] = String(value);
+        return res;
+      };
+      await serveFileFromRoot(res, root, rel, undefined, { immutable: true });
+      return headers["cache-control"];
+    };
+    expect(await cacheControl("screenshots/home.png")).toBe("public, max-age=31536000, immutable");
+    // …and still never for the data, which is what says which images exist.
+    expect(await cacheControl("viewer-data.json")).toBe("no-store");
   });
 
   it("never caches the run data or the viewer shell, so `latest` stays fresh", async () => {

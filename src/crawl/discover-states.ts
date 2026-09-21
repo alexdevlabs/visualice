@@ -6,6 +6,7 @@ import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe, gotoRoute } from "./recipe";
 import { discoverFormStates } from "./discover-forms";
+import { addedRegions, markDocument, sameRegions, takeSnapshot, type Snapshot } from "./snapshot";
 
 interface RawCandidate {
   target: Target;
@@ -14,17 +15,6 @@ interface RawCandidate {
   controls?: string;
   /** How to trigger this candidate; anchors in navs are hover-only (a click navigates). */
   probe?: "click" | "hover";
-}
-
-interface Snapshot {
-  modals: number;
-  expanded: number;
-  details: number;
-  /** One entry per currently-open region, sorted; the raw material for `sig`. */
-  ids: string[];
-  sig: string;
-  openModalIds: string[];
-  openPanelIds: string[];
 }
 
 type Interactions = Config["discovery"]["interactions"];
@@ -127,6 +117,12 @@ async function collectCandidates(
       controls?: string;
       probe?: string;
     }[] = [];
+    // ARIA allows `aria-controls` to list several ids; everything downstream turns
+    // this into a selector for one element, so keep the first that exists.
+    const controlledId = (el: Element): string | undefined => {
+      const ids = (el.getAttribute("aria-controls") || "").split(/\s+/).filter(Boolean);
+      return ids.find((id) => document.getElementById(id)) ?? ids[0];
+    };
     const labelFor = (el: Element): string =>
       (
         el.getAttribute("aria-label") ||
@@ -159,7 +155,7 @@ async function collectCandidates(
         target: targetFor(el),
         label,
         hint: hintFor(el),
-        controls: el.getAttribute("aria-controls") || undefined,
+        controls: controlledId(el),
       });
       if (out.length >= cfg.maxCandidates) break;
     }
@@ -183,7 +179,7 @@ async function collectCandidates(
           target: targetFor(a),
           label,
           hint: "menu",
-          controls: a.getAttribute("aria-controls") || undefined,
+          controls: controlledId(a),
           probe: "hover",
         });
       }
@@ -202,100 +198,6 @@ async function collectCandidates(
   }, arg);
 
   return raw as RawCandidate[];
-}
-
-function takeSnapshot(page: Page): Promise<Snapshot> {
-  return page.evaluate(() => {
-    const vis = (el: Element): boolean => {
-      const r = el.getBoundingClientRect();
-      const s = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
-    };
-
-    // Where an element sits in the document, as a sibling-index path. Two elements
-    // can't share one, which is the property the region key below needs: without it
-    // an unnamed dialog is indistinguishable from any other unnamed dialog, both
-    // snapshot as the empty string, and the second one is thrown away as a duplicate
-    // of the first. Deterministic for a given DOM, so the same state re-probed still
-    // dedupes against itself.
-    const domPath = (el: Element): string => {
-      const parts: string[] = [];
-      let n: Element | null = el;
-      while (n && n !== document.documentElement) {
-        const parent: Element | null = n.parentElement;
-        if (!parent) break;
-        parts.unshift(`${n.tagName.toLowerCase()}${Array.from(parent.children).indexOf(n)}`);
-        n = parent;
-      }
-      return parts.join(">");
-    };
-
-    // The most specific name the region carries, falling back to its position.
-    // `aria-labelledby` is resolved because a dialog titled by its own heading is
-    // the common markup, and that heading is exactly what tells two of them apart.
-    const regionKey = (el: Element): string => {
-      if (el.id) return el.id;
-      const label = el.getAttribute("aria-label");
-      if (label) return label;
-      const by = el.getAttribute("aria-labelledby");
-      if (by) {
-        const text = by
-          .split(/\s+/)
-          .map((id) => (document.getElementById(id)?.textContent || "").replace(/\s+/g, " ").trim())
-          .filter(Boolean)
-          .join(" ")
-          .slice(0, 60);
-        if (text) return text;
-      }
-      return `@${domPath(el)}`;
-    };
-
-    const modals = Array.from(
-      document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]'),
-    ).filter(vis);
-    const expanded = Array.from(document.querySelectorAll('[aria-expanded="true"]'));
-    const details = Array.from(document.querySelectorAll("details[open]")).filter(vis);
-    const ids = [
-      ...modals.map((e) => `m:${regionKey(e)}`),
-      ...details.map((e) => `d:${regionKey(e)}`),
-      // An `aria-expanded` element is the *trigger*; the region it opened is what
-      // `aria-controls` names, so that stays the preferred key here.
-      ...expanded.map((e) => `e:${e.getAttribute("aria-controls") || regionKey(e)}`),
-    ].sort();
-    const openModalIds = modals.map((e) => e.id).filter(Boolean);
-    const openPanelIds = [
-      ...details.map((e) => e.id).filter(Boolean),
-      ...expanded.map((e) => e.getAttribute("aria-controls") || "").filter(Boolean),
-    ];
-    return {
-      modals: modals.length,
-      expanded: expanded.length,
-      details: details.length,
-      ids,
-      sig: ids.join("|"),
-      openModalIds,
-      openPanelIds,
-    };
-  });
-}
-
-/**
- * Open regions present in `after` that weren't in `before` (multiset difference,
- * so two identically-labelled panels still count separately).
- */
-export function addedRegions(
-  before: Pick<Snapshot, "ids">,
-  after: Pick<Snapshot, "ids">,
-): string[] {
-  const remaining = new Map<string, number>();
-  for (const id of before.ids) remaining.set(id, (remaining.get(id) ?? 0) + 1);
-  const added: string[] = [];
-  for (const id of after.ids) {
-    const n = remaining.get(id) ?? 0;
-    if (n > 0) remaining.set(id, n - 1);
-    else added.push(id);
-  }
-  return added;
 }
 
 function classifyChange(
@@ -393,6 +295,10 @@ interface ProbeContext {
   seenSig: Set<string>;
   /** The container each state opened, used to scope the next depth's probing. */
   containers: Map<string, string>;
+  /** The URL each state was seen at: a page anywhere else isn't that state. */
+  urls: Map<string, string>;
+  /** The `markDocument` token of the document probing loaded; any other is a navigation. */
+  doc: string;
   atBaseline: (s: Snapshot) => boolean;
   /** So the maxPerPage-starvation notice is logged once per route, not per probe. */
   capLogged: boolean;
@@ -412,9 +318,17 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
    * Is the page showing the parent state right now? At the top level that's the
    * route's baseline; nested, it's the DOM signature the parent was recorded with.
    * A parent with no signature can't be recognised, so it always gets replayed.
+   *
+   * Open regions alone can't answer it: a route's baseline usually has none open,
+   * and neither does the page a probe just navigated to. So the page must also be
+   * the document probing loaded, at the URL the parent was seen at. Without that, a
+   * submit button (a `<button>` with no `type` inside a `<form>` is one) leaves the
+   * route, the next probe runs on the destination, and whatever it finds there is
+   * recorded against a recipe that starts from the route and can't reproduce it.
    */
   const atParent = async (): Promise<boolean> => {
-    const snap = await takeSnapshot(page);
+    const snap = await takeSnapshot(page).catch(() => undefined);
+    if (!snap || snap.doc !== ctx.doc || snap.url !== ctx.urls.get(parent.id)) return false;
     return nested
       ? parent.signature !== undefined && snap.sig === parent.signature
       : ctx.atBaseline(snap);
@@ -445,7 +359,10 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     try {
       ctx.stats.navigations++;
       await gotoRoute(page, routeUrl, waitUntil);
+      ctx.doc = await markDocument(page);
       if (nested) await applyRecipe(page, parent.recipe);
+      // Replaying the parent's own recipe is what defines where the parent is.
+      ctx.urls.set(parent.id, await page.evaluate(() => location.href));
       return true;
     } catch {
       return false; // parent recipe no longer replays — nothing to nest under
@@ -477,7 +394,11 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     else await loc.click({ timeout: interactions.clickTimeoutMs });
     await page.waitForTimeout(interactions.settleMs);
     const after = await takeSnapshot(page);
-    return { action, before, after, kind: classifyChange(before, after, cand, action) };
+    // A new document is a navigation — a route, which route discovery owns — however
+    // much the page it landed on happens to have open.
+    const navigated = after.doc !== before.doc;
+    const kind = navigated ? null : classifyChange(before, after, cand, action);
+    return { action, before, after, kind };
   };
 
   for (const cand of candidates) {
@@ -521,6 +442,7 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
         found.push(state);
         const opened = cand.controls ?? openId;
         if (opened) containers.set(id, opened);
+        ctx.urls.set(id, after.url);
         log(`    + ${ctx.route.id}: ${id}`);
       }
       if (!(await enterParent())) break;
@@ -559,6 +481,7 @@ export async function discoverStates(
   const page = await context.newPage();
   try {
     await gotoRoute(page, routeUrl, waitUntil);
+    const doc = await markDocument(page);
     const baseline = await takeSnapshot(page);
     const ctx: ProbeContext = {
       page,
@@ -569,7 +492,12 @@ export async function discoverStates(
       states,
       seenSig: new Set<string>(),
       containers: new Map<string, string>(),
-      atBaseline: (s) => s.sig === baseline.sig && !s.modals && !s.expanded && !s.details,
+      urls: new Map([[states[0].id, baseline.url]]),
+      doc,
+      // Equal to the baseline, not empty: a route can have regions open from the
+      // start (a hidden trigger left at aria-expanded="true", an open <details>), and
+      // demanding none made its own baseline unrecognisable — every probe reloaded.
+      atBaseline: (s) => sameRegions(s, baseline),
       capLogged: false,
       stats: { navigations: 0, reused: 0 },
       log,

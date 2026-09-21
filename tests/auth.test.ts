@@ -20,7 +20,7 @@ vi.mock("playwright", () => ({
   },
 }));
 
-import { ensureStorageState, storageStateExpiry } from "../src/crawl/auth";
+import { ensureStorageState, isSessionCookie, storageStateExpiry } from "../src/crawl/auth";
 
 const HOUR = 3.6e6;
 
@@ -82,6 +82,35 @@ describe("ensureStorageState", () => {
     await expect(ensureStorageState(cfg(await saveSession(13)), log)).rejects.toThrow(LAUNCHED);
   });
 
+  it("does not re-login because an unrelated cookie expired", async () => {
+    // A five-minute CSRF cookie that has lapsed says nothing about the session.
+    const file = await saveSession(1);
+    const past = Math.floor(Date.now() / 1000) - 300;
+    await fs.writeFile(file, JSON.stringify({ cookies: [{ name: "csrftoken", expires: past }] }));
+    const cfg = config({ storageStatePath: file, login: LOGIN });
+    expect(await ensureStorageState(cfg, log)).toBe(file);
+    expect(logs).toEqual([]);
+  });
+
+  it("trusts a named session cookie's expiry over maxAgeHours", async () => {
+    const file = statePath();
+    const tomorrow = Math.floor(Date.now() / 1000) + 86_400;
+    await fs.writeFile(file, JSON.stringify({ cookies: [{ name: "sid", expires: tomorrow }] }));
+    const old = new Date(Date.now() - 48 * HOUR);
+    await fs.utimes(file, old, old);
+    const cfg = config({ storageStatePath: file, login: { ...LOGIN, sessionCookies: ["sid"] } });
+    expect(await ensureStorageState(cfg, log)).toBe(file); // 48h old, but the cookie says fine
+  });
+
+  it("re-logs in once the named session cookie has expired", async () => {
+    const file = statePath();
+    const past = Math.floor(Date.now() / 1000) - 60;
+    await fs.writeFile(file, JSON.stringify({ cookies: [{ name: "sid", expires: past }] }));
+    const cfg = config({ storageStatePath: file, login: { ...LOGIN, sessionCookies: ["sid"] } });
+    await expect(ensureStorageState(cfg, log)).rejects.toThrow(LAUNCHED);
+    expect(logs.join("\n")).toContain("session cookie expired");
+  });
+
   it("keeps using a stale session when there is no recipe to refresh it with", async () => {
     // Nothing can be re-run, and an expired cookie jar still beats crawling logged out.
     const file = await saveSession(500);
@@ -113,30 +142,54 @@ describe("storageStateExpiry", () => {
     await fs.writeFile(file, JSON.stringify(state));
     return file;
   };
+  const soon = Math.floor(Date.now() / 1000) + 3600;
+  const later = soon + 86_400;
 
-  it("reads the soonest real cookie expiry — that's when the crawl logs out", async () => {
-    const soon = Math.floor(Date.now() / 1000) + 3600;
-    const later = soon + 86_400;
+  it("reads the soonest expiry among the named session cookies", async () => {
     const file = await write({
       cookies: [
-        { name: "long", expires: later },
-        { name: "short", expires: soon },
+        { name: "sid", expires: later },
+        { name: "sid_refresh", expires: soon },
       ],
     });
-    expect(await storageStateExpiry(file)).toBe(soon * 1000);
+    expect(await storageStateExpiry(file, ["sid", "sid_refresh"])).toBe(soon * 1000);
   });
 
-  it("ignores session cookies, which carry no expiry", async () => {
-    const file = await write({ cookies: [{ name: "sid", expires: -1 }] });
+  it("never lets an unnamed cookie decide when the session ends", async () => {
+    // The regression: a login flow saves CSRF/consent/analytics cookies too, and the
+    // soonest of *those* used to count as the session's expiry.
+    const file = await write({
+      cookies: [
+        { name: "sid", expires: later },
+        { name: "csrftoken", expires: Math.floor(Date.now() / 1000) - 60 },
+      ],
+    });
+    expect(await storageStateExpiry(file, ["sid"])).toBe(later * 1000);
+  });
+
+  it("has no answer when no session cookie is named", async () => {
+    const file = await write({ cookies: [{ name: "sid", expires: soon }] });
     expect(await storageStateExpiry(file)).toBeUndefined();
+    expect(await storageStateExpiry(file, [])).toBeUndefined();
+  });
+
+  it("matches a prefix when the name ends in *", async () => {
+    const file = await write({ cookies: [{ name: "wordpress_logged_in_ab12", expires: soon }] });
+    expect(await storageStateExpiry(file, ["wordpress_logged_in_*"])).toBe(soon * 1000);
+    expect(isSessionCookie("wordpress_logged_in", ["wordpress_logged_in_*"])).toBe(false);
+  });
+
+  it("ignores browser-session cookies, which carry no expiry", async () => {
+    const file = await write({ cookies: [{ name: "sid", expires: -1 }] });
+    expect(await storageStateExpiry(file, ["sid"])).toBeUndefined();
   });
 
   it("falls back to undefined for missing or unreadable state", async () => {
-    expect(await storageStateExpiry("/nope/auth.json")).toBeUndefined();
+    expect(await storageStateExpiry("/nope/auth.json", ["sid"])).toBeUndefined();
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-auth-exp-"));
     const junk = path.join(dir, "auth.json");
     await fs.writeFile(junk, "{not json");
-    expect(await storageStateExpiry(junk)).toBeUndefined();
-    expect(await storageStateExpiry(await write({}))).toBeUndefined();
+    expect(await storageStateExpiry(junk, ["sid"])).toBeUndefined();
+    expect(await storageStateExpiry(await write({}), ["sid"])).toBeUndefined();
   });
 });

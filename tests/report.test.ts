@@ -77,4 +77,12 @@ describe("renderReport", () => {
     const md = renderReport(m);
     expect(md).not.toContain("## Failures");
   });
+
+  it("says which setting cropped a clamped shot", () => {
+    const m = makeManifest();
+    m.routes[0].states[0].shots = { desktop: { full: "x.png", clamped: true } };
+    expect(renderReport(m)).toContain(
+      "- **Clamped:** 1 shot(s) hit the `screenshot.maxHeight` limit and were cropped",
+    );
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addedRegions } from "../src/crawl/discover-states";
+import { addedRegions } from "../src/crawl/snapshot";
 
 const snap = (...ids: string[]) => ({ ids: [...ids].sort() });
 

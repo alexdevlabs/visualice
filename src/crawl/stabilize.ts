@@ -48,11 +48,11 @@ export async function applyContextInit(context: BrowserContext, stab: Stabilize)
   }
 }
 
-async function autoScroll(page: Page): Promise<void> {
+async function autoScroll(page: Page, keepScroll: boolean): Promise<void> {
   // Scroll the window AND the largest inner scroll container — many app shells
   // keep the body at 100vh and scroll content inside a child element, where a
   // window-only scroll never triggers lazy-loaded content.
-  await page.evaluate(async () => {
+  await page.evaluate(async (keep) => {
     const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
     const root = document.scrollingElement || document.documentElement;
 
@@ -71,15 +71,18 @@ async function autoScroll(page: Page): Promise<void> {
     const targets: Element[] = [root];
     if (inner && inner !== root) targets.push(inner);
     for (const sc of targets) {
+      // Back to the top afterwards, where a full-page shot wants to start — unless
+      // the recipe put the window somewhere on purpose.
+      const home = keep && sc === root ? sc.scrollTop : 0;
       let prev = -1;
       for (let i = 0; i < 40 && sc.scrollTop !== prev; i++) {
         prev = sc.scrollTop;
         sc.scrollTop = sc.scrollHeight;
         await wait(40);
       }
-      sc.scrollTop = 0;
+      sc.scrollTop = home;
     }
-  });
+  }, keepScroll);
   await page.waitForTimeout(120);
 }
 
@@ -129,11 +132,15 @@ export async function waitForStableSelectors(
  * entry that never appears is worth saying out loud: silently absorbing it would
  * add its timeout to every single shot with nothing in the output to explain why
  * the run got slower.
+ *
+ * `keepScroll` leaves the window where it was found rather than at the top: for a
+ * recipe with a `scroll` step, where the page was scrolled to is the point.
  */
 export async function stabilizePage(
   page: Page,
   stab: Stabilize,
   log?: (msg: string) => void,
+  opts: { keepScroll?: boolean } = {},
 ): Promise<void> {
   // The page's own "I'm ready" markers (hints.stableSelectors / config) beat any
   // fixed delay: wait for them before spending time on the rest.
@@ -158,7 +165,7 @@ export async function stabilizePage(
       .catch(() => {});
   }
   if (stab.lazyScroll) {
-    await autoScroll(page).catch(() => {});
+    await autoScroll(page, opts.keepScroll ?? false).catch(() => {});
   }
   if (stab.extraDelayMs > 0) {
     await page.waitForTimeout(stab.extraDelayMs);

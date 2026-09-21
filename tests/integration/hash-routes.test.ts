@@ -146,7 +146,7 @@ describe("hash-routed SPAs", () => {
         expect([...dirs].sort()).toEqual([
           "home/default",
           "home__h-about/default",
-          "home__h-docs-install/default",
+          "home__h-docs--install/default",
           "home__h-pricing/default",
         ]);
 

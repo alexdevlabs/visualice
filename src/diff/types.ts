@@ -23,6 +23,8 @@ export interface ShotDiff {
   comparedPixels?: number;
   /** Set when the two shots have different dimensions. */
   sizeChanged?: boolean;
+  /** With `sizeChanged`: the share of the larger shot that the other doesn't cover. */
+  sizeRatio?: number;
   fromSize?: { width: number; height: number };
   toSize?: { width: number; height: number };
   /** Diff image, relative to the diff directory. */
@@ -42,7 +44,7 @@ export interface ShotDiff {
 export interface RunDiff {
   from: { runId: string; dir: string };
   to: { runId: string; dir: string };
-  /** Ratio at or above which a pair counts as changed. */
+  /** Ratio above which a pair counts as changed — of pixels, or of area gained or lost. */
   minRatio: number;
   routes: { added: string[]; removed: string[] };
   summary: {

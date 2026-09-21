@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import { loadConfig, type Config } from "./shared/config";
 import {
-  COMMAND_FLAGS,
+  isCommand,
   UsageError,
   applyOverrides,
   floatFlag,
@@ -31,7 +31,7 @@ import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
 import { formatDoctor, runDoctor } from "./doctor";
 import { diffRuns } from "./diff";
-import { latestRunId, listRuns, runDir } from "./crawl/runs";
+import { latestRunId, listRuns, previousRunId, runDir } from "./crawl/runs";
 import type { Manifest } from "./shared/types";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -111,7 +111,8 @@ Options (flags accept --name=value or --name value):
   --from=<runId>       for 'diff': baseline run (default: the run before --to)
   --to=<runId>         for 'diff': new run (default: latest)
   --threshold=<n>      for 'diff': per-channel tolerance, 0-255 (default 12)
-  --min-ratio=<f>      for 'diff': fraction of pixels that must differ (default 0)
+  --min-ratio=<f>      for 'diff': noise floor — fraction of pixels (or of page
+                       area, when the height changed) that must differ (default 0)
   --diff-out=<dir>     for 'diff': where to write the report (default .visualice/diffs/…)
 
 Exit codes: 0 ok · 1 error · 2 usage · 3 capture failures / visual differences
@@ -288,7 +289,8 @@ function untilInterrupted(): Promise<void> {
 /**
  * Resolve --from/--to into run directories. Each may be a run id or a path; with
  * neither, the two most recent runs are compared (the "what did my last change do?"
- * case, which should need no arguments at all).
+ * case, which should need no arguments at all). With only --to, --from is the run
+ * just before it.
  */
 async function resolveDiffRuns(
   outRoot: string,
@@ -313,11 +315,12 @@ async function resolveDiffRuns(
   const from = fromFlag
     ? resolveOne(fromFlag)
     : (() => {
-        const before = runs.filter((r) => r !== to.id);
-        const id = before.at(-1);
+        const id = previousRunId(runs, to.id);
         if (!id) {
           throw new UsageError(
-            `only one run under ${outRoot}/runs — a diff needs two (pass --from=<runId>)`,
+            runs.some((r) => r !== to.id)
+              ? `no run older than ${to.id} under ${outRoot}/runs (pass --from=<runId>)`
+              : `only one run under ${outRoot}/runs — a diff needs two (pass --from=<runId>)`,
           );
         }
         return { id, dir: runDir(outRoot, id) };
@@ -613,7 +616,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "--version" || cmd === "-v") return printVersion();
-  if (!(cmd in COMMAND_FLAGS)) {
+  if (!isCommand(cmd)) {
     console.error(`unknown command: ${cmd}`);
     printHelp();
     process.exitCode = 2;

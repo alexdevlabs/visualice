@@ -1,6 +1,6 @@
 import path from "node:path";
 import { startServer, serveFileFromRoot, type StaticServer } from "./shared/file-serve";
-import { listDiffs, listRuns } from "./crawl/runs";
+import { isRunComplete, listDiffs, listRuns } from "./crawl/runs";
 
 /**
  * Serve the built viewer at `/` and run data underneath it.
@@ -69,6 +69,8 @@ export async function serveViewer(opts: {
       }
 
       if (pathname.startsWith("/data/")) {
+        // Never immutable: `/data/` is whichever run this server was pointed at, which
+        // by default is `latest`, and a re-crawl changes it without changing a URL.
         const rel = pathname.slice("/data/".length) || "viewer-data.json";
         if (await serveFileFromRoot(res, runDir, rel, req)) return;
         res.statusCode = 404;
@@ -80,7 +82,12 @@ export async function serveViewer(opts: {
         // `serveFileFromRoot` confines the path to the root, so a `..` in the run id
         // can't escape the runs directory.
         const rel = pathname.slice("/runs/".length);
-        if (rel && (await serveFileFromRoot(res, runsDir, rel, req))) return;
+        // A finished run's id names its output forever, so its images may be cached
+        // for good. Not `latest`, the same alias `/data/` is; and not a run still being
+        // written, where `--resume` recaptures a half-written image at the same path.
+        const id = rel.split("/")[0];
+        const immutable = id !== "latest" && (await isRunComplete(path.join(runsDir, id)));
+        if (rel && (await serveFileFromRoot(res, runsDir, rel, req, { immutable }))) return;
         res.statusCode = 404;
         res.end("not found");
         return;
