@@ -61,6 +61,12 @@ describe("validationAppeared", () => {
 });
 
 describe("targetFor", () => {
+  it("prefers a test id, which is put there to be targeted", () => {
+    expect(targetFor({ testId: "email", id: "contact-email", name: "email", index: 3 })).toEqual({
+      testId: "email",
+    });
+  });
+
   it("prefers an id", () => {
     expect(targetFor({ id: "contact-email", name: "email", index: 3 })).toEqual({
       selector: "#contact-email",

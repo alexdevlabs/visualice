@@ -65,13 +65,21 @@ const MIN_FORM_FIELDS = 2;
 const SIMPLE_ID = /^[A-Za-z][\w-]*$/;
 
 export interface FieldInfo {
+  testId?: string;
   id?: string;
   name?: string;
   index: number;
 }
 
-/** A target for one field, preferring the most stable handle it carries. */
+/**
+ * A target for one field, preferring the most stable handle it carries, in the
+ * same order the trigger prober uses (`discover-states.ts`): a test id is put
+ * there for automation and survives restyling; an id or name is the field's own;
+ * an index is only a position in the page's field order, which any unrelated
+ * input added above it invalidates.
+ */
 export function targetFor(info: FieldInfo): Target {
+  if (info.testId) return { testId: info.testId };
   if (info.id && SIMPLE_ID.test(info.id)) return { selector: `#${info.id}` };
   if (info.name) return { selector: `form [name="${info.name}"]` };
   // Positional fallback: the field has no stable handle of its own.
@@ -101,7 +109,6 @@ interface FormScan {
   required: FieldInfo[];
 }
 
-
 /**
  * Visible fields of the page's forms, and which of them are required.
  *
@@ -118,7 +125,7 @@ async function scanFields(page: Page): Promise<FormScan | null> {
         // belong to the same one, or the recipe touches two unrelated forms.
         const byForm = new Map<
           Element,
-          { id?: string; name?: string; index: number; required: boolean }[]
+          { testId?: string; id?: string; name?: string; index: number; required: boolean }[]
         >();
         const all = Array.from(document.querySelectorAll(fieldSelector));
         for (let index = 0; index < all.length; index++) {
@@ -128,6 +135,7 @@ async function scanFields(page: Page): Promise<FormScan | null> {
           const form = el.form ?? el.closest("form");
           if (!form) continue;
           const entry = {
+            testId: el.getAttribute("data-testid") || undefined,
             id: el.id || undefined,
             name: el.name || undefined,
             index,

@@ -8,36 +8,35 @@
 > `PLAN.md` holds the design rationale (architecture, pipeline, viewer design);
 > §10 there covers the distribution and diffing decisions from this pass.
 
-## ⚠ Status: this work is uncommitted
+## Status
 
-Everything below marked ✅ exists in the working tree but **has not been committed**
-(78 changed/new paths at last count). Nothing here is in git history yet.
+Everything marked ✅ below landed in `113e2b2` "Implemented improvements part 1"
+(87 files). The form-state follow-up described next is in the working tree on top
+of it.
 
-**Verification as of the last run:**
+**Verification as of the last run — everything below is green:**
 
-- `npm run check` (typecheck · lint · format · unit): green — **322 unit tests**.
-- `npm run test:integration`: green at **36 tests**, before the 3 form-state tests
-  below were added. Not re-run since.
-- `npx tsc --noEmit` and `eslint` on the in-flight form work: clean.
+- `npm run check` (typecheck · lint · format · unit): **323 unit tests**.
+- `npm run test:integration`: **39 tests**.
+- `npm run demo:crawl`: 10 routes, **72 shots**, 0 failures, ~31s.
+- `visualice diff` across two consecutive fixture crawls: 72 unchanged, 0 changed.
 
-### One thing is finished but unverified — start here
+Form-state discovery is now confirmed. For the record, the two things that took a
+crawl rather than a test to find:
 
-**Form-state discovery (`src/crawl/discover-forms.ts`)** is written, wired into
-`discoverStates`, and has 10 unit + 3 integration tests, all passing. A full crawl
-then showed a bug, and **the fix is applied but was never verified** because the
-confirming crawl got interrupted:
-
-- **The bug:** `discoverFormStates` returned states with no `signature`.
-  `mergeMobileStates` (`src/crawl/discover.ts:31-35`) dedupes the mobile discovery
-  pass by `signature`, so the form states survived it and `uniqueId` renamed them —
-  producing **two `focus` states per form route**. Observed on `/contact` and
-  `/login`; the fixture crawl went from 68 to 74 shots.
-- **The fix, already in the tree:** `discover-forms.ts` now sets
-  `signature: "focus:<target>"` and `signature: "validation:<targets>"` via
-  `describeTarget`. It typechecks and lints.
-- **To confirm:** `npm run demo:crawl`, then check each of `/contact` and `/login`
-  has exactly **one** `focus` state and the run is **72 shots** (68 + 2 routes × 2
-  devices). Then run the full `npm run check` and `npm run test:integration`.
+- **States with no `signature` were duplicated by the mobile pass.**
+  `mergeMobileStates` (`src/crawl/discover.ts:31-35`) dedupes by `signature`, so
+  signature-less form states survived it and `uniqueId` renamed them — **two
+  `focus` states per form route**, 68 shots becoming 74. Fixed by keying the
+  signature on the field (`focus:<target>`, `validation:<targets>`); `/contact` and
+  `/login` now record exactly one each.
+- **`targetFor` ignored `data-testid`**, which the trigger prober
+  (`discover-states.ts:98`) already treats as the most stable handle. The fixture's
+  login inputs carry only a test id, so the recorded recipe fell through to a
+  positional `nth:` — a position in the page's whole field order that any input
+  added above it would invalidate. Now `testId` is preferred first. The re-crawl
+  diffs clean against the previous one, so the recipes target the same fields; they
+  just no longer depend on counting.
 
 Also worth knowing: the fixture's own contact form validates on submit, not on blur,
 so no `validation` state is discovered there — correct behaviour (discovery never
@@ -46,33 +45,37 @@ blur-validating page in `tests/integration/discover-forms.test.ts` instead.
 
 ## ✅ Shipped in the 2026-09-21 pass
 
-- **Distribution.** Publishable npm package (`dist/` ESM bundle + declarations via
-  `npm run build`, `prepack`, `files`, `engines`); `bin/visualice.mjs` runs the build
-  and falls back to `tsx` only in a source checkout whose sources are newer than it.
-  `visualice doctor` is the self-healing preflight. The repo root is now a Claude
-  Code plugin _and_ marketplace (`.claude-plugin/`, `commands/`, `skills/`),
-  replacing the cloned-repo + symlinked-SKILL.md arrangement. Location independence
-  is held down end-to-end by `tests/integration/cli-bin.test.ts`.
-- **Run diffing.** `visualice diff` pairs two runs by route|state|device, pixel-diffs
-  each pair (overlap-only when a page's height changed), writes `diff-report.md` +
-  `diff.json` + magenta-highlighted diff images, and exits 3 under `--fail-on-error`.
-- **Engine.** Page reuse per worker; `hints` consumed (flakyRegions → masks,
-  stableSelectors → waits, skipTriggers → discovery denials); output-directory lock;
-  pruning by parsed run time that never counts or deletes directories it didn't
-  create; `screenshot.maxHeight` clamp + selector pre-validation; credential
-  redaction in the config snapshot; progress + ETA; `crawl --resume`; `http.proxy`;
-  auth freshness from cookie expiry rather than file mtime; focus/validation form
-  states (see the caveat above).
-- **Viewer.** Grouped layout wraps into columns (Fit went from 2% to ~17% on the
-  fixture); run switcher; minimap; failed captures as placeholder tiles with a filter
-  toggle; error boundary + `viewer-data.json` validation; `?data=` restricted to
-  same-origin; mid-resolution LOD tier (56 KB vs 735 KB at reading zoom);
-  spatial-grid culling; state-kind filter; deep-linkable URL state; shift+arrow tile
-  navigation; viewport-crop link; tile cap for huge runs; types shared with the
-  engine instead of duplicated.
-- **Tests & CI.** 322 unit + 39 integration tests. CI runs a Windows leg, a bin smoke
-  test against the built CLI, coverage, failure-only artifact upload and a
-  fixture/schema drift check; `release.yml` publishes on a `v*` tag.
+Everything in this section is done. The unchecked boxes further down are the
+**11 items that remain open** — see "What's left, and why" below for where each
+came from.
+
+- [x] **Distribution.** Publishable npm package (`dist/` ESM bundle + declarations via
+      `npm run build`, `prepack`, `files`, `engines`); `bin/visualice.mjs` runs the build
+      and falls back to `tsx` only in a source checkout whose sources are newer than it.
+      `visualice doctor` is the self-healing preflight. The repo root is now a Claude
+      Code plugin _and_ marketplace (`.claude-plugin/`, `commands/`, `skills/`),
+      replacing the cloned-repo + symlinked-SKILL.md arrangement. Location independence
+      is held down end-to-end by `tests/integration/cli-bin.test.ts`.
+- [x] **Run diffing.** `visualice diff` pairs two runs by route|state|device, pixel-diffs
+      each pair (overlap-only when a page's height changed), writes `diff-report.md` +
+      `diff.json` + magenta-highlighted diff images, and exits 3 under `--fail-on-error`.
+- [x] **Engine.** Page reuse per worker; `hints` consumed (flakyRegions → masks,
+      stableSelectors → waits, skipTriggers → discovery denials); output-directory lock;
+      pruning by parsed run time that never counts or deletes directories it didn't
+      create; `screenshot.maxHeight` clamp + selector pre-validation; credential
+      redaction in the config snapshot; progress + ETA; `crawl --resume`; `http.proxy`;
+      auth freshness from cookie expiry rather than file mtime; focus/validation form
+      states.
+- [x] **Viewer.** Grouped layout wraps into columns (Fit went from 2% to ~17% on the
+      fixture); run switcher; minimap; failed captures as placeholder tiles with a filter
+      toggle; error boundary + `viewer-data.json` validation; `?data=` restricted to
+      same-origin; mid-resolution LOD tier (56 KB vs 735 KB at reading zoom);
+      spatial-grid culling; state-kind filter; deep-linkable URL state; shift+arrow tile
+      navigation; viewport-crop link; tile cap for huge runs; types shared with the
+      engine instead of duplicated.
+- [x] **Tests & CI.** 323 unit + 39 integration tests. CI runs a Windows leg, a bin smoke
+      test against the built CLI, coverage, failure-only artifact upload and a
+      fixture/schema drift check; `release.yml` publishes on a `v*` tag.
 
 Two bugs were found and fixed by this work rather than reported by anyone:
 
@@ -84,6 +87,24 @@ Two bugs were found and fixed by this work rather than reported by anyone:
   `tests/integration/capture-pool.test.ts` (60,000 leaked pixels without the fix).
 - **`clip` without `fullPage` silently clamps to the viewport**, so the first cut of
   `screenshot.maxHeight` produced 300px-tall images instead of 1000px ones.
+
+## What's left, and why
+
+The 11 unchecked items below are all genuinely open. Where they came from:
+
+- **1 is a gap in the pass itself.** _Side-by-side device compare_ (§2) was one of
+  six sub-items bundled into the old §4 "Smaller features" line. The other five
+  (state-kind filter, deep-linkable URL state, viewport-crop, keyboard tile nav,
+  spatial-grid culling) shipped; this one didn't. It should have.
+- **3 were deferred backlog, never part of §1–§5.** Hash-SPA support, id-dependent
+  signature dedupe, and `probeFrom` re-navigation sat under "Leftover engine
+  niceties" before this pass and still do. The other four backlog items —
+  focus/validation states, cookie-expiry auth, proxy config, and the SKILL.md
+  run-size/cleanup guidance — are done.
+- **7 are new, found by doing the work.** Diff-in-the-viewer only became possible
+  once `diff` existed; the page-reuse measurement and the `waitForSelectors` budget
+  came out of profiling; range requests, the ad-hoc coverage dependency and the
+  missing Windows integration leg were noticed while building CI.
 
 ## 1. Engine niceties still open
 
@@ -107,6 +128,7 @@ Two bugs were found and fixed by this work rather than reported by anyone:
       viewer can't show them. A third layout mode showing before/after/diff per changed
       shot is the natural home, and would finish the regression story.
 - [ ] **Side-by-side device compare.** Pick one state, see every device aligned.
+      _The one item from the §1–§5 scope that didn't get done._
 - [ ] **Virtualized sidebar** for runs with hundreds of routes.
 
 ## 3. Serving & infrastructure
@@ -121,6 +143,6 @@ Two bugs were found and fixed by this work rather than reported by anyone:
 
 ## Suggested order
 
-1. **Confirm the form-state fix** (top of this file) and run the full suite.
+1. **Commit the form-state follow-up** — verified, but still only in the tree.
 2. Diff results in the viewer (§2) — the data exists but stops at the report.
 3. Everything else as it gets in the way.
