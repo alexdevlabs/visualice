@@ -43,21 +43,13 @@ jobs:
       - run: npm test
       - run: npm run viewer:build
 
-      # Coverage reporting. @vitest/coverage-v8 isn't a devDependency of this repo
-      # yet, and this workflow is only allowed to touch files under .github/, so it
-      # can't be added to package.json here. Installing it ad hoc with --no-save
-      # pulls it into node_modules for this job only, without writing to
-      # package.json or package-lock.json — once someone adds it as a real
-      # devDependency, this step keeps working unchanged (npm just skips the
-      # redundant install). Pinned to the exact vitest version already in
-      # package-lock.json because vitest requires its coverage provider to match.
+      # Coverage reporting. The provider (@vitest/coverage-v8) is a devDependency,
+      # so `npm ci` above has already installed it and this is just another script.
       # Runs once, not once per matrix leg, since the report would just be
       # identical noise duplicated across OS/node combinations.
       - name: Coverage report
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
-        run: |
-          npm i -D --no-save @vitest/coverage-v8@3.2.6
-          npm test -- --coverage
+        run: npm run test:coverage
       - name: Upload coverage report
         if: matrix.os == 'ubuntu-latest' && matrix.node == 22
         uses: actions/upload-artifact@v4
@@ -106,8 +98,23 @@ jobs:
           fi
 
   integration:
-    name: browser integration tests
-    runs-on: ubuntu-latest
+    name: browser integration tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Windows is the leg most likely to break on its own; don't let it cancel
+      # the Linux run that tells us whether the failure is platform-specific.
+      fail-fast: false
+      matrix:
+        # These tests drive a real browser against real paths — run directories,
+        # symlinked `latest`, `file://`-adjacent serving. That's exactly the
+        # surface that behaves differently on Windows, and the unit-test Windows
+        # leg can't reach it because it never launches Chromium.
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            browsers: ~/.cache/ms-playwright
+          - os: windows-latest
+            browsers: ~\AppData\Local\ms-playwright
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -119,30 +126,44 @@ jobs:
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
-          path: ~/.cache/ms-playwright
+          path: ${{ matrix.browsers }}
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # `--with-deps` installs the system libraries Chromium needs, which only
+      # exist as a concept on Linux; on Windows the browser download is the whole
+      # job and the flag would just fail looking for a package manager.
       - run: npx playwright install --with-deps chromium
+        if: runner.os == 'Linux'
+      - run: npx playwright install chromium
+        if: runner.os == 'Windows'
       # Tee to a log file (in addition to the normal console output) purely so
       # there's something to attach to the failure-artifact upload below —
       # `pipefail` (bash's default on GitHub-hosted runners) keeps the step's exit
-      # code the test run's, not tee's.
-      - run: npm run test:integration 2>&1 | tee integration-test-output.log
+      # code the test run's, not tee's. Explicit bash because the Windows runner
+      # defaults to pwsh, which has neither `tee` with these semantics nor
+      # pipefail.
+      - shell: bash
+        env:
+          # Pin the tests' scratch directory so the upload below can find what a
+          # crashed test left behind, wherever this runner's temp happens to be.
+          VISUALICE_TEST_TMP: ${{ runner.temp }}/vc-tests
+        run: npm run test:integration 2>&1 | tee integration-test-output.log
       # Failure-only: these tests write their crawl/capture output under the OS
       # temp dir rather than the repo (see tests/integration/helpers.ts), and most
       # tests clean that up in a try/finally even when an assertion fails, so
       # there's normally nothing there worth keeping. On a genuine pass this step
       # is a no-op; we only pay the upload cost when something actually broke and
-      # a human needs to look at it. `/tmp/vc-*` best-effort catches any temp
-      # output a hard crash left behind (skipping its own cleanup); if-no-files-found
-      # ignore means an empty match there doesn't fail the step.
+      # a human needs to look at it. `VISUALICE_TEST_TMP` above is what makes the
+      # second path here findable on both runners; if-no-files-found ignore means
+      # an empty match doesn't fail the step. The artifact name carries the OS
+      # because v4 requires one artifact name per upload.
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-test-diagnostics
+          name: integration-test-diagnostics-${{ matrix.os }}
           path: |
             integration-test-output.log
-            /tmp/vc-*
+            ${{ runner.temp }}/vc-tests
           if-no-files-found: ignore
           retention-days: 7
 

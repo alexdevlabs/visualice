@@ -13,6 +13,7 @@ import {
 import { ALLOW_ALL, fetchRobots, isAllowed, type RobotsRules } from "../shared/robots";
 import { politeFetch } from "../shared/http";
 import { sleep } from "../shared/pool";
+import { gotoRoute } from "./recipe";
 
 /** Sanity bound on how many sitemap files one crawl will fetch (index recursion). */
 const MAX_SITEMAP_FETCHES = 20;
@@ -61,7 +62,7 @@ export async function discoverRoutes(
   log: (msg: string) => void,
 ): Promise<RouteNode[]> {
   const origin = new URL(baseUrl).origin;
-  const { include, exclude, maxDepth, maxPages, sameOriginOnly } = config.scope;
+  const { include, exclude, maxDepth, maxPages, sameOriginOnly, hashRoutes } = config.scope;
   const { respectRobots } = config.politeness;
 
   // One fetch serves both consumers: the crawl rules and the declared sitemaps.
@@ -109,8 +110,8 @@ export async function discoverRoutes(
       try {
         const u = new URL(item.url);
         if (sameOriginOnly && u.origin !== origin) continue;
-        canon = canonicalPath(u);
-        scope = scopePath(u);
+        canon = canonicalPath(u, hashRoutes);
+        scope = scopePath(u, hashRoutes);
       } catch {
         continue;
       }
@@ -131,10 +132,12 @@ export async function discoverRoutes(
       let navigated = false;
       for (let attempt = 0; attempt <= config.politeness.retries && !navigated; attempt++) {
         try {
-          const resp = await page.goto(item.url, {
-            waitUntil: "domcontentloaded",
-            timeout: config.politeness.timeoutMs,
-          });
+          const resp = await gotoRoute(
+            page,
+            item.url,
+            "domcontentloaded",
+            config.politeness.timeoutMs,
+          );
           navigated = true;
           status = resp?.status();
           title = await page.title().catch(() => undefined);
@@ -163,12 +166,12 @@ export async function discoverRoutes(
         url: canon,
         // page.url() is only meaningful if the navigation landed — after a failed
         // goto it still points at the *previous* page.
-        finalUrl: navigated ? relativeToOrigin(page.url(), origin) : undefined,
+        finalUrl: navigated ? relativeToOrigin(page.url(), origin, hashRoutes) : undefined,
         title,
         status,
         depth: item.depth,
         discoveredFrom: item.from,
-        links: dedupeLinks(links, origin),
+        links: dedupeLinks(links, origin, hashRoutes),
         states: [],
       });
       log(`  • ${canon}${title ? ` — ${title}` : ""}`);
@@ -178,8 +181,11 @@ export async function discoverRoutes(
           try {
             const u = new URL(href);
             if (u.origin !== origin) continue;
-            const linkCanon = canonicalPath(u);
-            if (visited.has(origin + linkCanon) || !inScope(scopePath(u), include, exclude))
+            const linkCanon = canonicalPath(u, hashRoutes);
+            if (
+              visited.has(origin + linkCanon) ||
+              !inScope(scopePath(u, hashRoutes), include, exclude)
+            )
               continue;
             enqueue(origin + linkCanon, item.depth + 1, canon);
           } catch {

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { startServer, serveFileFromRoot, type StaticServer } from "./shared/file-serve";
-import { listRuns } from "./crawl/runs";
+import { listDiffs, listRuns } from "./crawl/runs";
 
 /**
  * Serve the built viewer at `/` and run data underneath it.
@@ -8,9 +8,14 @@ import { listRuns } from "./crawl/runs";
  * - `/data/…`        the run that was asked for (what the viewer loads by default)
  * - `/runs/<id>/…`   any other run in the same output directory
  * - `/runs.json`     the run list, so the viewer can offer a switcher
+ * - `/diffs/<id>/…`  a comparison written by `visualice diff`
+ * - `/diffs.json`    the diff list, so the viewer can offer to show one
  *
  * Exposing the sibling runs is what lets the viewer change runs without restarting
- * the server; `outRoot` stays optional so a bare run directory still serves.
+ * the server, and exposing the diffs beside them is what lets it show a comparison
+ * at all: a diff's before and after pictures live in two *different* run
+ * directories, so nothing under a single run is enough to render one. `outRoot`
+ * stays optional so a bare run directory still serves.
  */
 export async function serveViewer(opts: {
   runDir: string;
@@ -26,6 +31,7 @@ export async function serveViewer(opts: {
   const outRoot = opts.outRoot ? path.resolve(opts.outRoot) : undefined;
   // Run directories live under `<outRoot>/runs`, which is what `/runs/<id>/…` maps to.
   const runsDir = outRoot ? path.join(outRoot, "runs") : undefined;
+  const diffsDir = outRoot ? path.join(outRoot, "diffs") : undefined;
 
   return startServer(async (req, res) => {
     try {
@@ -46,9 +52,25 @@ export async function serveViewer(opts: {
         return;
       }
 
+      if (pathname === "/diffs.json") {
+        const diffs = outRoot ? await listDiffs(outRoot) : [];
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.setHeader("cache-control", "no-store");
+        res.end(JSON.stringify({ diffs }));
+        return;
+      }
+
+      if (diffsDir && pathname.startsWith("/diffs/")) {
+        const rel = pathname.slice("/diffs/".length);
+        if (rel && (await serveFileFromRoot(res, diffsDir, rel, req))) return;
+        res.statusCode = 404;
+        res.end("not found");
+        return;
+      }
+
       if (pathname.startsWith("/data/")) {
         const rel = pathname.slice("/data/".length) || "viewer-data.json";
-        if (await serveFileFromRoot(res, runDir, rel)) return;
+        if (await serveFileFromRoot(res, runDir, rel, req)) return;
         res.statusCode = 404;
         res.end("not found");
         return;
@@ -58,15 +80,15 @@ export async function serveViewer(opts: {
         // `serveFileFromRoot` confines the path to the root, so a `..` in the run id
         // can't escape the runs directory.
         const rel = pathname.slice("/runs/".length);
-        if (rel && (await serveFileFromRoot(res, runsDir, rel))) return;
+        if (rel && (await serveFileFromRoot(res, runsDir, rel, req))) return;
         res.statusCode = 404;
         res.end("not found");
         return;
       }
 
       const rel = pathname === "/" ? "index.html" : pathname;
-      if (await serveFileFromRoot(res, viewerDist, rel)) return;
-      if (await serveFileFromRoot(res, viewerDist, "index.html")) return; // SPA fallback
+      if (await serveFileFromRoot(res, viewerDist, rel, req)) return;
+      if (await serveFileFromRoot(res, viewerDist, "index.html", req)) return; // SPA fallback
       res.statusCode = 404;
       res.end("not found");
     } catch {

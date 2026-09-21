@@ -205,6 +205,38 @@ code {
 .vc-sidebar li .vc-dim {
   font-size: 11px;
 }
+.vc-sidebar li button.on {
+  background: var(--panel);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+/*
+ * The virtualized list pins rows to a fixed height so the spacers above and below
+ * it add up to the right scrollbar. `SIDEBAR_ROW_H` in App.tsx must match.
+ */
+.vc-sidebar li button {
+  height: 44px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.vc-sidebar li .vc-side-path,
+.vc-sidebar li .vc-dim {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A virtualized list scrolls itself, so it takes the space rather than overflowing. */
+.vc-sidebar ul.vc-vlist {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.vc-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.vc-diff-select {
+  max-width: 260px;
+}
 
 .vc-main {
   position: relative;

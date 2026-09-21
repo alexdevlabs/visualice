@@ -105,8 +105,10 @@ password-protected staging: [`references/auth.md`](references/auth.md).
   the whole crawl for one flaky shot — fix or mask the cause.
 - Open the viewer: `visualice serve --open` (`--run=<id>` for a specific run instead
   of the latest, `--shoot=out.png` to grab a headless screenshot of the viewer
-  itself). Grouped vs all-at-once; thumbnails when zoomed out, full resolution as
-  you zoom in.
+  itself). Grouped, all-at-once, or Devices — the last shows one route with every
+  device at the same width, which is how you answer "does this look right on mobile?"
+  without eyeballing two differently-scaled tiles. Thumbnails when zoomed out, full
+  resolution as you zoom in.
 - The viewer also surfaces failures (a "N failed" toggle and a Failed list in the
   sidebar, each failed shot rendered as a placeholder carrying its error), lets you
   switch runs without restarting the server, and puts the current view in the URL —
@@ -131,6 +133,10 @@ pixel is magenta.
   concluding a page changed.
 - A changed `Size` column means the page's height moved; only the overlapping region
   was compared.
+- To show someone the difference rather than describe it, run `visualice serve` and
+  pick the comparison from the viewer's picker: every changed shot is laid out as
+  before / after / diff, biggest change first. The URL carries the comparison, so the
+  link lands on it.
 
 Full flag reference: [`references/cli.md`](references/cli.md).
 
@@ -138,6 +144,9 @@ Full flag reference: [`references/cli.md`](references/cli.md).
 
 - Before a large crawl, estimate it with `visualice discover` (§2) and confirm the
   scope — don't spend an hour and a gigabyte of someone's disk without asking.
+- A hash-routed SPA (`#/about`) is crawled as one route per view by default; if a
+  site uses fragments purely as in-page anchors and the crawl is forking on them, set
+  `scope.hashRoutes: "never"`.
 - Only crawl sites the user owns or is authorized to test. Stay on the target origin and
   honor the user's scope; respect `politeness` (concurrency, delays, robots).
 - Keep secrets in env, never in the manifest, screenshots, or commits.

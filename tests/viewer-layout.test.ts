@@ -242,3 +242,62 @@ describe("computeLayout — failures and limits", () => {
     expect(computeLayout(data, { mode: "all", devices: allDevices, limit: 99 }).truncated).toBe(0);
   });
 });
+
+describe("computeLayout — device compare", () => {
+  it("lays out one route, every state, at one width per device", () => {
+    const l = computeLayout(data, { mode: "devices", devices: allDevices, focusRouteId: "home" });
+    // Only the focused route is placed…
+    expect(new Set(l.placed.map((p) => p.tile.routeId))).toEqual(new Set(["home"]));
+    expect(l.placed).toHaveLength(4);
+    // …and both devices get the same card width, which is what makes the two
+    // renders comparable by looking straight down the row.
+    expect(new Set(l.placed.map((p) => p.w)).size).toBe(1);
+  });
+
+  it("puts a state's devices side by side and top-aligned", () => {
+    const l = computeLayout(data, { mode: "devices", devices: allDevices, focusRouteId: "home" });
+    const row = l.placed.filter((p) => p.tile.stateId === "default");
+    expect(row).toHaveLength(2);
+    expect(row[0].y).toBe(row[1].y);
+    expect(row[0].x).not.toBe(row[1].x);
+  });
+
+  it("still offers every route to the sidebar, not just the one on screen", () => {
+    const l = computeLayout(data, { mode: "devices", devices: allDevices, focusRouteId: "home" });
+    expect(l.routesWithTiles).toEqual(["home", "about"]);
+  });
+
+  it("falls back to the first route when the focused one has been filtered away", () => {
+    const l = computeLayout(data, {
+      mode: "devices",
+      devices: allDevices,
+      focusRouteId: "about",
+      query: "modal", // only `home` has a modal state
+    });
+    expect(new Set(l.placed.map((p) => p.tile.routeId))).toEqual(new Set(["home"]));
+  });
+
+  it("falls back to the first route when none was asked for", () => {
+    const l = computeLayout(data, { mode: "devices", devices: allDevices });
+    expect(new Set(l.placed.map((p) => p.tile.routeId))).toEqual(new Set(["home"]));
+  });
+
+  it("says so rather than going blank when nothing matches", () => {
+    const l = computeLayout(data, {
+      mode: "devices",
+      devices: allDevices,
+      query: "nothing-matches-this",
+    });
+    expect(l.placed).toEqual([]);
+    expect(l.routesWithTiles).toEqual([]);
+  });
+});
+
+describe("computeLayout — routesWithTiles", () => {
+  it("lists the routes the filters left, in the data's order", () => {
+    const l = computeLayout(data, { mode: "grouped", devices: allDevices });
+    expect(l.routesWithTiles).toEqual(["home", "about"]);
+    const filtered = computeLayout(data, { mode: "grouped", devices: allDevices, query: "modal" });
+    expect(filtered.routesWithTiles).toEqual(["home"]);
+  });
+});

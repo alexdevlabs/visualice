@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ViewerDataError, parseViewerData, resolveDataUrl } from "../viewer/src/load";
+import { ViewerDataError, parseRunDiff, parseViewerData, resolveDataUrl } from "../viewer/src/load";
 
 const tile = (over: Record<string, unknown> = {}) => ({
   id: "home__default__desktop",
@@ -101,5 +101,67 @@ describe("resolveDataUrl", () => {
       expect(result.url).toBe("./d.json");
       expect(result.note).toContain("only same-origin");
     }
+  });
+});
+
+describe("parseRunDiff", () => {
+  const minimal = {
+    from: { runId: "a", dir: "/tmp/a" },
+    to: { runId: "b", dir: "/tmp/b" },
+    shots: [],
+  };
+
+  it("accepts a comparison with only the fields it needs", () => {
+    const d = parseRunDiff(minimal);
+    expect(d.from.runId).toBe("a");
+    expect(d.to.runId).toBe("b");
+    expect(d.summary).toEqual({
+      added: 0,
+      removed: 0,
+      changed: 0,
+      unchanged: 0,
+      uncomparable: 0,
+    });
+  });
+
+  it("rejects input that names no runs — there'd be nothing to fetch images from", () => {
+    expect(() => parseRunDiff({ ...minimal, from: {} })).toThrow(ViewerDataError);
+    expect(() => parseRunDiff({ to: minimal.to, shots: [] })).toThrow(ViewerDataError);
+  });
+
+  it("rejects input with no shots array", () => {
+    expect(() => parseRunDiff({ from: minimal.from, to: minimal.to })).toThrow(ViewerDataError);
+  });
+
+  it("keeps the shot paths, which is what lets the viewer find the pictures", () => {
+    const d = parseRunDiff({
+      ...minimal,
+      shots: [
+        {
+          key: "home|default|desktop",
+          route: "home",
+          routeUrl: "/",
+          state: "default",
+          stateLabel: "Default",
+          device: "desktop",
+          status: "changed",
+          ratio: 0.5,
+          image: "images/home/default/desktop.png",
+          fromShot: "screenshots/home/default/desktop.png",
+          toShot: "screenshots/home/default/desktop.png",
+        },
+      ],
+    });
+    expect(d.shots[0].fromShot).toBe("screenshots/home/default/desktop.png");
+    expect(d.shots[0].image).toBe("images/home/default/desktop.png");
+    expect(d.shots[0].ratio).toBe(0.5);
+  });
+
+  it("falls back to the state id when a shot carries no label", () => {
+    const d = parseRunDiff({
+      ...minimal,
+      shots: [{ key: "k", route: "home", state: "modal", device: "desktop", status: "changed" }],
+    });
+    expect(d.shots[0].stateLabel).toBe("modal");
   });
 });

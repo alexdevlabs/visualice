@@ -15,10 +15,10 @@ export async function serveDirectory(
       let rel = decodeURIComponent(url.pathname);
       if (rel.endsWith("/")) rel += "index.html";
 
-      if (await serveFileFromRoot(res, root, rel)) return;
+      if (await serveFileFromRoot(res, root, rel, req)) return;
       if (!path.extname(rel)) {
-        if (await serveFileFromRoot(res, root, `${rel}.html`)) return;
-        if (await serveFileFromRoot(res, root, path.posix.join(rel, "index.html"))) return;
+        if (await serveFileFromRoot(res, root, `${rel}.html`, req)) return;
+        if (await serveFileFromRoot(res, root, path.posix.join(rel, "index.html"), req)) return;
       }
       res.statusCode = 404;
       res.end("Not found");

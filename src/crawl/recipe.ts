@@ -1,9 +1,36 @@
-import type { Page } from "playwright";
+import type { Page, Response } from "playwright";
 import type { RecipeStep } from "../shared/types";
 import { locatorFor } from "../shared/selectors";
 
 export function resolveUrl(base: string, u: string): string {
   return /^https?:\/\//i.test(u) ? u : new URL(u, base).href;
+}
+
+/**
+ * Navigate to a route URL and come back with a freshly rendered document.
+ *
+ * Changing only the fragment is a *same-document* navigation: the browser fires
+ * `hashchange` instead of loading anything, `goto` resolves with no response, and
+ * whatever the previous route left on screen is still there while the router
+ * catches up. On a hash-routed SPA — where consecutive routes differ by nothing
+ * else — that is the difference between screenshotting the right page and
+ * screenshotting the one before it. Reloading makes arriving at the route
+ * identical to arriving at it cold, which is the only thing a recipe recorded
+ * against it can rely on.
+ */
+export async function gotoRoute(
+  page: Page,
+  url: string,
+  waitUntil?: "load" | "domcontentloaded" | "networkidle",
+  timeout?: number,
+): Promise<Response | null> {
+  const response = await page.goto(url, { waitUntil, timeout });
+  // A null response is Playwright's way of saying "same document" — the only
+  // navigation that produces no request at all.
+  if (response === null && new URL(url, page.url()).hash) {
+    return page.reload({ waitUntil, timeout });
+  }
+  return response;
 }
 
 /** Replay an ordered list of interaction steps on a page. */

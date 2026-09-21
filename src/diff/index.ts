@@ -6,46 +6,7 @@ import { pairShots, routeDelta, type ShotPair } from "./compare";
 import { compareImages, writeDiffImage } from "./pixels";
 import { renderDiffReport } from "./report";
 import { mapPool } from "../shared/pool";
-
-export type ShotStatus = "added" | "removed" | "changed" | "unchanged" | "uncomparable";
-
-export interface ShotDiff {
-  key: string;
-  route: string;
-  state: string;
-  stateLabel: string;
-  device: string;
-  status: ShotStatus;
-  /** Fraction of compared pixels that differ (0–1), for a compared pair. */
-  ratio?: number;
-  changedPixels?: number;
-  comparedPixels?: number;
-  /** Set when the two shots have different dimensions. */
-  sizeChanged?: boolean;
-  fromSize?: { width: number; height: number };
-  toSize?: { width: number; height: number };
-  /** Diff image, relative to the diff directory. */
-  image?: string;
-  note?: string;
-}
-
-export interface RunDiff {
-  from: { runId: string; dir: string };
-  to: { runId: string; dir: string };
-  /** Ratio at or above which a pair counts as changed. */
-  minRatio: number;
-  routes: { added: string[]; removed: string[] };
-  summary: {
-    added: number;
-    removed: number;
-    changed: number;
-    unchanged: number;
-    uncomparable: number;
-  };
-  shots: ShotDiff[];
-  /** Where the report and diff images were written (absent for a dry comparison). */
-  outDir?: string;
-}
+import type { RunDiff, ShotDiff } from "./types";
 
 export interface DiffOptions {
   fromDir: string;
@@ -95,10 +56,13 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
     results[i] = {
       key: pair.key,
       route: pair.route,
+      routeUrl: pair.routeUrl,
       state: pair.state,
       stateLabel: pair.stateLabel,
       device: pair.device,
       status: pair.status === "uncomparable" ? "uncomparable" : pair.status,
+      fromShot: pair.from?.full,
+      toShot: pair.to?.full,
       note: pair.note,
     };
   });
@@ -111,10 +75,13 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
     const base: ShotDiff = {
       key: pair.key,
       route: pair.route,
+      routeUrl: pair.routeUrl,
       state: pair.state,
       stateLabel: pair.stateLabel,
       device: pair.device,
       status: "unchanged",
+      fromShot: pair.from?.full,
+      toShot: pair.to?.full,
     };
     const rel = imageRelPath(pair);
     try {
@@ -176,6 +143,7 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
   return diff;
 }
 
+export type { RunDiff, ShotDiff, ShotStatus } from "./types";
 export { pairShots, routeDelta } from "./compare";
 export { compareImages } from "./pixels";
 export { renderDiffReport } from "./report";

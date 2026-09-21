@@ -14,6 +14,10 @@ export interface UrlState {
   q?: string;
   tile?: string;
   run?: string;
+  /** The comparison being shown, if any — a diff directory's name. */
+  diff?: string;
+  /** The route device-compare is showing. Only meaningful in `devices` mode. */
+  route?: string;
   devices?: string[];
   kinds?: string[];
 }
@@ -33,10 +37,12 @@ export function readUrlState(search: string): UrlState {
   const value = (key: string): string | undefined => p.get(key) || undefined;
   const mode = p.get("mode");
   return {
-    mode: mode === "grouped" || mode === "all" ? mode : undefined,
+    mode: mode === "grouped" || mode === "all" || mode === "devices" ? mode : undefined,
     q: p.get("q") ?? undefined,
     tile: value("tile"),
     run: value("run"),
+    diff: value("diff"),
+    route: value("route"),
     devices: list("devices"),
     kinds: list("kinds"),
   };
@@ -48,6 +54,8 @@ export function serializeUrlState(state: UrlState): string {
   if (state.mode && state.mode !== "grouped") p.set("mode", state.mode);
   if (state.q) p.set("q", state.q);
   if (state.run) p.set("run", state.run);
+  if (state.diff) p.set("diff", state.diff);
+  if (state.route) p.set("route", state.route);
   if (state.devices?.length) p.set("devices", state.devices.join(LIST_SEPARATOR));
   if (state.kinds?.length) p.set("kinds", state.kinds.join(LIST_SEPARATOR));
   if (state.tile) p.set("tile", state.tile);

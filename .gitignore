@@ -2,6 +2,7 @@ node_modules
 .visualice
 dist
 viewer/dist
+coverage
 *.log
 .DS_Store
 .env

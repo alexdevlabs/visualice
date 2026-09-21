@@ -44,6 +44,12 @@ const ScopeSchema = z.object({
   maxDepth: z.number().int().nonnegative().default(4).describe("Max link hops from a seed."),
   maxPages: z.number().int().positive().default(200).describe("Hard cap on routes captured."),
   sameOriginOnly: z.boolean().default(true).describe("Never leave the target origin."),
+  hashRoutes: z
+    .enum(["auto", "never", "always"])
+    .default("auto")
+    .describe(
+      "Whether a URL fragment identifies a route. `auto` counts router-shaped fragments (`#/about`, `#!/about`) and leaves plain anchors alone; `never` treats every fragment as an in-page anchor; `always` makes any fragment a route (which turns a page's anchor list into routes — opt in deliberately).",
+    ),
 });
 
 const InteractionsSchema = z.object({
@@ -191,7 +197,7 @@ const StabilizeSchema = z.object({
     .positive()
     .default(5000)
     .describe(
-      "How long to wait for each `waitForSelectors` entry. Deliberately short: a stale selector should cost a moment and a warning, not the full navigation timeout on every shot.",
+      "Total time all `waitForSelectors` entries share per shot — they are waited on together, so this is the whole cost, not the cost per selector. Deliberately short: a stale selector should cost a moment and a warning, not the full navigation timeout on every shot.",
     ),
   waitStrategy: z
     .enum(["load", "domcontentloaded", "networkidle"])
@@ -309,6 +315,12 @@ const PolitenessSchema = z.object({
     .nonnegative()
     .default(1)
     .describe("Extra attempts for a failed navigation or capture before recording a failure."),
+  reuseNavigation: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Skip the page reload when the next state's recipe simply extends what the page already shows (a state captured right after the route's default render, or a nested state after its parent). Fewer requests to the target and a faster run; turn off if a page can only be trusted straight from a reload.",
+    ),
 });
 
 export const ConfigSchema = z.object({

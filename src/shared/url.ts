@@ -9,21 +9,58 @@ import { pathSlug } from "./slug";
 // explode the crawl, while *meaningful* query params still separate routes.
 const TRACKING = /^(utm_|mc_|fbclid$|gclid$|gbraid$|wbraid$|msclkid$|yclid$|igshid$|_ga$|ref$)/i;
 
-/** Pathname only, trailing slashes trimmed — what scope globs match against. */
-export function scopePath(u: URL): string {
-  return u.pathname.replace(/\/+$/, "") || "/";
+/**
+ * How much of a URL fragment counts as route identity.
+ *
+ * - `never` — a fragment is always an in-page anchor. Every `#…` on a path is the
+ *   same route, which is right for an ordinary server-rendered site.
+ * - `auto` — only router-shaped fragments (`#/about`, `#!/about`) identify a
+ *   route. A plain `#pricing` stays an anchor. This is the default: the two
+ *   conventions are unambiguous, and a site that uses neither is unaffected.
+ * - `always` — any fragment identifies a route. For routers that drop the slash
+ *   (`#about`); it will also turn a documentation page's anchor list into dozens
+ *   of routes, so it is opt-in.
+ */
+export type HashRoutes = "auto" | "never" | "always";
+
+/** Does this fragment look like a router path rather than a jump to an anchor? */
+export function isHashRoute(hash: string): boolean {
+  return /^#!?\/./.test(hash);
 }
 
-/** Path + meaningful, sorted query — the identity used for dedup and output. */
-export function canonicalPath(u: URL): string {
-  const p = scopePath(u);
+/**
+ * The part of `u.hash` that belongs to the route identity, or `""`.
+ *
+ * `#`, `#/` and `#!/` all mean "the router's home", which is the same route as no
+ * fragment at all — folding them to `""` keeps `/` and `/#/` from becoming two
+ * routes that screenshot identically.
+ */
+export function hashPart(u: URL, mode: HashRoutes = "never"): string {
+  if (mode === "never") return "";
+  const raw = u.hash.replace(/\/+$/, "");
+  if (raw === "" || raw === "#" || raw === "#!") return "";
+  if (mode === "auto" && !isHashRoute(u.hash)) return "";
+  return raw;
+}
+
+/** Pathname (+ route fragment) with trailing slashes trimmed — what scope globs match. */
+export function scopePath(u: URL, hashRoutes: HashRoutes = "never"): string {
+  return (u.pathname.replace(/\/+$/, "") || "/") + hashPart(u, hashRoutes);
+}
+
+/** Path + meaningful, sorted query (+ route fragment) — the identity used for dedup and output. */
+export function canonicalPath(u: URL, hashRoutes: HashRoutes = "never"): string {
+  const p = u.pathname.replace(/\/+$/, "") || "/";
+  const hash = hashPart(u, hashRoutes);
   const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING.test(k));
-  if (!params.length) return p;
+  if (!params.length) return p + hash;
   params.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
   const search = params
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
-  return `${p}?${search}`;
+  // Written in URL order — path, query, fragment — so the canonical form is a URL
+  // that can be resolved against a base host and navigated to as-is.
+  return `${p}?${search}${hash}`;
 }
 
 /** Stable, filesystem-safe id for a canonical path. */
@@ -36,22 +73,30 @@ export function routeId(canonical: string): string {
  * models stay portable (the same map replays against staging, prod or a random
  * test port). Off-origin URLs are returned untouched.
  */
-export function relativeToOrigin(href: string, origin: string): string {
+export function relativeToOrigin(
+  href: string,
+  origin: string,
+  hashRoutes: HashRoutes = "never",
+): string {
   try {
     const u = new URL(href);
-    return u.origin === origin ? canonicalPath(u) : u.href;
+    return u.origin === origin ? canonicalPath(u, hashRoutes) : u.href;
   } catch {
     return href;
   }
 }
 
 /** Canonicalize + dedupe a page's outbound hrefs, keeping same-origin ones. */
-export function dedupeLinks(links: string[], origin: string): string[] {
+export function dedupeLinks(
+  links: string[],
+  origin: string,
+  hashRoutes: HashRoutes = "never",
+): string[] {
   const out = new Set<string>();
   for (const href of links) {
     try {
       const u = new URL(href);
-      if (u.origin === origin) out.add(canonicalPath(u));
+      if (u.origin === origin) out.add(canonicalPath(u, hashRoutes));
     } catch {
       /* skip */
     }

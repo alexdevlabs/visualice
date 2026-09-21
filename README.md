@@ -103,16 +103,21 @@ visualice serve --shoot=out.png # headless: screenshot the viewer to a file
 The viewer is a standalone static app (`viewer/`); it reads `viewer-data.json` + the
 screenshots and needs no connection to the crawled site. Scroll to pan, ⌘/ctrl+scroll
 (or pinch) to zoom, click any shot for metadata, shift+arrow to step to the next one.
-Toggle **Grouped** (by path) vs **All at once**; thumbnails load when zoomed out and step
-up through a mid-resolution image to full resolution as you zoom in. The minimap shows
-where you are in the layout and jumps there on click.
+Toggle **Grouped** (by path), **All at once**, or **Devices** — one route at a time with
+every device drawn at the same width, so the same element lands in the same place across
+the row and a spacing difference is visible by looking straight down. In Devices mode the
+sidebar picks the route. Thumbnails load when zoomed out and step up through a
+mid-resolution image to full resolution as you zoom in. The minimap shows where you are in
+the layout and jumps there on click, and the path list virtualizes past a few dozen routes
+so a large run doesn't build a sidebar it never shows.
 
 Filter by device or by state kind, search by path, and flip between runs from the run
 switcher — `serve` exposes the sibling runs in the same output directory, so comparing
 runs needs no restart. Failed captures are tiles too: a placeholder carrying its error,
 an **N failed** toggle and a **Failed** list in the sidebar, so a broken shot is visible
 rather than missing. The view lives in the URL (mode, query, devices, kinds, selected
-tile, run), so copying the address bar shares the exact shot you're looking at. `?data=`
+tile, run, comparison), so copying the address bar shares the exact shot you're looking
+at. `?data=`
 accepts same-origin paths only, and a `viewer-data.json` the viewer can't read gets an
 error naming the offending field instead of a blank canvas.
 
@@ -137,6 +142,12 @@ the fraction of pixels that must differ before a pair counts as changed (default
 output, and `--fail-on-error` exits 3 when anything changed, appeared or disappeared —
 the CI gate.
 
+Comparisons show up in the viewer too. `serve` lists them in the **comparison** picker,
+and choosing one lays out every changed shot as before / after / diff, biggest change
+first — the three images live in two run directories and the diff directory, which is why
+this needs the server rather than a single run's data. An **unchanged** toggle brings the
+rest in when you want to confirm that nothing else moved.
+
 ## Configuration
 
 `visualice.config.ts` is the worked example; every field is optional and falls back to the
@@ -156,25 +167,27 @@ Run `npm run schema` after changing the zod schema — a unit test fails if the 
 
 Options worth knowing:
 
-| Option                                      | Default               | What it does                                                                                    |
-| ------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------- |
-| `politeness.respectRobots`                  | `true`                | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes                  |
-| `politeness.retries`                        | `1`                   | Extra attempts for a failed navigation/capture before recording a failure                       |
-| `discovery.interactions.nestDepth`          | `1`                   | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states            |
-| `discovery.interactions.maxPerPage`         | `12`                  | Hard cap on states per route, whatever the nesting depth                                        |
-| `discovery.interactions.hover`              | `true`                | Also probe hover-revealed states (dropdown navs)                                                |
-| `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)                  |
-| `devices[].colorScheme`                     | `"light"`             | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog                 |
-| `devices[].locale` / `timezoneId`           | `en-US` / `UTC`       | Pinned so `Intl`/date rendering is machine-independent                                          |
-| `stabilize.freezeTime` / `seedRandom`       | unset                 | Pin `Date` / `Math.random` in the page so reruns are byte-identical                             |
-| `stabilize.maskSelectors`                   | `[]`                  | Paint opaque boxes over volatile regions (ads, clocks, carousels)                               |
-| `stabilize.waitForSelectors` / `…TimeoutMs` | `[]` / `5000`         | Selectors that must be visible before a shot; the per-selector wait is short by design          |
-| `screenshot.alsoViewport`                   | `false`               | Also write an above-the-fold crop next to each full-page shot                                   |
-| `screenshot.maxHeight`                      | `20000`               | Crop full-page shots to this CSS-px height and flag them `clamped`; `0` disables (watch memory) |
-| `screenshot.thumbnail.midWidth`             | `1024`                | Mid-resolution LOD step between the thumbnail and the full image; `0` disables                  |
-| `http.ignoreHTTPSErrors`                    | `false`               | Accept self-signed TLS (staging environments)                                                   |
-| `http.httpCredentials` / `extraHTTPHeaders` | unset                 | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                                 |
-| `routesFile`                                | `visualice.routes.md` | Where the editable site index lives; `false` disables it entirely                               |
+| Option                                      | Default               | What it does                                                                                              |
+| ------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `politeness.respectRobots`                  | `true`                | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes                            |
+| `politeness.retries`                        | `1`                   | Extra attempts for a failed navigation/capture before recording a failure                                 |
+| `politeness.reuseNavigation`                | `true`                | Skip the reload when the next state's recipe just extends what the page already shows                     |
+| `scope.hashRoutes`                          | `"auto"`              | `auto` treats `#/about`-style fragments as routes and plain anchors as anchors; `never`/`always` force it |
+| `discovery.interactions.nestDepth`          | `1`                   | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states                      |
+| `discovery.interactions.maxPerPage`         | `12`                  | Hard cap on states per route, whatever the nesting depth                                                  |
+| `discovery.interactions.hover`              | `true`                | Also probe hover-revealed states (dropdown navs)                                                          |
+| `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)                            |
+| `devices[].colorScheme`                     | `"light"`             | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog                           |
+| `devices[].locale` / `timezoneId`           | `en-US` / `UTC`       | Pinned so `Intl`/date rendering is machine-independent                                                    |
+| `stabilize.freezeTime` / `seedRandom`       | unset                 | Pin `Date` / `Math.random` in the page so reruns are byte-identical                                       |
+| `stabilize.maskSelectors`                   | `[]`                  | Paint opaque boxes over volatile regions (ads, clocks, carousels)                                         |
+| `stabilize.waitForSelectors` / `…TimeoutMs` | `[]` / `5000`         | Selectors that must be visible before a shot; they are waited on together and share the budget            |
+| `screenshot.alsoViewport`                   | `false`               | Also write an above-the-fold crop next to each full-page shot                                             |
+| `screenshot.maxHeight`                      | `20000`               | Crop full-page shots to this CSS-px height and flag them `clamped`; `0` disables (watch memory)           |
+| `screenshot.thumbnail.midWidth`             | `1024`                | Mid-resolution LOD step between the thumbnail and the full image; `0` disables                            |
+| `http.ignoreHTTPSErrors`                    | `false`               | Accept self-signed TLS (staging environments)                                                             |
+| `http.httpCredentials` / `extraHTTPHeaders` | unset                 | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                                           |
+| `routesFile`                                | `visualice.routes.md` | Where the editable site index lives; `false` disables it entirely                                         |
 
 ## Authenticated sites
 

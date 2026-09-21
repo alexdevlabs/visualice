@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   canonicalPath,
+  hashPart,
+  isHashRoute,
   scopePath,
   routeId,
   dedupeLinks,
@@ -40,6 +42,88 @@ describe("canonicalPath", () => {
 
   it("encodes param values", () => {
     expect(canonicalPath(u("/s?q=a b&t=c/d"))).toBe("/s?q=a%20b&t=c%2Fd");
+  });
+});
+
+describe("isHashRoute", () => {
+  it("recognises the two shapes a hash router uses", () => {
+    expect(isHashRoute("#/about")).toBe(true);
+    expect(isHashRoute("#!/about")).toBe(true);
+    expect(isHashRoute("#/users/42")).toBe(true);
+  });
+
+  it("does not mistake an in-page anchor for a route", () => {
+    expect(isHashRoute("#pricing")).toBe(false);
+    expect(isHashRoute("#")).toBe(false);
+    expect(isHashRoute("")).toBe(false);
+    // The router's own root, which is the same page as no fragment at all.
+    expect(isHashRoute("#/")).toBe(false);
+  });
+});
+
+describe("hashPart", () => {
+  it("ignores the fragment entirely by default", () => {
+    expect(hashPart(u("/#/about"))).toBe("");
+    expect(hashPart(u("/#/about"), "never")).toBe("");
+  });
+
+  it("takes router-shaped fragments under `auto`, and nothing else", () => {
+    expect(hashPart(u("/#/about"), "auto")).toBe("#/about");
+    expect(hashPart(u("/#!/about"), "auto")).toBe("#!/about");
+    expect(hashPart(u("/docs#installation"), "auto")).toBe("");
+  });
+
+  it("takes any fragment under `always`", () => {
+    expect(hashPart(u("/#about"), "always")).toBe("#about");
+    expect(hashPart(u("/#/about"), "always")).toBe("#/about");
+  });
+
+  it("folds the router's home onto the page itself", () => {
+    // `/`, `/#`, `/#/` and `/#!/` are one page, and capturing four of it is waste.
+    for (const mode of ["auto", "always"] as const) {
+      expect(hashPart(u("/#"), mode)).toBe("");
+      expect(hashPart(u("/#/"), mode)).toBe("");
+      expect(hashPart(u("/#!/"), mode)).toBe("");
+    }
+  });
+
+  it("normalizes a trailing slash, so one route isn't crawled twice", () => {
+    expect(hashPart(u("/#/about/"), "auto")).toBe("#/about");
+  });
+});
+
+describe("canonicalPath with hash routes", () => {
+  it("separates the routes of a hash-routed SPA", () => {
+    expect(canonicalPath(u("/#/about"), "auto")).toBe("/#/about");
+    expect(canonicalPath(u("/#/pricing"), "auto")).toBe("/#/pricing");
+    // …which is exactly what collapses without it.
+    expect(canonicalPath(u("/#/about"))).toBe(canonicalPath(u("/#/pricing")));
+  });
+
+  it("writes path, query then fragment, so the result is still a usable URL", () => {
+    expect(canonicalPath(u("/app?lang=en#/users/42"), "auto")).toBe("/app?lang=en#/users/42");
+    expect(
+      new URL(canonicalPath(u("/app?lang=en#/users/42"), "auto"), "https://site.test").href,
+    ).toBe("https://site.test/app?lang=en#/users/42");
+  });
+
+  it("leaves an anchor on a server-rendered page alone", () => {
+    expect(canonicalPath(u("/docs#installation"), "auto")).toBe("/docs");
+  });
+});
+
+describe("scopePath with hash routes", () => {
+  it("exposes the fragment to include/exclude globs", () => {
+    expect(scopePath(u("/#/admin/users"), "auto")).toBe("/#/admin/users");
+    // `/#/admin/**` reaches it, which is the point — a hash-routed admin area can
+    // be excluded by the same globs as a server-rendered one.
+    expect(scopePath(u("/#/admin/users"), "auto").startsWith("/#/admin/")).toBe(true);
+  });
+
+  it("keeps a query that lives inside the fragment", () => {
+    // Everything after the first `#` is fragment, so this query belongs to the
+    // client route — and `#/users?page=2` really is a different view from `#/users`.
+    expect(scopePath(u("/#/users?page=2"), "auto")).toBe("/#/users?page=2");
   });
 });
 

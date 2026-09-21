@@ -17,7 +17,8 @@
         "exclude": [],
         "maxDepth": 4,
         "maxPages": 200,
-        "sameOriginOnly": true
+        "sameOriginOnly": true,
+        "hashRoutes": "auto"
       },
       "type": "object",
       "properties": {
@@ -57,6 +58,16 @@
           "default": true,
           "description": "Never leave the target origin.",
           "type": "boolean"
+        },
+        "hashRoutes": {
+          "default": "auto",
+          "description": "Whether a URL fragment identifies a route. `auto` counts router-shaped fragments (`#/about`, `#!/about`) and leaves plain anchors alone; `never` treats every fragment as an in-page anchor; `always` makes any fragment a route (which turns a page's anchor list into routes — opt in deliberately).",
+          "type": "string",
+          "enum": [
+            "auto",
+            "never",
+            "always"
+          ]
         }
       }
     },
@@ -486,7 +497,7 @@
         },
         "waitForSelectorsTimeoutMs": {
           "default": 5000,
-          "description": "How long to wait for each `waitForSelectors` entry. Deliberately short: a stale selector should cost a moment and a warning, not the full navigation timeout on every shot.",
+          "description": "Total time all `waitForSelectors` entries share per shot — they are waited on together, so this is the whole cost, not the cost per selector. Deliberately short: a stale selector should cost a moment and a warning, not the full navigation timeout on every shot.",
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
@@ -680,7 +691,8 @@
         "minDelayMs": 150,
         "respectRobots": true,
         "timeoutMs": 30000,
-        "retries": 1
+        "retries": 1,
+        "reuseNavigation": true
       },
       "type": "object",
       "properties": {
@@ -716,6 +728,11 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "reuseNavigation": {
+          "default": true,
+          "description": "Skip the page reload when the next state's recipe simply extends what the page already shows (a state captured right after the route's default render, or a nested state after its parent). Fewer requests to the target and a faster run; turn off if a page can only be trusted straight from a reload.",
+          "type": "boolean"
         }
       }
     }

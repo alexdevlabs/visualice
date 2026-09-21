@@ -4,7 +4,7 @@ import type { RouteNode, StateNode, StateKind, RecipeStep, Target } from "../sha
 import { locatorFor } from "../shared/selectors";
 import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
-import { applyRecipe } from "./recipe";
+import { applyRecipe, gotoRoute } from "./recipe";
 import { discoverFormStates } from "./discover-forms";
 
 interface RawCandidate {
@@ -211,15 +211,56 @@ function takeSnapshot(page: Page): Promise<Snapshot> {
       const s = getComputedStyle(el);
       return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
     };
+
+    // Where an element sits in the document, as a sibling-index path. Two elements
+    // can't share one, which is the property the region key below needs: without it
+    // an unnamed dialog is indistinguishable from any other unnamed dialog, both
+    // snapshot as the empty string, and the second one is thrown away as a duplicate
+    // of the first. Deterministic for a given DOM, so the same state re-probed still
+    // dedupes against itself.
+    const domPath = (el: Element): string => {
+      const parts: string[] = [];
+      let n: Element | null = el;
+      while (n && n !== document.documentElement) {
+        const parent: Element | null = n.parentElement;
+        if (!parent) break;
+        parts.unshift(`${n.tagName.toLowerCase()}${Array.from(parent.children).indexOf(n)}`);
+        n = parent;
+      }
+      return parts.join(">");
+    };
+
+    // The most specific name the region carries, falling back to its position.
+    // `aria-labelledby` is resolved because a dialog titled by its own heading is
+    // the common markup, and that heading is exactly what tells two of them apart.
+    const regionKey = (el: Element): string => {
+      if (el.id) return el.id;
+      const label = el.getAttribute("aria-label");
+      if (label) return label;
+      const by = el.getAttribute("aria-labelledby");
+      if (by) {
+        const text = by
+          .split(/\s+/)
+          .map((id) => (document.getElementById(id)?.textContent || "").replace(/\s+/g, " ").trim())
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 60);
+        if (text) return text;
+      }
+      return `@${domPath(el)}`;
+    };
+
     const modals = Array.from(
       document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]'),
     ).filter(vis);
     const expanded = Array.from(document.querySelectorAll('[aria-expanded="true"]'));
     const details = Array.from(document.querySelectorAll("details[open]")).filter(vis);
     const ids = [
-      ...modals.map((e) => `m:${e.id || e.getAttribute("aria-label") || ""}`),
-      ...details.map((e) => `d:${e.id || ""}`),
-      ...expanded.map((e) => `e:${e.getAttribute("aria-controls") || e.id || ""}`),
+      ...modals.map((e) => `m:${regionKey(e)}`),
+      ...details.map((e) => `d:${regionKey(e)}`),
+      // An `aria-expanded` element is the *trigger*; the region it opened is what
+      // `aria-controls` names, so that stays the preferred key here.
+      ...expanded.map((e) => `e:${e.getAttribute("aria-controls") || regionKey(e)}`),
     ].sort();
     const openModalIds = modals.map((e) => e.id).filter(Boolean);
     const openPanelIds = [
@@ -332,6 +373,14 @@ function makeStateId(
   );
 }
 
+/** Counters for the one thing probing spends most of its time on. */
+export interface ProbeStats {
+  /** Full page loads issued to get back to a parent state. */
+  navigations: number;
+  /** Times the page was already there, or a keypress was enough to put it back. */
+  reused: number;
+}
+
 interface ProbeContext {
   page: Page;
   routeUrl: string;
@@ -347,6 +396,7 @@ interface ProbeContext {
   atBaseline: (s: Snapshot) => boolean;
   /** So the maxPerPage-starvation notice is logged once per route, not per probe. */
   capLogged: boolean;
+  stats: ProbeStats;
   log: (msg: string) => void;
 }
 
@@ -358,20 +408,44 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
   const { page, routeUrl, waitUntil, interactions, states, seenSig, containers, log } = ctx;
   const nested = parent.recipe.length > 0;
 
-  // Restore the parent state. At the top level a cheap Escape usually suffices;
-  // once we're nested, only replaying the parent's recipe is reliable.
+  /**
+   * Is the page showing the parent state right now? At the top level that's the
+   * route's baseline; nested, it's the DOM signature the parent was recorded with.
+   * A parent with no signature can't be recognised, so it always gets replayed.
+   */
+  const atParent = async (): Promise<boolean> => {
+    const snap = await takeSnapshot(page);
+    return nested
+      ? parent.signature !== undefined && snap.sig === parent.signature
+      : ctx.atBaseline(snap);
+  };
+
+  /**
+   * Restore the parent state, in increasing order of cost.
+   *
+   * Most probes change nothing at all — a button that turns out not to open
+   * anything leaves the page exactly where it was — so the first thing to try is
+   * simply looking. Then dismissing, which closes the overlay a probe did open.
+   * Reloading is the last resort, and it is by far the most expensive thing state
+   * discovery does: `probeFrom` runs it once per candidate, and a page with forty
+   * candidates paid for forty navigations to visit the same URL.
+   */
   const enterParent = async (): Promise<boolean> => {
-    if (!nested) {
-      // Park the pointer first — hover-opened menus close on mouse-out, not Escape.
-      await page.mouse.move(0, 0).catch(() => {});
-      await page.keyboard.press("Escape").catch(() => {});
-      if (ctx.atBaseline(await takeSnapshot(page))) return true;
-      await page.goto(routeUrl, { waitUntil });
+    if (await atParent()) {
+      ctx.stats.reused++;
+      return true;
+    }
+    // Park the pointer first — hover-opened menus close on mouse-out, not Escape.
+    await page.mouse.move(0, 0).catch(() => {});
+    await page.keyboard.press("Escape").catch(() => {});
+    if (await atParent()) {
+      ctx.stats.reused++;
       return true;
     }
     try {
-      await page.goto(routeUrl, { waitUntil });
-      await applyRecipe(page, parent.recipe);
+      ctx.stats.navigations++;
+      await gotoRoute(page, routeUrl, waitUntil);
+      if (nested) await applyRecipe(page, parent.recipe);
       return true;
     } catch {
       return false; // parent recipe no longer replays — nothing to nest under
@@ -484,7 +558,7 @@ export async function discoverStates(
   const waitUntil = config.stabilize.waitStrategy;
   const page = await context.newPage();
   try {
-    await page.goto(routeUrl, { waitUntil });
+    await gotoRoute(page, routeUrl, waitUntil);
     const baseline = await takeSnapshot(page);
     const ctx: ProbeContext = {
       page,
@@ -497,6 +571,7 @@ export async function discoverStates(
       containers: new Map<string, string>(),
       atBaseline: (s) => s.sig === baseline.sig && !s.modals && !s.expanded && !s.details,
       capLogged: false,
+      stats: { navigations: 0, reused: 0 },
       log,
     };
 
@@ -513,7 +588,7 @@ export async function discoverStates(
     // Form probing runs last and on a clean page: it leaves fields focused and
     // possibly showing errors, which would poison any subsequent trigger probe.
     if (interactions.formStates && states.length - 1 < interactions.maxPerPage) {
-      await page.goto(routeUrl, { waitUntil });
+      await gotoRoute(page, routeUrl, waitUntil);
       const { states: formStates, note } = await discoverFormStates(
         page,
         interactions.clickTimeoutMs,
@@ -524,6 +599,13 @@ export async function discoverStates(
         log(`    + ${state.kind}: ${state.label}`);
       }
       if (note && !formStates.length) log(`    · forms: ${note}`);
+    }
+
+    // Worth a line: re-navigation is the dominant cost of probing, and this is the
+    // only place that says how much of it was avoided.
+    const { navigations, reused } = ctx.stats;
+    if (navigations + reused > 0) {
+      log(`    · ${ctx.route.id}: ${navigations} reload(s), ${reused} reuse(s) while probing`);
     }
   } finally {
     await page.close().catch(() => {});

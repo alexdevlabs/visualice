@@ -61,22 +61,28 @@ export type { CaptureOptions, CaptureResult } from "./crawl/capture";
 export { ensureStorageState } from "./crawl/auth";
 export { loadInputManifest, mergeManifests, saveJson } from "./crawl/manifest";
 export { renderReport } from "./crawl/report";
-export { applyRecipe, resolveUrl } from "./crawl/recipe";
-export { applyContextInit, stabilizePage } from "./crawl/stabilize";
+export { applyRecipe, gotoRoute, resolveUrl } from "./crawl/recipe";
+export { applyContextInit, stabilizePage, waitForStableSelectors } from "./crawl/stabilize";
 
 export { serveViewer } from "./serve";
+export { listDiffs, listRuns } from "./crawl/runs";
 export { serveDirectory } from "./shared/static-server";
 export type { StaticServer } from "./shared/file-serve";
+export { parseRange } from "./shared/file-serve";
+export type { RangeResult } from "./shared/file-serve";
 
 export { inScope, matchesAny, globToRegExp } from "./shared/glob";
 export {
   canonicalPath,
+  hashPart,
+  isHashRoute,
   scopePath,
   routeId,
   dedupeLinks,
   relativeToOrigin,
   uniqueId,
 } from "./shared/url";
+export type { HashRoutes } from "./shared/url";
 export { pathSlug, stateSlug, shortHash } from "./shared/slug";
 export { parseRobots, isAllowed, fetchRobots, ROBOTS_UA, ALLOW_ALL } from "./shared/robots";
 export type { RobotsRules, RobotsRule } from "./shared/robots";

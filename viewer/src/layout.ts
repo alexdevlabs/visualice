@@ -1,6 +1,6 @@
 import type { ViewerData, ViewerTile, Device } from "./types";
 
-export type LayoutMode = "grouped" | "all";
+export type LayoutMode = "grouped" | "all" | "devices";
 
 export interface Placed {
   tile: ViewerTile;
@@ -32,6 +32,14 @@ export interface Layout {
   labels: GroupLabel[];
   bounds: Bounds;
   byRoute: Map<string, Bounds>;
+  /**
+   * Routes with tiles matching the filters, in the data's own order.
+   *
+   * Not the same as the keys of `byRoute`: device-compare mode places one route at
+   * a time, and the sidebar still has to offer the others — they're what you'd
+   * click to compare next.
+   */
+  routesWithTiles: string[];
   /** Tiles matching the filters but left unplaced by `limit`. */
   truncated: number;
 }
@@ -46,9 +54,17 @@ export interface LayoutFilters {
   failedOnly?: boolean;
   /** Cap on placed tiles, so a huge run can't lock up the canvas. */
   limit?: number;
+  /** The route `devices` mode lays out. Defaults to the first one with tiles. */
+  focusRouteId?: string;
 }
 
 const CARD = 360; // world px for the widest device
+/**
+ * Device compare draws every device at one width, so the same element lands in the
+ * same place across the row and a spacing change is visible by looking straight
+ * down. Wider than a catalog card because comparing means reading.
+ */
+const COMPARE_CARD = 560;
 const GAP = 26;
 const ROW_GAP = 30;
 const SECTION_GAP = 90;
@@ -109,6 +125,20 @@ interface GroupBlock {
   height: number;
 }
 
+/**
+ * The route device-compare should lay out: the one asked for if it still has
+ * tiles, otherwise the first that does. Falling back rather than showing nothing
+ * matters because the filters can empty the focused route out from under the mode.
+ */
+export function resolveFocusRoute(
+  groups: ViewerData["groups"],
+  withTiles: Set<string>,
+  asked?: string,
+): string | undefined {
+  if (asked && withTiles.has(asked)) return asked;
+  return groups.find((g) => withTiles.has(g.routeId))?.routeId;
+}
+
 export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout {
   const { mode, devices: deviceFilter, kinds, query = "", failedOnly, limit } = filters;
   const devices = data.devices.filter((d) => deviceFilter.has(d.name));
@@ -122,9 +152,19 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       (!failedOnly || t.error !== undefined) &&
       matchesQuery(t, query),
   );
-  const tiles =
-    limit !== undefined && matching.length > limit ? matching.slice(0, limit) : matching;
-  const truncated = matching.length - tiles.length;
+  const routesMatching = new Set(matching.map((t) => t.routeId));
+  const routesWithTiles = data.groups.map((g) => g.routeId).filter((id) => routesMatching.has(id));
+
+  // Device compare is about one route at a time; everything else lays out the lot.
+  const focusRouteId =
+    mode === "devices"
+      ? resolveFocusRoute(data.groups, routesMatching, filters.focusRouteId)
+      : undefined;
+  const inScope =
+    mode === "devices" ? matching.filter((t) => t.routeId === focusRouteId) : matching;
+
+  const tiles = limit !== undefined && inScope.length > limit ? inScope.slice(0, limit) : inScope;
+  const truncated = inScope.length - tiles.length;
 
   const placed: Placed[] = [];
   const labels: GroupLabel[] = [];
@@ -142,7 +182,67 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
     return h;
   };
 
-  if (mode === "grouped") {
+  if (mode === "devices") {
+    // One block per state of the focused route: every device at the same width,
+    // top-aligned, in the order the devices were configured.
+    const group = data.groups.find((g) => g.routeId === focusRouteId);
+    const byStateDevice = new Map(tiles.map((t) => [`${t.stateId} ${t.device}`, t]));
+    const stateIds = [...new Set(tiles.map((t) => t.stateId))];
+    const rowWidth = Math.max(1, devices.length * (COMPARE_CARD + GAP) - GAP);
+
+    const blocks = stateIds.map((stateId) => {
+      const row = devices.map((d) => byStateDevice.get(`${stateId} ${d.name}`));
+      const height =
+        HEADER_H +
+        row.reduce((h, t) => (t ? Math.max(h, Math.min(COMPARE_CARD * aspect(t), MAX_H)) : h), 0);
+      return { stateId, row, height };
+    });
+
+    // Same reason as the grouped mode: a single column of full-page shots is a
+    // ribbon, and Fit then shows it as a sliver.
+    const totalHeight = blocks.reduce((sum, b) => sum + b.height + SECTION_GAP, 0);
+    const columns = columnCount(totalHeight, rowWidth, blocks.length);
+    const columnX = Array.from({ length: columns }, (_, i) => i * (rowWidth + SECTION_GAP));
+    const columnY = new Array<number>(columns).fill(0);
+
+    for (const block of blocks) {
+      let col = 0;
+      for (let i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
+      const x0 = columnX[col];
+      const labelY = columnY[col];
+      const y = labelY + HEADER_H;
+
+      growBounds(bounds, x0, labelY, rowWidth, HEADER_H);
+      let rowH = 0;
+      block.row.forEach((t, i) => {
+        if (t) rowH = Math.max(rowH, place(t, x0 + i * (COMPARE_CARD + GAP), y, COMPARE_CARD));
+      });
+
+      const rb = byRoute.get(focusRouteId ?? "") ?? emptyBounds();
+      growBounds(rb, x0, labelY, rowWidth, HEADER_H);
+      if (focusRouteId) byRoute.set(focusRouteId, rb);
+      labels.push({
+        routeId: `${focusRouteId}:${block.stateId}`,
+        title: block.row.find(Boolean)?.stateLabel ?? block.stateId,
+        subtitle: `${block.stateId}  ·  ${devices.map((d) => d.name).join("  ·  ")}`,
+        x: x0,
+        y: labelY,
+        w: rowWidth,
+      });
+      columnY[col] = y + rowH + SECTION_GAP;
+    }
+
+    if (group && !stateIds.length) {
+      labels.push({
+        routeId: group.routeId,
+        title: group.title || group.path,
+        subtitle: "no shots match the current filters",
+        x: 0,
+        y: 0,
+        w: rowWidth,
+      });
+    }
+  } else if (mode === "grouped") {
     // Index once — per-group filter/find scans are O(routes × tiles) and this
     // recomputes on every search keystroke.
     const tilesByRoute = new Map<string, ViewerTile[]>();
@@ -249,5 +349,5 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   }
 
   if (!placed.length) Object.assign(bounds, { minX: 0, minY: 0, maxX: 1, maxY: 1 });
-  return { placed, labels, bounds, byRoute, truncated };
+  return { placed, labels, bounds, byRoute, routesWithTiles, truncated };
 }

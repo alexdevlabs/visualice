@@ -83,6 +83,45 @@ async function autoScroll(page: Page): Promise<void> {
   await page.waitForTimeout(120);
 }
 
+/** The part of a Playwright page this waiter needs, so a test can stand one in. */
+type Waitable = Pick<Page, "locator">;
+
+/**
+ * Wait for the page's own "ready" markers, all of them sharing one budget.
+ *
+ * The waits run concurrently rather than one after another, which is what makes a
+ * single budget honest: eight selectors waited on in sequence cost eight timeouts
+ * on every shot — 40s of a 5s-per-selector budget — and the eighth selector is
+ * made to look stale by the seven ahead of it. Started together, the ones that are
+ * there resolve immediately and only the genuinely absent ones reach the deadline,
+ * once, together.
+ *
+ * Returns the selectors that never appeared, so the caller can say so: silently
+ * absorbing one would add its timeout to every shot with nothing in the output to
+ * explain why the run got slower.
+ */
+export async function waitForStableSelectors(
+  page: Waitable,
+  selectors: string[],
+  budgetMs: number,
+): Promise<string[]> {
+  if (!selectors.length) return [];
+  const deadline = Date.now() + budgetMs;
+  const results = await Promise.all(
+    selectors.map(async (selector) => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return selector;
+      try {
+        await page.locator(selector).first().waitFor({ state: "visible", timeout: remaining });
+        return null;
+      } catch {
+        return selector;
+      }
+    }),
+  );
+  return results.filter((s): s is string => s !== null);
+}
+
 /**
  * Quiet the page down right before a screenshot.
  *
@@ -98,15 +137,13 @@ export async function stabilizePage(
 ): Promise<void> {
   // The page's own "I'm ready" markers (hints.stableSelectors / config) beat any
   // fixed delay: wait for them before spending time on the rest.
-  for (const selector of stab.waitForSelectors) {
-    try {
-      await page
-        .locator(selector)
-        .first()
-        .waitFor({ state: "visible", timeout: stab.waitForSelectorsTimeoutMs });
-    } catch {
-      log?.(`  ⚠ waitForSelectors: "${selector}" never became visible — continuing`);
-    }
+  const missing = await waitForStableSelectors(
+    page,
+    stab.waitForSelectors,
+    stab.waitForSelectorsTimeoutMs,
+  );
+  for (const selector of missing) {
+    log?.(`  ⚠ waitForSelectors: "${selector}" never became visible — continuing`);
   }
   if (stab.animations === "disabled") {
     await page

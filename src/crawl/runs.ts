@@ -46,6 +46,38 @@ export async function listRuns(outRoot: string): Promise<string[]> {
 }
 
 /**
+ * Diff directories under `<outRoot>/diffs`, newest first.
+ *
+ * `visualice diff` names them `<fromId>__<toId>`, so the *second* id is what
+ * orders them: a diff is as recent as the run it was taken against. A directory
+ * without a readable `diff.json` isn't a diff and is left out rather than offered
+ * as one that fails to open.
+ */
+export async function listDiffs(
+  outRoot: string,
+): Promise<{ id: string; from: string; to: string }[]> {
+  const dir = path.join(outRoot, "diffs");
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const found: { id: string; from: string; to: string }[] = [];
+  for (const e of entries) {
+    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
+    const [from, to] = e.name.split("__");
+    if (!from || !to) continue;
+    const ok = await fs.access(path.join(dir, e.name, "diff.json")).then(
+      () => true,
+      () => false,
+    );
+    if (ok) found.push({ id: e.name, from, to });
+  }
+  return found.sort((a, b) => {
+    const ta = runIdTime(a.to);
+    const tb = runIdTime(b.to);
+    if (ta !== undefined && tb !== undefined) return tb - ta || b.id.localeCompare(a.id);
+    return b.id.localeCompare(a.id);
+  });
+}
+
+/**
  * A run directory is marked incomplete while it is being written, so an
  * interrupted crawl is distinguishable from a finished one and `--resume` has
  * something unambiguous to pick up.

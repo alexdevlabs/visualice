@@ -2,6 +2,7 @@
 node_modules
 dist
 viewer/dist
+coverage
 
 # crawl output (gitignored runtime data; includes hand-formatted cache json)
 .visualice

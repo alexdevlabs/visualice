@@ -6,9 +6,18 @@ import type { StaticServer } from "../../src/shared/file-serve";
 
 export const FIXTURE_DIR = path.resolve(import.meta.dirname, "..", "fixture");
 
-/** A throwaway output/site directory that the caller is expected to clean up. */
+/**
+ * A throwaway output/site directory that the caller is expected to clean up.
+ *
+ * `VISUALICE_TEST_TMP` overrides the parent so CI can put these somewhere it can
+ * collect afterwards: the OS temp directory is in a different place on every
+ * runner, and a crashed test that skips its own cleanup is exactly the case where
+ * the leftovers are worth uploading.
+ */
 export async function tempDir(prefix: string): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), `vc-${prefix}-`));
+  const parent = process.env.VISUALICE_TEST_TMP || os.tmpdir();
+  await fs.mkdir(parent, { recursive: true });
+  return fs.mkdtemp(path.join(parent, `vc-${prefix}-`));
 }
 
 /** Write `{ "index.html": "<html>…" }` to a temp dir and serve it. */

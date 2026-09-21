@@ -1,53 +1,32 @@
 # Visualice — Roadmap
 
-> Updated 2026-09-21. The 2026-07-28 code review's ~43 findings and the
-> **project-file UX** (PLAN.md §9, shipped 2026-08-05) are done. The 2026-09-21
-> roadmap pass — everything that used to be §1–§5 of this file — is done too, and
-> is summarised below so the remaining items have context.
+> Updated 2026-09-21. The 2026-07-28 code review's ~43 findings, the **project-file
+> UX** (PLAN.md §9, shipped 2026-08-05) and the 2026-09-21 roadmap pass are all done.
+> This second pass closed the 11 items that pass left open, so **the roadmap is
+> currently empty** — what's below is the record of what was built and what it cost,
+> plus the handful of limitations worth knowing before the next one.
 >
 > `PLAN.md` holds the design rationale (architecture, pipeline, viewer design);
-> §10 there covers the distribution and diffing decisions from this pass.
+> §10 there covers the distribution and diffing decisions.
 
 ## Status
 
-Everything marked ✅ below landed in `113e2b2` "Implemented improvements part 1"
-(87 files). The form-state follow-up described next is in the working tree on top
-of it.
+The first pass landed in `113e2b2` "Implemented improvements part 1" (87 files) and
+`e690169` "Improvements part 2". The work described under "Second pass" below is in
+the working tree on top of those.
 
-**Verification as of the last run — everything below is green:**
+**Verification as of the last run — everything is green:**
 
-- `npm run check` (typecheck · lint · format · unit): **323 unit tests**.
-- `npm run test:integration`: **39 tests**.
-- `npm run demo:crawl`: 10 routes, **72 shots**, 0 failures, ~31s.
-- `visualice diff` across two consecutive fixture crawls: 72 unchanged, 0 changed.
+- `npm run check` (typecheck · lint · format · unit): **414 unit tests**, 37 files.
+- `npm run test:integration`: **43 tests**, 11 files (~80s).
+- `npm run demo:crawl`: 10 routes, **72 shots**, 0 failures, ~31s,
+  `page reuse: 20 of 72 shot(s) needed no reload`.
+- `visualice diff` across the pre-change baseline and the post-change crawl of the
+  same fixture: **72 unchanged, 0 changed** — the engine rework is behaviour-preserving
+  by its own measurement.
+- `npm run build` + `node bin/visualice.mjs doctor --json --no-fix`: all four checks ok.
 
-Form-state discovery is now confirmed. For the record, the two things that took a
-crawl rather than a test to find:
-
-- **States with no `signature` were duplicated by the mobile pass.**
-  `mergeMobileStates` (`src/crawl/discover.ts:31-35`) dedupes by `signature`, so
-  signature-less form states survived it and `uniqueId` renamed them — **two
-  `focus` states per form route**, 68 shots becoming 74. Fixed by keying the
-  signature on the field (`focus:<target>`, `validation:<targets>`); `/contact` and
-  `/login` now record exactly one each.
-- **`targetFor` ignored `data-testid`**, which the trigger prober
-  (`discover-states.ts:98`) already treats as the most stable handle. The fixture's
-  login inputs carry only a test id, so the recorded recipe fell through to a
-  positional `nth:` — a position in the page's whole field order that any input
-  added above it would invalidate. Now `testId` is preferred first. The re-crawl
-  diffs clean against the previous one, so the recipes target the same fields; they
-  just no longer depend on counting.
-
-Also worth knowing: the fixture's own contact form validates on submit, not on blur,
-so no `validation` state is discovered there — correct behaviour (discovery never
-submits), and the reason the validation path is covered by a synthetic
-blur-validating page in `tests/integration/discover-forms.test.ts` instead.
-
-## ✅ Shipped in the 2026-09-21 pass
-
-Everything in this section is done. The unchecked boxes further down are the
-**11 items that remain open** — see "What's left, and why" below for where each
-came from.
+## ✅ Shipped in the first pass (2026-09-21)
 
 - [x] **Distribution.** Publishable npm package (`dist/` ESM bundle + declarations via
       `npm run build`, `prepack`, `files`, `engines`); `bin/visualice.mjs` runs the build
@@ -73,11 +52,11 @@ came from.
       spatial-grid culling; state-kind filter; deep-linkable URL state; shift+arrow tile
       navigation; viewport-crop link; tile cap for huge runs; types shared with the
       engine instead of duplicated.
-- [x] **Tests & CI.** 323 unit + 39 integration tests. CI runs a Windows leg, a bin smoke
-      test against the built CLI, coverage, failure-only artifact upload and a
-      fixture/schema drift check; `release.yml` publishes on a `v*` tag.
+- [x] **Tests & CI.** CI runs a Windows leg, a bin smoke test against the built CLI,
+      coverage, failure-only artifact upload and a fixture/schema drift check;
+      `release.yml` publishes on a `v*` tag.
 
-Two bugs were found and fixed by this work rather than reported by anyone:
+Two bugs were found and fixed by that work rather than reported by anyone:
 
 - **Page reuse leaked `:hover` between shots.** A reused page keeps its pointer
   position, and the browser re-applies `:hover` at that position to each newly
@@ -88,61 +67,104 @@ Two bugs were found and fixed by this work rather than reported by anyone:
 - **`clip` without `fullPage` silently clamps to the viewport**, so the first cut of
   `screenshot.maxHeight` produced 300px-tall images instead of 1000px ones.
 
-## What's left, and why
+## ✅ Shipped in the second pass — the 11 that were left open
 
-The 11 unchecked items below are all genuinely open. Where they came from:
+### Engine
 
-- **1 is a gap in the pass itself.** _Side-by-side device compare_ (§2) was one of
-  six sub-items bundled into the old §4 "Smaller features" line. The other five
-  (state-kind filter, deep-linkable URL state, viewport-crop, keyboard tile nav,
-  spatial-grid culling) shipped; this one didn't. It should have.
-- **3 were deferred backlog, never part of §1–§5.** Hash-SPA support, id-dependent
-  signature dedupe, and `probeFrom` re-navigation sat under "Leftover engine
-  niceties" before this pass and still do. The other four backlog items —
-  focus/validation states, cookie-expiry auth, proxy config, and the SKILL.md
-  run-size/cleanup guidance — are done.
-- **7 are new, found by doing the work.** Diff-in-the-viewer only became possible
-  once `diff` existed; the page-reuse measurement and the `waitForSelectors` budget
-  came out of profiling; range requests, the ad-hoc coverage dependency and the
-  missing Windows integration leg were noticed while building CI.
+- [x] **Real hash-SPA support.** `scope.hashRoutes` (`auto` by default) makes a
+      router-shaped fragment — `#/about`, `#!/about` — part of route identity, while a
+      plain `#pricing` anchor stays an anchor. `#`, `#/` and `#!/` fold onto the page
+      itself so the router's home isn't a second copy of `/`. `pathSlug` gives each
+      client route its own folder (`home__h-about`), since they all share one pathname.
+      The half that isn't URL parsing: a fragment-only change is a **same-document**
+      navigation, so `goto` returns no response and the previous view is still on
+      screen — `gotoRoute` reloads in that case, which is what makes the shot the right
+      page rather than the one before it. `tests/integration/hash-routes.test.ts`
+      crawls a real hash-routed SPA and asserts the four shots are four different
+      images.
+- [x] **Signature dedupe is no longer id-dependent.** `takeSnapshot` keyed every open
+      region on its `id`, so two anonymous dialogs both snapshotted as `m:` and the
+      second was discarded as a duplicate of the first. Regions now fall back to
+      `aria-label`, then the text of `aria-labelledby`, then a sibling-index DOM path —
+      deterministic for a given DOM, so a state re-probed still dedupes against itself.
+- [x] **Per-candidate re-navigation inside `probeFrom`.** The loop reloaded the route
+      after every candidate. It now tries the cheap things first: look (most probes
+      change nothing at all, and the page is already where it should be), then dismiss
+      (Escape plus parking the pointer closes what a probe opened), and only then
+      reload. The nested case is no longer special-cased into an unconditional reload —
+      it recognises its parent by the signature it was recorded with. Each route logs
+      `N reload(s), M reuse(s) while probing`.
+- [x] **Page reuse now pays off.** The measurement in the first pass was right: the
+      cost is navigation, not the page lifecycle. So capture skips the navigation when
+      it can. `reusePlan` runs a state's recipe on the page already loaded whenever
+      that recipe _extends_ what's on screen — every state captured straight after its
+      route's default render, and every nested state captured after its parent.
+      `orderForReuse` sorts a route's states so those pairs end up adjacent, and the
+      pool's unit of work is now a route rather than a state so one worker sees them in
+      a row. On the fixture: **20 of 72 shots need no reload**, and the run diffs clean
+      against the pre-change baseline. `politeness.reuseNavigation` turns it off.
+- [x] **`stabilize.waitForSelectors` shares one budget per shot.** Eight stale
+      selectors used to cost 8 × 5s on _every_ shot. They're now waited on
+      concurrently against a single deadline, so the ones that are there resolve
+      immediately and only the genuinely absent ones reach the timeout — once,
+      together. Sequential-with-a-shared-budget would have been the wrong fix: the
+      first stale selector would eat the whole budget and make the rest look stale too.
 
-## 1. Engine niceties still open
+### Viewer
 
-- [ ] **Real hash-SPA support.** Hash-routed SPAs still collapse into one route.
-- [ ] **Signature dedupe is id-dependent** (`discover-states.ts`) — two anonymous
-      dialogs can still collapse into one state.
-- [ ] **Per-candidate re-navigation inside `probeFrom`.** Route-level parallelism is
-      done; within-route probing still re-navigates more than it needs to.
-- [ ] **Page reuse didn't pay off as hoped.** Measured on the bundled fixture it made
-      no difference (30.2s before and after, 68 shots): the cost is navigation plus
-      stabilization, not the page lifecycle. The reuse is worth keeping — the
-      retry/recycle path is built on it — but the remaining win is in skipping
-      redundant _navigation_, which needs the engine to know when a recipe can run on
-      the page already loaded.
-- [ ] **`stabilize.waitForSelectors` timeout is per-selector, not per-shot.** Eight
-      stale selectors cost 8 × 5s on every shot. A shared budget would be better.
+- [x] **Diff results in the viewer.** `serve` now exposes `/diffs.json` and
+      `/diffs/<id>/…` beside the runs, and picking a comparison lays out every changed
+      shot as before / after / diff, biggest change first, with an **unchanged** toggle.
+      This needs the server rather than a single run's data because the three images
+      live in three directories — which is also why `diff.json` now records
+      `fromShot`/`toShot` instead of leaving a reader to reimplement the slugging rules
+      to find the pictures the numbers are about.
+- [x] **Side-by-side device compare.** The item the first pass claimed and didn't do.
+      A **Devices** mode lays out one route at a time, one row per state, every device
+      drawn at the _same_ width — grouped mode scales each device to its viewport, so
+      the two renders can't be compared by looking straight down the row. The sidebar
+      picks the subject, the inspector has a "Compare devices" button, and the route is
+      in the URL.
+- [x] **Virtualized sidebar.** Past 60 rows the path list renders only what's in view
+      plus a margin, bracketed by two spacers so the scrollbar stays the size the full
+      list would give it. Below that threshold it renders normally — virtualizing a
+      twenty-route run costs a scroll listener and fixed row heights for nothing.
 
-## 2. Viewer polish still open
+### Serving & infrastructure
 
-- [ ] **Diff results in the viewer.** `visualice diff` writes images and a report; the
-      viewer can't show them. A third layout mode showing before/after/diff per changed
-      shot is the natural home, and would finish the regression story.
-- [ ] **Side-by-side device compare.** Pick one state, see every device aligned.
-      _The one item from the §1–§5 scope that didn't get done._
-- [ ] **Virtualized sidebar** for runs with hundreds of routes.
+- [x] **Range requests in `file-serve.ts`.** `Accept-Ranges`, `Content-Length`, 206 with
+      `Content-Range`, 416 for a range past the end, and `HEAD`. Anything unimplemented
+      (an unknown unit, a multi-range request) answers with the whole body, which is
+      always a correct answer to a range request; 416 is reserved for a well-formed
+      range that lies outside the file, where quietly serving the first N bytes would
+      corrupt whatever the client is assembling.
+- [x] **`@vitest/coverage-v8` is a real devDependency.** With a `coverage` block in
+      `vitest.config.ts` (`all: true`, so a module with no tests is visible rather than
+      absent) and an `npm run test:coverage` script. CI's ad-hoc `npm i -D --no-save` is
+      gone.
+- [x] **Windows integration leg.** The browser integration job is now a matrix over
+      ubuntu + windows, with the per-OS Playwright cache path and browser install.
+      `tests/integration/helpers.ts` honours `VISUALICE_TEST_TMP` so the failure
+      artifact can actually collect what a crashed test left behind, wherever that
+      runner's temp directory happens to be.
 
-## 3. Serving & infrastructure
+## Known limitations
 
-- [ ] **Range requests in `file-serve.ts`.** No `Accept-Ranges`, no `Content-Length`;
-      a `Range` header gets a 200 with the whole body. Fine for PNGs over localhost,
-      wrong if the viewer is ever proxied or serves video.
-- [ ] **`@vitest/coverage-v8` as a real devDependency.** CI installs it ad hoc with
-      `npm i -D --no-save` so coverage runs without it being in `package.json`.
-- [ ] **Windows integration leg.** The `check` job runs on Windows; the browser
-      integration job does not.
+Not roadmap items — things worth knowing before someone reports them as bugs.
 
-## Suggested order
-
-1. **Commit the form-state follow-up** — verified, but still only in the tree.
-2. Diff results in the viewer (§2) — the data exists but stops at the report.
-3. Everything else as it gets in the way.
+- **The diff view loads full-size images.** `visualice diff` writes no thumbnails, so
+  the before/after/diff tiles have only a `full` source and the LOD ladder has nothing
+  to step through. Fine for a handful of changed shots; a diff with hundreds of them
+  will be slow to paint at low zoom.
+- **Comparisons need `visualice serve`, not a bare run directory.** A diff's three
+  images live in two run directories and the diff directory; a viewer served from one
+  run has no path to the other two, so the comparison picker simply doesn't appear.
+- **`scope.hashRoutes: "always"` will fork on anchors.** It exists for routers that
+  drop the slash (`#about`); on a documentation site it turns every heading link into a
+  route. `auto` is the default for that reason.
+- **The Windows integration leg has never actually run.** It's wired and the code it
+  exercises is OS-sensitive (symlinked `latest`, run directories, temp paths) — the
+  first CI run on it is the one to watch.
+- **Region signatures fall back to a DOM path.** Deterministic for a given DOM, but a
+  node inserted above an anonymous dialog between two probes changes its key. Named
+  regions (`id`, `aria-label`, `aria-labelledby`) are unaffected, which is most of them.
