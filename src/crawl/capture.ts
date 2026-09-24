@@ -21,6 +21,7 @@ import { httpContextOptions } from "./context-options";
 import { createProgress } from "../shared/progress";
 import { pathExists } from "../shared/fsx";
 import { mapPoolWithResource, sleep } from "../shared/pool";
+import { countStates } from "./manifest";
 
 export interface CaptureOptions {
   config: Config;
@@ -61,6 +62,18 @@ export interface PageState {
   recipe?: RecipeStep[];
   /** The open-region signature the recipe left, read before stabilization ran. */
   sig?: string;
+}
+
+/** Forget what a page shows: it is being changed, or was just replaced. */
+function forget(shown: PageState): void {
+  shown.url = undefined;
+  shown.recipe = undefined;
+  shown.sig = undefined;
+}
+
+/** The directory one state's shots (for every device) are written to. */
+function stateDir(shotsDir: string, route: RouteNode, state: StateNode): string {
+  return path.join(shotsDir, pathSlug(route.url), stateSlug(state.id));
 }
 
 /**
@@ -228,10 +241,11 @@ async function fullPageClip(
  * finished. A half-written PNG from a kill mid-capture has no sidecar and is
  * simply recaptured.
  */
-async function adoptExistingShot(ctx: StateCtx): Promise<ShotRef | undefined> {
+async function adoptExistingShot(
+  ctx: Pick<StateCtx, "route" | "state" | "device" | "shotsDir" | "runDir">,
+): Promise<ShotRef | undefined> {
   const { route, state, device, shotsDir, runDir } = ctx;
-  const dir = path.join(shotsDir, pathSlug(route.url), stateSlug(state.id));
-  const metaPath = path.join(dir, `${device.name}.json`);
+  const metaPath = path.join(stateDir(shotsDir, route, state), `${device.name}.json`);
   const raw = await fs.readFile(metaPath, "utf8").catch(() => undefined);
   if (raw === undefined) return undefined;
   try {
@@ -269,9 +283,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // From here on the page is being changed, so what it shows is unknown until the
   // recipe finishes — a step that throws half way must not leave a stale claim
   // behind for the next state to trust.
-  shown.url = undefined;
-  shown.recipe = undefined;
-  shown.sig = undefined;
+  forget(shown);
 
   if (remaining === null) {
     const resp = await gotoRoute(page, url, config.stabilize.waitStrategy);
@@ -300,7 +312,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   shown.recipe = state.recipe;
   shown.sig = left?.sig;
 
-  const dir = path.join(shotsDir, pathSlug(route.url), stateSlug(state.id));
+  const dir = stateDir(shotsDir, route, state);
   await fs.mkdir(dir, { recursive: true });
 
   const ext = config.screenshot.format;
@@ -484,15 +496,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
 
           for (const state of states) {
             if (opts.resume) {
-              const existing = await adoptExistingShot({
-                route,
-                state,
-                device,
-                baseUrl,
-                shotsDir,
-                runDir,
-                config,
-              });
+              const existing = await adoptExistingShot({ route, state, device, shotsDir, runDir });
               if (existing) {
                 state.shots[device.name] = existing;
                 shotCount++;
@@ -518,9 +522,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
               } catch (e) {
                 const error = (e as Error).message.split("\n")[0];
                 current = await recycle();
-                shown.url = undefined;
-                shown.recipe = undefined;
-                shown.sig = undefined;
+                forget(shown);
                 if (attempt < config.politeness.retries) {
                   log(
                     `  ↻ ${pathSlug(route.url)} / ${state.id} [${device.name}]: retrying — ${error}`,
@@ -558,7 +560,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
 
   manifest.stats = {
     routes: manifest.routes.length,
-    states: manifest.routes.reduce((n, r) => n + r.states.length, 0),
+    states: countStates(manifest.routes),
     shots: shotCount,
     failed: failures.length,
     durationMs: Date.now() - started,

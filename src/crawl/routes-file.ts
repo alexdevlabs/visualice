@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import type { Config } from "../shared/config";
 import type { InputManifest, RouteNode, StateNode, Target, WantedState } from "../shared/types";
 import { matchesAny } from "../shared/glob";
+import { isAuthored } from "./manifest";
 
 // The routes file (`visualice.routes.md`) is the human/LLM-facing site index: a
 // two-level markdown list where only two tokens are load-bearing — the route path
@@ -244,7 +245,7 @@ export function renderRoutesFile(
       if (s.id === "default" || skipped.has(s.id)) continue;
       const markers = [
         s.devices?.length ? `(${s.devices.join(", ")})` : "",
-        (s.source ?? "authored") !== "auto" ? "(authored)" : "",
+        isAuthored(s) ? "(authored)" : "",
       ]
         .filter(Boolean)
         .join(" ");

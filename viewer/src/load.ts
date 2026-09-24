@@ -200,26 +200,21 @@ export function parseRunDiff(raw: unknown): RunDiff {
   };
 }
 
-export async function fetchRunDiff(id: string): Promise<RunDiff> {
-  const res = await fetch(`./diffs/${encodeURIComponent(id)}/diff.json`);
+/** Fetch a JSON document, turning HTTP and parse failures into `ViewerDataError`s. */
+async function fetchJson(url: string): Promise<unknown> {
+  const res = await fetch(url);
   if (!res.ok) throw new ViewerDataError(`${res.status} ${res.statusText}`);
-  let raw: unknown;
   try {
-    raw = await res.json();
+    return await res.json();
   } catch (e) {
     throw new ViewerDataError(`not valid JSON — ${(e as Error).message}`);
   }
-  return parseRunDiff(raw);
+}
+
+export async function fetchRunDiff(id: string): Promise<RunDiff> {
+  return parseRunDiff(await fetchJson(`./diffs/${encodeURIComponent(id)}/diff.json`));
 }
 
 export async function fetchViewerData(url: string): Promise<ViewerData> {
-  const res = await fetch(url);
-  if (!res.ok) throw new ViewerDataError(`${res.status} ${res.statusText}`);
-  let raw: unknown;
-  try {
-    raw = await res.json();
-  } catch (e) {
-    throw new ViewerDataError(`not valid JSON — ${(e as Error).message}`);
-  }
-  return parseViewerData(raw);
+  return parseViewerData(await fetchJson(url));
 }

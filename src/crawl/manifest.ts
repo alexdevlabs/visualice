@@ -22,8 +22,18 @@ export async function saveJson(file: string, data: unknown): Promise<void> {
   await fs.writeFile(file, JSON.stringify(data, null, 2));
 }
 
+/** Where the cached site model lives under an output root. */
+export function modelCachePath(outRoot: string): string {
+  return path.join(outRoot, "crawl-map.cache.json");
+}
+
+/** Total states across a model's routes. */
+export function countStates(routes: { states: unknown[] }[]): number {
+  return routes.reduce((n, r) => n + r.states.length, 0);
+}
+
 /** A state is "authored" unless it was explicitly tagged by the auto-discoverer. */
-function isAuthored(s: StateNode): boolean {
+export function isAuthored(s: StateNode): boolean {
   return (s.source ?? "authored") !== "auto";
 }
 

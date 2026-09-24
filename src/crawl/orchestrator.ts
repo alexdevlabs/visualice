@@ -4,7 +4,13 @@ import type { Config } from "../shared/config";
 import type { Manifest, InputManifest, ViewerData, ViewerTile } from "../shared/types";
 import { runCapture } from "./capture";
 import { renderReport } from "./report";
-import { saveJson, mergeManifests, loadInputManifest } from "./manifest";
+import {
+  saveJson,
+  mergeManifests,
+  loadInputManifest,
+  isAuthored,
+  modelCachePath,
+} from "./manifest";
 import { discoverPipeline } from "./discover";
 import { ensureStorageState } from "./auth";
 import {
@@ -22,6 +28,7 @@ import {
   listRuns,
   markRunComplete,
   markRunIncomplete,
+  runDir as runDirFor,
   runIdTime,
   runsToPrune,
 } from "./runs";
@@ -110,7 +117,7 @@ export function toViewerData(m: Manifest): ViewerData {
 }
 
 async function updateLatest(outRoot: string, id: string): Promise<void> {
-  const link = path.join(outRoot, "runs", "latest");
+  const link = runDirFor(outRoot, "latest");
   await fs.rm(link, { force: true }).catch(() => {});
   await fs.symlink(id, link, "dir").catch(() => {});
 }
@@ -125,14 +132,13 @@ async function updateLatest(outRoot: string, id: string): Promise<void> {
  * and under clock skew that isn't the run this crawl produced.
  */
 async function pruneRuns(outRoot: string, keep: number, current: string, log: Log): Promise<void> {
-  const runsDir = path.join(outRoot, "runs");
   // Only runs this tool generated are pruned *or counted*. A hand-named directory
   // (a copied-in baseline, say) is not ours to delete, and letting it occupy a slot
   // in the keep budget would silently push a real run out instead.
   const ids = (await listRuns(outRoot)).filter((id) => runIdTime(id) !== undefined);
   for (const id of runsToPrune(ids, keep, current)) {
     try {
-      await fs.rm(path.join(runsDir, id), { recursive: true, force: true });
+      await fs.rm(runDirFor(outRoot, id), { recursive: true, force: true });
     } catch (e) {
       log(`⚠ could not prune old run ${id}: ${(e as Error).message.split("\n")[0]}`);
     }
@@ -173,7 +179,7 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
   const id = opts.resume ?? makeRunId();
   const origin = new URL(baseUrl).origin;
   const outRoot = path.resolve(opts.config.output.dir);
-  const runDir = path.join(outRoot, "runs", id);
+  const runDir = runDirFor(outRoot, id);
   await fs.mkdir(runDir, { recursive: true });
   await markRunIncomplete(runDir);
 
@@ -262,7 +268,7 @@ async function crawlRun(
 ): Promise<CapturePipelineResult> {
   const { config, baseUrl, replay } = opts;
   const log = opts.log ?? (() => {});
-  const cachePath = path.join(outRoot, "crawl-map.cache.json");
+  const cachePath = modelCachePath(outRoot);
 
   let resume: string | undefined;
   if (opts.resume) {
@@ -282,18 +288,16 @@ async function crawlRun(
 
   const storageState = await ensureStorageState(config, log);
 
+  const cached = (await pathExists(cachePath)) ? await loadInputManifest(cachePath) : undefined;
   let inputManifest: InputManifest;
-  if (replay && (await pathExists(cachePath))) {
+  if (replay && cached) {
     log(`replay: reusing cached site model → ${cachePath}`);
-    inputManifest = await loadInputManifest(cachePath);
+    inputManifest = cached;
   } else {
     // Hints cached from earlier runs steer discovery too (skipTriggers), so read
     // them before probing rather than only on the way into capture.
-    const cachedHints = (await pathExists(cachePath))
-      ? (await loadInputManifest(cachePath)).hints
-      : undefined;
     const discovered = await discoverPipeline({
-      config: applyHints(effectiveConfig, cachedHints),
+      config: applyHints(effectiveConfig, cached?.hints),
       baseUrl,
       storageState,
       log,
@@ -301,11 +305,10 @@ async function crawlRun(
     // Default crawl re-discovers from scratch, but MERGES into any existing cache
     // rather than overwriting it — auto states are refreshed, authored (hand-written /
     // Explore-mode) states are always preserved.
-    if (await pathExists(cachePath)) {
-      const cached = await loadInputManifest(cachePath);
+    if (cached) {
       inputManifest = mergeManifests(cached, discovered);
       const authored = inputManifest.routes.reduce(
-        (n, r) => n + r.states.filter((s) => (s.source ?? "authored") !== "auto").length,
+        (n, r) => n + r.states.filter(isAuthored).length,
         0,
       );
       log(

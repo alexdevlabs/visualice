@@ -67,14 +67,8 @@ export function pairShots(from: Manifest, to: Manifest): ShotPair[] {
   return keys.map((key) => {
     const left = a.get(key);
     const right = b.get(key);
-    const identity: ShotIdentity = {
-      key,
-      route: (right ?? left)!.route,
-      routeUrl: (right ?? left)!.routeUrl,
-      state: (right ?? left)!.state,
-      stateLabel: (right ?? left)!.stateLabel,
-      device: (right ?? left)!.device,
-    };
+    const { route, routeUrl, state, stateLabel, device } = (right ?? left)!;
+    const identity: ShotIdentity = { key, route, routeUrl, state, stateLabel, device };
 
     if (!left) return { ...identity, status: "added", to: right!.ref };
     if (!right) return { ...identity, status: "removed", from: left.ref };

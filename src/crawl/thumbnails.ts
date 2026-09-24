@@ -3,12 +3,19 @@ import { promises as fs } from "node:fs";
 import type { Config } from "../shared/config";
 
 type Thumb = Config["screenshot"]["thumbnail"];
+type Format = "png" | "jpeg" | "webp";
+
+function encode(img: sharp.Sharp, format: Format, quality: number): sharp.Sharp {
+  if (format === "webp") return img.webp({ quality });
+  if (format === "jpeg") return img.jpeg({ quality });
+  return img.png();
+}
 
 /** Write the full-resolution shot. Playwright gives us png/jpeg buffers; webp is transcoded. */
 export async function writeFull(
   buf: Buffer,
   destPath: string,
-  format: "png" | "jpeg" | "webp",
+  format: Format,
   quality: number,
 ): Promise<void> {
   if (format === "webp") {
@@ -24,11 +31,8 @@ export async function makeThumb(
   thumb: Thumb,
   width = thumb.width,
 ): Promise<void> {
-  let img = sharp(buf).resize({ width, withoutEnlargement: true });
-  if (thumb.format === "webp") img = img.webp({ quality: thumb.quality });
-  else if (thumb.format === "jpeg") img = img.jpeg({ quality: thumb.quality });
-  else img = img.png();
-  await img.toFile(destPath);
+  const img = sharp(buf).resize({ width, withoutEnlargement: true });
+  await encode(img, thumb.format, thumb.quality).toFile(destPath);
 }
 
 export async function imageSize(buf: Buffer): Promise<{ width?: number; height?: number }> {
@@ -40,14 +44,11 @@ export async function imageSize(buf: Buffer): Promise<{ width?: number; height?:
 export async function writeViewportCrop(
   buf: Buffer,
   destPath: string,
-  format: "png" | "jpeg" | "webp",
+  format: Format,
   quality: number,
   width: number,
   height: number,
 ): Promise<void> {
-  let img = sharp(buf).extract({ left: 0, top: 0, width, height });
-  if (format === "webp") img = img.webp({ quality });
-  else if (format === "jpeg") img = img.jpeg({ quality });
-  else img = img.png();
-  await img.toFile(destPath);
+  const img = sharp(buf).extract({ left: 0, top: 0, width, height });
+  await encode(img, format, quality).toFile(destPath);
 }

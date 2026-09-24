@@ -58,6 +58,20 @@ export function isChanged(cmp: { ratio: number; from: Size; to: Size }, minRatio
   return cmp.ratio > minRatio || sizeRatio(cmp.from, cmp.to) > minRatio;
 }
 
+/** The identity + shot paths every result row carries, whatever its outcome. */
+function baseDiff(pair: ShotPair): Omit<ShotDiff, "status"> {
+  return {
+    key: pair.key,
+    route: pair.route,
+    routeUrl: pair.routeUrl,
+    state: pair.state,
+    stateLabel: pair.stateLabel,
+    device: pair.device,
+    fromShot: pair.from?.full,
+    toShot: pair.to?.full,
+  };
+}
+
 /** Mirror the screenshot layout inside the diff dir: images/<route>/<state>/<device>.png */
 function imageRelPath(pair: ShotPair): string {
   const safe = (s: string) => s.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "_";
@@ -83,18 +97,7 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
   // Non-pixel outcomes first: they need no I/O.
   pairs.forEach((pair, i) => {
     if (pair.status === "both") return;
-    results[i] = {
-      key: pair.key,
-      route: pair.route,
-      routeUrl: pair.routeUrl,
-      state: pair.state,
-      stateLabel: pair.stateLabel,
-      device: pair.device,
-      status: pair.status === "uncomparable" ? "uncomparable" : pair.status,
-      fromShot: pair.from?.full,
-      toShot: pair.to?.full,
-      note: pair.note,
-    };
+    results[i] = { ...baseDiff(pair), status: pair.status, note: pair.note };
   });
 
   const indexed = pairs
@@ -102,17 +105,7 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
     .filter(({ pair }) => pair.status === "both");
 
   await mapPool(indexed, opts.concurrency ?? 4, async ({ pair, i }) => {
-    const base: ShotDiff = {
-      key: pair.key,
-      route: pair.route,
-      routeUrl: pair.routeUrl,
-      state: pair.state,
-      stateLabel: pair.stateLabel,
-      device: pair.device,
-      status: "unchanged",
-      fromShot: pair.from?.full,
-      toShot: pair.to?.full,
-    };
+    const base = baseDiff(pair);
     const rel = imageRelPath(pair);
     try {
       const cmp = await compareImages(
@@ -144,13 +137,14 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
     }
   });
 
-  const summary = {
-    added: results.filter((r) => r.status === "added").length,
-    removed: results.filter((r) => r.status === "removed").length,
-    changed: results.filter((r) => r.status === "changed").length,
-    unchanged: results.filter((r) => r.status === "unchanged").length,
-    uncomparable: results.filter((r) => r.status === "uncomparable").length,
+  const summary: RunDiff["summary"] = {
+    added: 0,
+    removed: 0,
+    changed: 0,
+    unchanged: 0,
+    uncomparable: 0,
   };
+  for (const r of results) summary[r.status]++;
 
   const diff: RunDiff = {
     from: { runId: from.site.runId, dir: opts.fromDir },

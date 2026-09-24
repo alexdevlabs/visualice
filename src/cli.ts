@@ -14,7 +14,7 @@ import {
   str,
   type Flags,
 } from "./cli-args";
-import { loadInputManifest, saveJson } from "./crawl/manifest";
+import { countStates, loadInputManifest, modelCachePath, saveJson } from "./crawl/manifest";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
 import { capturePipeline, crawlPipeline } from "./crawl/orchestrator";
 import { discoverPipeline } from "./crawl/discover";
@@ -170,8 +170,7 @@ async function cmdCapture(flags: Flags): Promise<void> {
 async function cmdValidate(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
-  const file =
-    str(flags, "manifest") ?? path.join(path.resolve(config.output.dir), "crawl-map.cache.json");
+  const file = str(flags, "manifest") ?? modelCachePath(path.resolve(config.output.dir));
   if (!(await pathExists(file))) {
     throw new UsageError(`no manifest at ${file} — pass --manifest=<path> or run a discover first`);
   }
@@ -188,7 +187,7 @@ async function cmdValidate(flags: Flags): Promise<void> {
 
   const parsed = issues.length ? undefined : InputManifestSchema.parse(raw);
   const routes = parsed?.routes.length ?? 0;
-  const states = parsed?.routes.reduce((n, r) => n + r.states.length, 0) ?? 0;
+  const states = parsed ? countStates(parsed.routes) : 0;
 
   if (flags.json === true) {
     console.log(JSON.stringify({ file, valid: issues.length === 0, issues, routes, states }));
@@ -220,6 +219,7 @@ async function ensureViewerBuilt(viewerDist: string, log: Log): Promise<void> {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
     });
+    child.on("error", reject);
     child.on("exit", (code) =>
       code === 0 ? resolve() : reject(new Error(`vite build failed (${code})`)),
     );
@@ -384,11 +384,13 @@ async function cmdServe(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
   const outRoot = path.resolve(config.output.dir);
-  const runId = str(flags, "run") ?? "latest";
-  const runDir = path.join(outRoot, "runs", runId);
-  if (!(await pathExists(path.join(runDir, "viewer-data.json")))) {
+  // Resolve `latest` up front: without the symlink (Windows, a copied tree) it falls
+  // back to the newest run directory instead of failing the existence check.
+  const runId = str(flags, "run") ?? (await latestRunId(outRoot)) ?? "latest";
+  const dir = runDir(outRoot, runId);
+  if (!(await pathExists(path.join(dir, "viewer-data.json")))) {
     throw new Error(
-      `no run data at ${runDir}/viewer-data.json — run a crawl first (e.g. 'visualice crawl').`,
+      `no run data at ${dir}/viewer-data.json — run a crawl first (e.g. 'visualice crawl').`,
     );
   }
 
@@ -396,11 +398,11 @@ async function cmdServe(flags: Flags): Promise<void> {
   await ensureViewerBuilt(viewerDist, log);
 
   const server = await serveViewer({
-    runDir,
+    runDir: dir,
     viewerDist,
     // Sibling runs are exposed too, so the viewer's run switcher has somewhere to go.
     outRoot,
-    runId: runId === "latest" ? ((await latestRunId(outRoot)) ?? runId) : runId,
+    runId,
     port: parsePort(flags),
   });
 
@@ -484,7 +486,7 @@ async function cmdRoutes(flags: Flags): Promise<void> {
   const config = await loadConfigWithOverrides(flags);
   const file = routesFilePath(config);
   if (!file) throw new UsageError("routesFile is disabled (false) in the config");
-  const cachePath = path.join(path.resolve(config.output.dir), "crawl-map.cache.json");
+  const cachePath = modelCachePath(path.resolve(config.output.dir));
   if (!(await pathExists(cachePath))) {
     throw new UsageError(`no cached site model at ${cachePath} — run 'visualice crawl' first`);
   }
@@ -493,7 +495,7 @@ async function cmdRoutes(flags: Flags): Promise<void> {
   const target = config.target ?? intent.target ?? "unknown";
   await writeRoutesFile(config, model, intent, target, log);
   const wanted = computeWanted(model, intent);
-  const states = model.routes.reduce((n, r) => n + r.states.length, 0);
+  const states = countStates(model.routes);
   if (flags.json === true) {
     console.log(JSON.stringify({ file, routes: model.routes.length, states, wanted }));
   } else {
@@ -504,7 +506,7 @@ async function cmdRoutes(flags: Flags): Promise<void> {
 
 async function cmdAuth(flags: Flags): Promise<void> {
   const log = makeLog(flags);
-  const config = await loadConfig(str(flags, "config"));
+  const config = await loadConfig(await resolveConfigPath(flags));
   if (!config.auth.storageStatePath) {
     throw new Error("config.auth.storageStatePath is not set — nothing to authenticate.");
   }
@@ -526,10 +528,10 @@ async function cmdDiscover(flags: Flags): Promise<void> {
     baseUrl,
     log,
   });
-  const cachePath = path.join(path.resolve(config.output.dir), "crawl-map.cache.json");
+  const cachePath = modelCachePath(path.resolve(config.output.dir));
   await saveJson(cachePath, inputManifest);
   await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
-  const states = inputManifest.routes.reduce((n, r) => n + r.states.length, 0);
+  const states = countStates(inputManifest.routes);
   if (flags.json === true) {
     console.log(JSON.stringify({ cachePath, routes: inputManifest.routes.length, states }));
   } else {
@@ -539,23 +541,34 @@ async function cmdDiscover(flags: Flags): Promise<void> {
   }
 }
 
-async function cmdDemoCrawl(flags: Flags): Promise<void> {
+/**
+ * Serve the bundled fixture for the length of a demo run and report its result.
+ * Demos run inside this repo — never scaffold a routes file here.
+ */
+async function runDemo(
+  flags: Flags,
+  run: (
+    config: Config,
+    baseUrl: string,
+    log: Log,
+  ) => Promise<{ runDir: string; manifest: Manifest }>,
+): Promise<void> {
   const log = makeLog(flags);
   const server = await serveDirectory(FIXTURE_DIR);
   log(`fixture served at ${server.url}`);
   try {
-    // Demos run inside this repo — never scaffold a routes file here.
     const config = { ...(await loadConfig(str(flags, "config"))), routesFile: false as const };
-    const { runDir, manifest } = await crawlPipeline({
-      config,
-      baseUrl: server.url,
-      replay: flags.replay === true,
-      log,
-    });
+    const { runDir, manifest } = await run(config, server.url, log);
     reportDone(runDir, manifest, flags, log);
   } finally {
     await server.close();
   }
+}
+
+function cmdDemoCrawl(flags: Flags): Promise<void> {
+  return runDemo(flags, (config, baseUrl, log) =>
+    crawlPipeline({ config, baseUrl, replay: flags.replay === true, log }),
+  );
 }
 
 async function cmdFixture(flags: Flags): Promise<void> {
@@ -569,23 +582,11 @@ async function cmdFixture(flags: Flags): Promise<void> {
   await server.close();
 }
 
-async function cmdDemo(flags: Flags): Promise<void> {
-  const log = makeLog(flags);
-  const server = await serveDirectory(FIXTURE_DIR);
-  log(`fixture served at ${server.url}`);
-  try {
-    const config = { ...(await loadConfig(str(flags, "config"))), routesFile: false as const };
+function cmdDemo(flags: Flags): Promise<void> {
+  return runDemo(flags, async (config, baseUrl, log) => {
     const inputManifest = await loadInputManifest(path.join(FIXTURE_DIR, "crawl-map.input.json"));
-    const { runDir, manifest } = await capturePipeline({
-      config,
-      inputManifest,
-      baseUrl: server.url,
-      log,
-    });
-    reportDone(runDir, manifest, flags, log);
-  } finally {
-    await server.close();
-  }
+    return capturePipeline({ config, inputManifest, baseUrl, log });
+  });
 }
 
 async function printVersion(): Promise<void> {

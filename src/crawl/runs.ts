@@ -1,5 +1,6 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
+import { pathExists } from "../shared/fsx";
 
 /**
  * Run directories are named by `makeRunId` (an ISO timestamp with `:`/`.` replaced
@@ -91,11 +92,7 @@ export async function listDiffs(
     if (!e.isDirectory() && !e.isSymbolicLink()) continue;
     const [from, to] = e.name.split("__");
     if (!from || !to) continue;
-    const ok = await fs.access(path.join(dir, e.name, "diff.json")).then(
-      () => true,
-      () => false,
-    );
-    if (ok) found.push({ id: e.name, from, to });
+    if (await pathExists(path.join(dir, e.name, "diff.json"))) found.push({ id: e.name, from, to });
   }
   return found.sort((a, b) => {
     const ta = runIdTime(a.to);
@@ -122,24 +119,14 @@ export async function markRunComplete(dir: string): Promise<void> {
 
 /** Is the run in `dir` finished — not being written, and not waiting on `--resume`? */
 export async function isRunComplete(dir: string): Promise<boolean> {
-  return fs.access(path.join(dir, INCOMPLETE)).then(
-    () => false,
-    () => true,
-  );
+  return !(await pathExists(path.join(dir, INCOMPLETE)));
 }
 
 /** Newest run that was never finished, if any. */
 export async function findResumableRun(outRoot: string): Promise<string | undefined> {
   const ids = await listRuns(outRoot);
   for (const id of [...ids].reverse()) {
-    const marker = path.join(outRoot, "runs", id, INCOMPLETE);
-    if (
-      await fs.access(marker).then(
-        () => true,
-        () => false,
-      )
-    )
-      return id;
+    if (!(await isRunComplete(runDir(outRoot, id)))) return id;
   }
   return undefined;
 }
@@ -151,7 +138,7 @@ export function runDir(outRoot: string, id: string): string {
 
 /** Resolve `latest` (a symlink) to the run id it points at, if there is one. */
 export async function latestRunId(outRoot: string): Promise<string | undefined> {
-  const link = path.join(outRoot, "runs", "latest");
+  const link = runDir(outRoot, "latest");
   const target = await fs.readlink(link).catch(() => undefined);
   if (target) return path.basename(target);
   // No symlink (Windows without developer mode, or a copied tree): fall back to the

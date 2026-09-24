@@ -2,6 +2,20 @@ import { z } from "zod";
 import { ConfigSchema } from "./config";
 import { InputManifestSchema } from "./manifest-schema";
 
+/** A zod schema as a draft-7 JSON Schema, in "input" mode, under a header. */
+function jsonSchema(
+  schema: z.ZodType,
+  header: { $id: string; title: string; description: string },
+): Record<string, unknown> {
+  return {
+    $schema: "http://json-schema.org/draft-07/schema#",
+    ...header,
+    ...(z.toJSONSchema(schema, { io: "input", target: "draft-7" }) as Record<string, unknown>),
+  };
+}
+
+const render = (schema: Record<string, unknown>): string => `${JSON.stringify(schema, null, 2)}\n`;
+
 /**
  * JSON Schema for `visualice.config.json` — derived from the zod schema so the
  * two can never drift (a unit test asserts the checked-in file matches).
@@ -10,23 +24,17 @@ import { InputManifestSchema } from "./manifest-schema";
  * field with a default is optional rather than required.
  */
 export function configJsonSchema(): Record<string, unknown> {
-  const schema = z.toJSONSchema(ConfigSchema, { io: "input", target: "draft-7" }) as Record<
-    string,
-    unknown
-  >;
-  return {
-    $schema: "http://json-schema.org/draft-07/schema#",
+  return jsonSchema(ConfigSchema, {
     $id: "https://visualice.dev/config.schema.json",
     title: "Visualice config",
     description:
       "Configuration for a visualice crawl. Every field is optional; omitted fields fall back to the defaults in src/shared/config.ts.",
-    ...schema,
-  };
+  });
 }
 
 /** The exact bytes written to config.schema.json. */
 export function renderConfigJsonSchema(): string {
-  return `${JSON.stringify(configJsonSchema(), null, 2)}\n`;
+  return render(configJsonSchema());
 }
 
 /**
@@ -35,21 +43,15 @@ export function renderConfigJsonSchema(): string {
  * engine validates with, so the two can never drift.
  */
 export function manifestJsonSchema(): Record<string, unknown> {
-  const schema = z.toJSONSchema(InputManifestSchema, { io: "input", target: "draft-7" }) as Record<
-    string,
-    unknown
-  >;
-  return {
-    $schema: "http://json-schema.org/draft-07/schema#",
+  return jsonSchema(InputManifestSchema, {
     $id: "https://visualice.dev/manifest.schema.json",
     title: "Visualice crawl manifest",
     description:
       "A site model: routes, their UI states, and the replayable recipes that reach them. Written by discovery, hand-edited in Explore mode, replayed by capture.",
-    ...schema,
-  };
+  });
 }
 
 /** The exact bytes written to manifest.schema.json. */
 export function renderManifestJsonSchema(): string {
-  return `${JSON.stringify(manifestJsonSchema(), null, 2)}\n`;
+  return render(manifestJsonSchema());
 }

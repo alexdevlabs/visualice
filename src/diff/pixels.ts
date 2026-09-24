@@ -49,12 +49,6 @@ export interface ImageComparison {
   diff?: RawImage;
 }
 
-interface Raw {
-  data: Buffer;
-  width: number;
-  height: number;
-}
-
 /** Read the top-left `w×h` of an image as raw RGB, optionally downscaled to `tw×th`. */
 async function readRegion(
   file: string,
@@ -62,7 +56,7 @@ async function readRegion(
   h: number,
   tw: number,
   th: number,
-): Promise<Raw> {
+): Promise<RawImage> {
   let img = sharp(file, { limitInputPixels: false }).extract({
     left: 0,
     top: 0,

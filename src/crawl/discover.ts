@@ -9,6 +9,7 @@ import { discoverStates } from "./discover-states";
 import { resolveUrl } from "./recipe";
 import { mapPool } from "../shared/pool";
 import { uniqueId } from "../shared/url";
+import { countStates } from "./manifest";
 
 export interface DiscoverOptions {
   config: Config;
@@ -104,7 +105,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
       await mobileContext.close();
     }
 
-    const totalStates = routes.reduce((n, r) => n + r.states.length, 0);
+    const totalStates = countStates(routes);
     log(`discovered ${routes.length} route(s), ${totalStates} state(s)`);
     return { site: { title: routes[0]?.title }, routes };
   } finally {
