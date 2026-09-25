@@ -296,7 +296,10 @@ export default function App() {
             onChange={(e) => setQuery(e.target.value)}
           />
           {!showingDiff && (
-            <div className="vc-devices">
+            <div className="vc-devices" role="group" aria-label="Devices">
+              <span className="vc-filter-label" aria-hidden="true">
+                Device
+              </span>
               {data.devices.map((d) => (
                 <button
                   key={d.name}
@@ -310,7 +313,10 @@ export default function App() {
             </div>
           )}
           {!showingDiff && kinds.length > 1 && (
-            <div className="vc-devices vc-kinds">
+            <div className="vc-devices vc-kinds" role="group" aria-label="States">
+              <span className="vc-filter-label" aria-hidden="true">
+                State
+              </span>
               {kinds.map((k) => (
                 <button
                   key={k}

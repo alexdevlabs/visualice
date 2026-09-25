@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="64" viewBox="0 0 240 64" role="img" aria-label="Loading"><style>*{transform-box:view-box}.l1{transform-origin:32px 21px}.l2{transform-origin:22px 17px}.l3{transform-origin:12px 21px}.r1{transform-origin:32px 43px}.r2{transform-origin:22px 47px}.r3{transform-origin:12px 43px}.al{transform-origin:50px 27.5px}.ar{transform-origin:50px 36.5px}
+.bug{transform-origin:22px 32px}
+@keyframes walk{from{transform:translateX(-64px)}to{transform:translateX(240px)}}
+@keyframes stepA{0%,100%{transform:rotate(-14deg)}50%{transform:rotate(14deg)}}
+@keyframes stepB{0%,100%{transform:rotate(14deg)}50%{transform:rotate(-14deg)}}
+@keyframes sway{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
+@keyframes feelL{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(6deg)}}
+@keyframes feelR{0%,100%{transform:rotate(8deg)}50%{transform:rotate(-6deg)}}
+.walker{animation:walk 2.8s linear infinite}
+.bug{animation:sway .36s ease-in-out infinite}
+.leg.a{animation:stepA .36s ease-in-out infinite}
+.leg.b{animation:stepB .36s ease-in-out infinite}
+.al{animation:feelL .72s ease-in-out infinite}
+.ar{animation:feelR .72s ease-in-out infinite .1s}
+@media (prefers-reduced-motion:reduce){.walker{animation:none;transform:translateX(88.0px)}.bug,.leg,.ant{animation-duration:1.2s}}</style>
+<g class="walker"><g class="bug"><g stroke="#16161a" stroke-width="5.5" stroke-linecap="round" fill="none"><path class="leg a l1" d="M32 21 L37 13"/><path class="leg b l2" d="M22 17 L22 9"/><path class="leg a l3" d="M12 21 L7 13"/><path class="leg b r1" d="M32 43 L37 51"/><path class="leg a r2" d="M22 47 L22 55"/><path class="leg b r3" d="M12 43 L7 51"/></g>
+<g stroke="#16161a" stroke-width="3.5" stroke-linecap="round" fill="none"><path class="ant al" d="M50 27.5 L56 23.5"/><path class="ant ar" d="M50 36.5 L56 40.5"/></g>
+<circle cx="22" cy="32" r="17" fill="#16161a"/><circle cx="44" cy="32" r="8.5" fill="#e8492a"/></g></g></svg>
