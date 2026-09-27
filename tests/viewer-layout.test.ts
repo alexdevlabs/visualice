@@ -49,7 +49,8 @@ describe("computeLayout — grouped", () => {
     const l = computeLayout(data, { mode: "grouped", devices: allDevices });
     expect(l.placed).toHaveLength(6);
     expect(l.labels.map((x) => x.routeId)).toEqual(["home", "about"]);
-    expect(l.labels[0].subtitle).toContain("2 state(s)");
+    expect(l.labels[0].subtitle).toBe("2 states");
+    expect(l.labels.map((x) => x.path)).toEqual(["/", "/about"]);
   });
 
   it("never overlaps two route sections", () => {

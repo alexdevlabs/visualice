@@ -15,6 +15,8 @@ export interface GroupLabel {
   routeId: string;
   title: string;
   subtitle: string;
+  /** The route's URL path, when the label heads a route — drawn as its badge. */
+  path?: string;
   x: number;
   y: number;
   w: number;
@@ -77,6 +79,11 @@ const TARGET_ASPECT = 1.6;
 function aspect(t: ViewerTile): number {
   if (t.width && t.height && t.width > 0) return t.height / t.width;
   return 0.66;
+}
+
+/** A group's slug as the URL path people recognise: `home` is the site root. */
+export function routePath(slug: string): string {
+  return slug === "home" ? "/" : "/" + slug;
 }
 
 function growBounds(b: Bounds, x: number, y: number, w: number, h: number): void {
@@ -320,7 +327,8 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       labels.push({
         routeId: block.routeId,
         title: block.title,
-        subtitle: `${block.path === "home" ? "/" : "/" + block.path}  ·  ${block.stateIds.length} state(s)`,
+        subtitle: `${block.stateIds.length} state${block.stateIds.length === 1 ? "" : "s"}`,
+        path: routePath(block.path),
         x: x0,
         y: labelY,
         w: rowWidth,

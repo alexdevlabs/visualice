@@ -62,7 +62,7 @@ function tileFor(shot: ShotDiff, side: DiffSide, src: string | undefined): Viewe
 }
 
 /** How a block describes itself in its header. */
-function describe(shot: ShotDiff): string {
+export function describe(shot: ShotDiff): string {
   if (shot.status === "added") return "added in the new run";
   if (shot.status === "removed") return "gone from the new run";
   if (shot.status === "uncomparable") return shot.note ?? "could not be compared";
@@ -70,7 +70,7 @@ function describe(shot: ShotDiff): string {
   return shot.sizeChanged ? `${pct} · page height changed` : pct;
 }
 
-function matches(shot: ShotDiff, q: string): boolean {
+export function matches(shot: ShotDiff, q: string): boolean {
   if (!q) return true;
   const s = q.toLowerCase();
   return (

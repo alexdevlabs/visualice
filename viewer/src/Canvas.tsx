@@ -232,6 +232,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
             className="vc-group-label"
             style={{ left: l.x, top: l.y, width: l.w }}
           >
+            {l.path && <span className="vc-route vc-group-route">{l.path}</span>}
             <span className="vc-group-title">{l.title}</span>
             <span className="vc-group-sub">{l.subtitle}</span>
           </div>
@@ -267,8 +268,9 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
               )}
               {showTileLabels && (
                 <div className="vc-tile-meta">
-                  <span className="vc-badge">{p.tile.device}</span>
                   <span className="vc-tile-state">{p.tile.stateLabel}</span>
+                  <span className="vc-badge">{p.tile.stateKind}</span>
+                  <span className="vc-badge">{p.tile.device}</span>
                   {p.cropped && <span className="vc-badge vc-badge-warn">tall</span>}
                   {p.tile.clamped && <span className="vc-badge vc-badge-warn">cropped</span>}
                 </div>

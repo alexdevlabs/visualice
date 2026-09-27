@@ -5,12 +5,12 @@
 @keyframes sway{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
 @keyframes feelL{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(6deg)}}
 @keyframes feelR{0%,100%{transform:rotate(8deg)}50%{transform:rotate(-6deg)}}
-.walker{animation:walk 9.43s linear infinite}
-.bug{animation:sway .36s ease-in-out infinite}
-.leg.a{animation:stepA .36s ease-in-out infinite}
-.leg.b{animation:stepB .36s ease-in-out infinite}
-.al{animation:feelL .72s ease-in-out infinite}
-.ar{animation:feelR .72s ease-in-out infinite .1s}
+.walker{animation:walk 2.5s linear infinite}
+.bug{animation:sway .2s ease-in-out infinite}
+.leg.a{animation:stepA .2s ease-in-out infinite}
+.leg.b{animation:stepB .2s ease-in-out infinite}
+.al{animation:feelL .4s ease-in-out infinite}
+.ar{animation:feelR .4s ease-in-out infinite .06s}
 
 @media (prefers-reduced-motion:reduce){.walker{animation:none;transform:translateX(448.0px)}.doc *{animation:none!important}.bug,.leg,.ant{animation-duration:1.2s}}</style><g class="walker"><g class="bug"><g stroke="#16161a" stroke-width="5.5" stroke-linecap="round" fill="none"><path class="leg a l1" d="M32 21 L37 13"/><path class="leg b l2" d="M22 17 L22 9"/><path class="leg a l3" d="M12 21 L7 13"/><path class="leg b r1" d="M32 43 L37 51"/><path class="leg a r2" d="M22 47 L22 55"/><path class="leg b r3" d="M12 43 L7 51"/></g>
 <g stroke="#16161a" stroke-width="3.5" stroke-linecap="round" fill="none"><path class="ant al" d="M50 27.5 L56 23.5"/><path class="ant ar" d="M50 36.5 L56 40.5"/></g>
