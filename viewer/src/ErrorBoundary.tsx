@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { ACTION, cx, EMPTY } from "./ui";
 
 /**
  * Last line of defence: a render error anywhere in the canvas would otherwise
@@ -25,20 +26,27 @@ export class ErrorBoundary extends Component<
     const { error, info } = this.state;
     if (!error) return this.props.children;
     return (
-      <div className="vc-empty">
-        <h1>Something broke</h1>
-        <p>
+      <div className={EMPTY}>
+        <h1 className="text-[20px] font-semibold text-fg">Something broke</h1>
+        <p className="text-fg">
           <code>{error.message}</code>
         </p>
-        <p className="vc-dim">
+        <p className="text-dim">
           This is a bug in the viewer. Reload to try again — the run data on disk is untouched.
         </p>
         <p>
-          <button className="vc-chip" onClick={() => location.reload()}>
+          <button
+            className={cx(ACTION, "border-line-strong bg-raised text-fg hover:border-dim")}
+            onClick={() => location.reload()}
+          >
             Reload
           </button>
         </p>
-        {info && <pre className="vc-trace">{info.trim().split("\n").slice(0, 8).join("\n")}</pre>}
+        {info && (
+          <pre className="max-w-[680px] overflow-auto rounded-lg border border-line bg-panel p-2.5 text-left text-[11px] text-dim">
+            {info.trim().split("\n").slice(0, 8).join("\n")}
+          </pre>
+        )}
       </div>
     );
   }

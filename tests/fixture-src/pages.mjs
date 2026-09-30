@@ -28,7 +28,7 @@ export function home() {
     <p class="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-paper px-3 py-1 text-xs font-medium text-stone-500 dark:border-stone-700 dark:bg-espresso dark:text-stone-400">
       <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span> New this week · ${featured.category}
     </p>
-    <h1 class="mt-5 text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl">Better coffee, one honest cup at a time.</h1>
+    <h1 class="mt-5 text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl sm:leading-none">Better coffee, one honest cup at a time.</h1>
     <p class="mt-5 max-w-md text-lg leading-relaxed text-stone-600 dark:text-stone-300">${site.tagline}</p>
     <div class="mt-7 flex flex-wrap items-center gap-3">
       <a href="/articles" class="btn-primary" data-testid="hero-cta">Start reading ${icons.arrow}</a>
@@ -43,7 +43,7 @@ export function home() {
     <div>
       <div class="flex items-center gap-2 text-xs">${badge("Featured")} ${badge(featured.category)}
         <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400">${icons.clock} ${featured.readingTime}</span></div>
-      <h2 class="mt-3 text-2xl font-bold leading-snug group-hover:text-amber-700 dark:group-hover:text-amber-400 sm:text-3xl">${featured.title}</h2>
+      <h2 class="mt-3 text-2xl font-bold leading-snug group-hover:text-amber-700 dark:group-hover:text-amber-400 sm:text-3xl sm:leading-9">${featured.title}</h2>
       <p class="mt-2 text-stone-600 dark:text-stone-300">${featured.dek}</p>
       <span class="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-amber-700 dark:text-amber-500">Read the guide ${icons.arrow}</span>
     </div>
@@ -69,7 +69,7 @@ export function home() {
 </section>
 
 <section class="container-tp py-12">
-  <div class="overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 to-paper p-8 dark:border-amber-500/20 dark:from-espresso dark:to-grounds sm:p-12">
+  <div class="overflow-hidden rounded-3xl border border-amber-200 bg-linear-to-br from-amber-50 to-paper p-8 dark:border-amber-500/20 dark:from-espresso dark:to-grounds sm:p-12">
     <div class="grid items-center gap-6 sm:grid-cols-[1fr_auto]">
       <div>
         <h2 class="text-2xl font-bold sm:text-3xl">The Weekly Pour</h2>
@@ -118,7 +118,7 @@ export function article(slug) {
     <div class="flex flex-wrap items-center gap-2 text-xs">${badge(a.category)}
       <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400">${icons.calendar} ${a.date}</span>
       <span class="inline-flex items-center gap-1 text-stone-500 dark:text-stone-400">${icons.clock} ${a.readingTime}</span></div>
-    <h1 class="mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">${a.title}</h1>
+    <h1 class="mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl sm:leading-none">${a.title}</h1>
     <p class="mt-4 text-xl leading-relaxed text-stone-600 dark:text-stone-300">${a.dek}</p>
     <div class="mt-6 flex items-center justify-between border-y border-stone-200 py-4 dark:border-stone-700">
       <div class="flex items-center gap-3">
@@ -321,7 +321,7 @@ export function dashboard() {
         <label class="block"><span class="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-200">Default ratio</span>
           <select class="field"><option>1:15</option><option selected>1:16</option><option>1:17</option></select></label>
         <label class="flex items-center gap-2 text-sm text-stone-700 dark:text-stone-200">
-          <input type="checkbox" class="rounded border-stone-300 text-amber-600 focus:ring-amber-500" checked /> Email me the Weekly Pour</label>
+          <input type="checkbox" class="rounded-sm border-stone-300 text-amber-600 focus:ring-amber-500" checked /> Email me the Weekly Pour</label>
         <button type="submit" class="btn-primary w-full">Save preferences</button>
       </form>
     </div>

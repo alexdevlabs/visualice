@@ -4,8 +4,8 @@ import type { RunDiff, ShotStatus } from "./diff-types";
 import { computeLayout, routePath, type LayoutMode } from "./layout";
 import { interestingShots, matches } from "./diff-layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
-import { ChangeList, Review, STATUS_COLOR, type ReviewMode } from "./Compare";
-import { Inspector } from "./Inspector";
+import { ChangeList, Review, ReviewEmpty, STATUS_COLOR, type ReviewMode } from "./Compare";
+import { DL, Inspector } from "./Inspector";
 import { VirtualList } from "./VirtualList";
 import { fetchDiffList, fetchRunDiff, fetchViewerData, resolveDataUrl, type DiffRef } from "./load";
 import { readUrlState, writeUrlState, type UrlState } from "./url-state";
@@ -15,14 +15,24 @@ import { applyTheme, readTheme, type Theme } from "./theme";
 import {
   Caption,
   Count,
+  cx,
   deviceIcon,
   DeviceToggle,
+  DIVIDER,
+  EMPTY,
   Icon,
   IconButton,
   Kbd,
+  LINK,
   Pill,
+  ROW_MAIN,
   RouteBadge,
+  row,
   Segmented,
+  SIDE_EMPTY,
+  SIDE_HEAD,
+  SIDE_LIST,
+  SIDEBAR,
 } from "./ui";
 
 /** Past this many tiles the canvas is capped, with a control to lift it. */
@@ -30,7 +40,7 @@ const DEFAULT_LIMIT = 2500;
 /** The shortest time the boot loader shows, so its walk reads as intentional rather than a flicker. */
 const MIN_LOADER_MS = 2000;
 
-/** Must match `.vc-route-row` in styles.css — the virtual list pins rows to it. */
+/** Must match the route rows' `h-14` below — the virtual list pins rows to it. */
 const SIDEBAR_ROW_H = 56;
 
 /** Below this width the viewer switches to the phone layout: no sidebar, filters in a sheet. */
@@ -71,6 +81,26 @@ function useMediaQuery(query: string): boolean {
   return on;
 }
 
+/** Animations still run to their end under reduced motion (so animationend fires), just instantly. */
+const REDUCED = "motion-reduce:[animation-delay:0ms] motion-reduce:[animation-duration:1ms]";
+
+const TOOLBAR_GROUP = "flex items-center gap-1.5";
+const ZOOM_BUTTON =
+  "flex size-[30px] items-center justify-center rounded-[7px] border-0 bg-transparent text-fg hover:bg-raised";
+const SHEET_GROUP = "flex flex-col gap-2";
+const WRAP = "flex flex-wrap gap-1.5";
+
+const MINIMAP_KEY = "visualice:minimap";
+
+/** The minimap starts hidden unless this browser turned it on before. */
+function readMinimap(): boolean {
+  try {
+    return localStorage.getItem(MINIMAP_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
 /** Keystrokes aimed at a text field are the user typing, not a shortcut. */
 function isTyping(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement | null;
@@ -103,6 +133,7 @@ export default function App() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [minimapOn, setMinimapOn] = useState(readMinimap);
   const canvas = useRef<CanvasHandle>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const isPhone = useMediaQuery(PHONE_QUERY);
@@ -246,6 +277,17 @@ export default function App() {
 
   const onScaleChange = useCallback((s: number) => setScale(s), []);
 
+  const toggleMinimap = useCallback(() => {
+    setMinimapOn((on) => {
+      try {
+        localStorage.setItem(MINIMAP_KEY, on ? "off" : "on");
+      } catch {
+        // Blocked storage just doesn't remember it.
+      }
+      return !on;
+    });
+  }, []);
+
   const stepShot = useCallback(
     (dir: -1 | 1) => {
       if (comparing) {
@@ -283,6 +325,7 @@ export default function App() {
       }
       if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "?") setShortcutsOpen((v) => !v);
+      else if (e.key === "m") toggleMinimap();
       else if (e.key === "/") {
         e.preventDefault();
         setSearchOpen(true);
@@ -292,16 +335,16 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [comparing, stepShot]);
+  }, [comparing, stepShot, toggleMinimap]);
 
   if (error) {
     return (
-      <div className="vc-empty">
-        <Logo />
-        <p>
+      <div className={EMPTY}>
+        <Logo large />
+        <p className="text-fg">
           Couldn't load <code>{dataUrl.url}</code> — {error}
         </p>
-        <p className="vc-dim">
+        <p className="text-dim">
           Run <code>visualice serve</code> to host a run, or pass <code>?data=&lt;path&gt;</code>.
         </p>
       </div>
@@ -309,7 +352,7 @@ export default function App() {
   }
   if (!data || !layout || !loaderMinDone)
     return (
-      <div className="vc-empty vc-boot">
+      <div className={cx(EMPTY, "animate-loader-in", REDUCED)}>
         <Loader />
       </div>
     );
@@ -388,9 +431,10 @@ export default function App() {
       />
     ));
 
-  const statePills = (
+  const statePills = (big?: boolean) => (
     <>
       <Pill
+        big={big}
         on={kindFilter.size === 0}
         count={onDevices.length}
         onClick={() => setKindFilter(new Set())}
@@ -400,6 +444,7 @@ export default function App() {
       {kinds.map((k) => (
         <Pill
           key={k}
+          big={big}
           on={kindFilter.has(k)}
           count={kindCounts.get(k)}
           title={`Show ${k} states`}
@@ -411,26 +456,39 @@ export default function App() {
     </>
   );
 
-  const statusPills = diff && (
-    <>
-      {(["changed", "added", "removed", "unchanged", "uncomparable"] as const)
-        .filter((s) => s !== "uncomparable" || diff.summary.uncomparable > 0)
-        .map((s) => (
-          <Pill
-            key={s}
-            tone="amber"
-            dot={STATUS_COLOR[s]}
-            on={statuses.has(s)}
-            count={diff.summary[s]}
-            onClick={() => setStatuses((prev) => toggle(prev, s, true))}
-          >
-            {s[0].toUpperCase() + s.slice(1)}
-          </Pill>
-        ))}
-    </>
-  );
+  const statusPills = (big?: boolean) =>
+    diff && (
+      <>
+        {(["changed", "added", "removed", "unchanged", "uncomparable"] as const)
+          .filter((s) => s !== "uncomparable" || diff.summary.uncomparable > 0)
+          .map((s) => (
+            <Pill
+              key={s}
+              big={big}
+              tone="amber"
+              dot={STATUS_COLOR[s]}
+              on={statuses.has(s)}
+              count={diff.summary[s]}
+              onClick={() => setStatuses((prev) => toggle(prev, s, true))}
+            >
+              {s[0].toUpperCase() + s.slice(1)}
+            </Pill>
+          ))}
+      </>
+    );
 
-  const compareBadge = diff ? <span className="vc-seg-badge">{diff.summary.changed}</span> : null;
+  const compareBadge = diff ? (
+    <span className="rounded-full bg-amber px-1.5 text-[10.5px] leading-4 font-semibold text-on-amber">
+      {diff.summary.changed}
+    </span>
+  ) : null;
+
+  // A native select laid invisibly over a styled face: keyboard and screen readers
+  // get the real control. On a phone it's just a line of text under the domain.
+  const picker = isPhone
+    ? "relative flex items-center gap-1 text-[11.5px] whitespace-nowrap text-dim"
+    : "relative flex h-8 items-center gap-2 rounded-lg border border-line bg-panel px-2.5 text-[12.5px] whitespace-nowrap text-fg focus-within:border-accent hover:border-line-strong";
+  const pickerSelect = "absolute inset-0 w-full cursor-pointer opacity-0";
   const modeSwitch = (
     <Segmented<"explore" | "compare">
       label="View"
@@ -453,19 +511,20 @@ export default function App() {
   );
 
   const runPicker = comparing ? (
-    <label className="vc-picker" title={diffRef ? `${diffRef.from} → ${diffRef.to}` : undefined}>
-      <Icon name="clock" size={14} />
+    <label className={picker} title={diffRef ? `${diffRef.from} → ${diffRef.to}` : undefined}>
+      <Icon name="clock" size={14} className="text-dim" />
       <span>
         {diffRef ? (
           <>
-            {runLabel(diffRef.from)} <span className="vc-dim">→</span> {runLabel(diffRef.to)}
+            {runLabel(diffRef.from)} <span className="text-dim">→</span> {runLabel(diffRef.to)}
           </>
         ) : (
           "Comparison"
         )}
       </span>
-      <Icon name="chev" size={14} />
+      <Icon name="chev" size={14} className="text-dim" />
       <select
+        className={pickerSelect}
         aria-label="Comparison"
         value={diffId ?? ""}
         onChange={(e) => {
@@ -481,14 +540,19 @@ export default function App() {
       </select>
     </label>
   ) : (
-    <label className="vc-picker" title={run ?? runs?.current ?? data.site.runId}>
-      <Icon name="clock" size={14} />
+    <label className={picker} title={run ?? runs?.current ?? data.site.runId}>
+      <Icon name="clock" size={14} className="text-dim" />
       <span>{runLabel(run ?? runs?.current ?? data.site.runId)}</span>
-      {(!run || run === runs?.current) && <span className="vc-tag">latest</span>}
+      {(!run || run === runs?.current) && (
+        <span className="rounded-full bg-accent-soft px-[7px] py-px text-[10.5px] font-semibold text-accent">
+          latest
+        </span>
+      )}
       {runs && runs.runs.length > 1 && (
         <>
-          <Icon name="chev" size={14} />
+          <Icon name="chev" size={14} className="text-dim" />
           <select
+            className={pickerSelect}
             aria-label="Run"
             value={run ?? runs.current}
             onChange={(e) => {
@@ -509,9 +573,15 @@ export default function App() {
   );
 
   const search = (
-    <label className="vc-search">
+    <label
+      className={cx(
+        "flex items-center gap-2 rounded-lg border border-line bg-panel pr-2 pl-2.5 text-dim focus-within:border-accent",
+        isPhone ? "h-10 w-full" : "h-8 w-70",
+      )}
+    >
       <Icon name="search" size={15} />
       <input
+        className="min-w-0 flex-auto border-0 bg-transparent px-0.5 py-px text-[12.5px] text-fg outline-none placeholder:text-dim"
         ref={searchRef}
         type="search"
         aria-label="Search routes and states"
@@ -537,13 +607,14 @@ export default function App() {
     />
   );
 
+  const HEADER = "flex h-[52px] shrink-0 items-center border-b border-line bg-panel";
   const header = isPhone ? (
-    <header className="vc-header is-phone">
-      <span className="vc-logo">
+    <header className={cx(HEADER, "gap-2.5 px-3")}>
+      <span className="flex shrink-0 items-center">
         <Logo markOnly />
       </span>
-      <div className="vc-site">
-        <span className="vc-mono vc-dim">{domain}</span>
+      <div className="flex min-w-0 flex-auto flex-col leading-[1.2]">
+        <span className="truncate font-mono text-[11px] text-dim">{domain}</span>
         {runPicker}
       </div>
       <IconButton
@@ -562,18 +633,18 @@ export default function App() {
       {themeToggle}
     </header>
   ) : (
-    <header className="vc-header">
-      <div className="vc-brand">
+    <header className={cx(HEADER, "gap-3.5 pr-3.5 pl-4")}>
+      <div className="flex shrink-0 items-center">
         <Logo />
       </div>
-      <span className="vc-divider" />
-      <div className="vc-site">
-        <span className="vc-mono vc-dim">{domain}</span>
+      <span className={DIVIDER} />
+      <div className="flex min-w-0 flex-col leading-[1.2]">
+        <span className="truncate font-mono text-[11px] text-dim">{domain}</span>
       </div>
       {runPicker}
-      <span className="vc-grow" />
+      <span className="flex-auto" />
       {modeSwitch}
-      <span className="vc-grow" />
+      <span className="flex-auto" />
       {search}
       <IconButton
         icon="kbd"
@@ -585,28 +656,31 @@ export default function App() {
     </header>
   );
 
+  const TOOLBAR =
+    "flex min-h-12 shrink-0 flex-wrap items-center gap-x-[18px] gap-y-2 border-b border-line bg-app px-4 py-2";
   const toolbar = isPhone ? null : comparing ? (
-    <div className="vc-toolbar">
-      <div className="vc-group" role="group" aria-label="Show">
-        <Caption>Show</Caption>
-        {statusPills}
+    <div className={TOOLBAR}>
+      <div className={TOOLBAR_GROUP} role="group" aria-label="Show">
+        <Caption className="mr-0.5">Show</Caption>
+        {statusPills()}
       </div>
-      <span className="vc-divider" />
-      <div className="vc-group" role="group" aria-label="Devices">
-        <Caption>Devices</Caption>
+      <span className={DIVIDER} />
+      <div className={TOOLBAR_GROUP} role="group" aria-label="Devices">
+        <Caption className="mr-0.5">Devices</Caption>
         {deviceToggles(false)}
       </div>
-      <span className="vc-grow" />
+      <span className="flex-auto" />
       {diff && (
-        <span className="vc-dim vc-small">
-          Threshold <span className="vc-mono vc-text">{percent(diff.minRatio)}</span>
+        <span className="text-[12px] text-dim">
+          Threshold{" "}
+          <span className="font-mono text-[11.5px] text-fg">{percent(diff.minRatio)}</span>
         </span>
       )}
     </div>
   ) : (
-    <div className="vc-toolbar">
-      <div className="vc-group" role="group" aria-label="Layout">
-        <Caption>Layout</Caption>
+    <div className={TOOLBAR}>
+      <div className={TOOLBAR_GROUP} role="group" aria-label="Layout">
+        <Caption className="mr-0.5">Layout</Caption>
         <Segmented<LayoutMode>
           small
           label="Layout"
@@ -615,22 +689,22 @@ export default function App() {
           items={LAYOUTS}
         />
       </div>
-      <span className="vc-divider" />
-      <div className="vc-group" role="group" aria-label="Devices">
-        <Caption>Devices</Caption>
+      <span className={DIVIDER} />
+      <div className={TOOLBAR_GROUP} role="group" aria-label="Devices">
+        <Caption className="mr-0.5">Devices</Caption>
         {deviceToggles(false)}
       </div>
       {kinds.length > 1 && (
         <>
-          <span className="vc-divider" />
-          <div className="vc-group vc-group-wrap" role="group" aria-label="States">
-            <Caption>States</Caption>
-            {statePills}
+          <span className={DIVIDER} />
+          <div className={cx(TOOLBAR_GROUP, "flex-wrap")} role="group" aria-label="States">
+            <Caption className="mr-0.5">States</Caption>
+            {statePills()}
           </div>
         </>
       )}
-      <span className="vc-grow" />
-      <span className="vc-dim vc-small vc-nowrap">
+      <span className="flex-auto" />
+      <span className="text-[12px] whitespace-nowrap text-dim">
         {shown} shots · {groupsWithTiles.length} routes
       </span>
     </div>
@@ -639,16 +713,16 @@ export default function App() {
   // ---- body
 
   const sidebar = (
-    <nav className="vc-sidebar" aria-label="Routes">
-      <div className="vc-side-head">
+    <nav className={cx(SIDEBAR, "w-66 shrink-0 border-r border-line")} aria-label="Routes">
+      <div className={SIDE_HEAD}>
         <Caption>Routes</Caption>
         <Count>{groupsWithTiles.length}</Count>
       </div>
       {groupsWithTiles.length === 0 ? (
-        <p className="vc-side-empty">No route has shots matching these filters.</p>
+        <p className={SIDE_EMPTY}>No route has shots matching these filters.</p>
       ) : (
         <VirtualList
-          className="vc-side-list"
+          className={SIDE_LIST}
           items={groupsWithTiles}
           rowHeight={SIDEBAR_ROW_H}
           children={(g) => {
@@ -657,26 +731,38 @@ export default function App() {
               <li key={g.routeId}>
                 <button
                   type="button"
-                  className={"vc-route-row" + (on ? " on" : "")}
+                  className={cx(row(on), "h-14")}
                   aria-current={on}
                   onClick={() => focusRoute(g.routeId)}
                 >
-                  <span className="vc-row-main">
+                  <span className={ROW_MAIN}>
                     <RouteBadge path={routePath(g.path)} active={on} />
-                    <span className="vc-row-title vc-dim">{g.title || routePath(g.path)}</span>
+                    <span className="truncate text-[12px] text-dim">
+                      {g.title || routePath(g.path)}
+                    </span>
                   </span>
-                  <span className="vc-row-count">{routeCounts.get(g.routeId) ?? 0}</span>
+                  <span
+                    className={cx(
+                      "rounded-md px-1.5 py-px font-mono text-[11px] text-dim",
+                      on ? "bg-panel" : "bg-canvas",
+                    )}
+                  >
+                    {routeCounts.get(g.routeId) ?? 0}
+                  </span>
                 </button>
               </li>
             );
           }}
         />
       )}
-      <div className="vc-side-foot">
+      <div className="flex items-center border-t border-line px-3 py-2.5 text-[12px]">
         {failedCount > 0 ? (
           <button
             type="button"
-            className={"vc-failed-toggle" + (failedOnly ? " on" : "")}
+            className={cx(
+              "flex flex-auto items-center gap-2 rounded-[7px] border border-amber-line px-2 py-1.5",
+              failedOnly ? "bg-amber font-semibold text-on-amber" : "bg-amber-soft text-amber",
+            )}
             aria-pressed={failedOnly}
             onClick={() => setFailedOnly((v) => !v)}
           >
@@ -684,74 +770,108 @@ export default function App() {
             <span>
               {failedCount} failed {failedCount === 1 ? "capture" : "captures"}
             </span>
-            <span className="vc-grow" />
-            <span className="vc-small">{failedOnly ? "Show all" : "Show only"}</span>
+            <span className="flex-auto" />
+            <span className="text-[12px]">{failedOnly ? "Show all" : "Show only"}</span>
           </button>
         ) : (
-          <span className="vc-ok">
+          <span className="flex items-center gap-2 px-1 py-0.5 text-ok">
             <Icon name="check" size={14} />
-            <span className="vc-dim">All {data.tiles.length} shots captured</span>
+            <span className="text-dim">All {data.tiles.length} shots captured</span>
           </span>
         )}
       </div>
     </nav>
   );
 
+  const TOAST =
+    "flex items-center gap-3 rounded-[10px] border bg-overlay py-[7px] pr-2 pl-3 text-[12.5px]";
   const canvasOverlays = (
     <>
-      <div className="vc-zoom" role="group" aria-label="Zoom">
+      <div
+        className={cx(
+          "absolute z-5 flex items-center gap-0.5 rounded-[10px] border border-line bg-overlay p-[3px]",
+          isPhone ? "right-3 bottom-3" : minimapOn ? "right-[222px] bottom-4" : "right-4 bottom-4",
+        )}
+        role="group"
+        aria-label="Zoom"
+      >
         <button
           type="button"
+          className={ZOOM_BUTTON}
           aria-label="Zoom out"
           title="Zoom out (−)"
           onClick={() => canvas.current?.zoomBy(0.8)}
         >
           <Icon name="minus" size={15} />
         </button>
-        <span className="vc-mono">{Math.round(scale * 100)}%</span>
+        <span className="w-11 text-center font-mono text-[12px] tabular-nums">
+          {Math.round(scale * 100)}%
+        </span>
         <button
           type="button"
+          className={ZOOM_BUTTON}
           aria-label="Zoom in"
           title="Zoom in (+)"
           onClick={() => canvas.current?.zoomBy(1.25)}
         >
           <Icon name="plus" size={15} />
         </button>
-        <span className="vc-zoom-sep" />
+        <span className="mx-0.5 h-[18px] w-px bg-line" />
         <button
           type="button"
+          className={ZOOM_BUTTON}
           aria-label="Fit to screen"
           title="Fit to screen (0)"
           onClick={() => canvas.current?.fit()}
         >
           <Icon name="fit" size={15} />
         </button>
+        {!isPhone && (
+          <button
+            type="button"
+            className={cx(
+              ZOOM_BUTTON,
+              minimapOn && "bg-accent-soft text-accent-ink hover:bg-accent-soft",
+            )}
+            aria-label="Minimap"
+            aria-pressed={minimapOn}
+            title={minimapOn ? "Hide minimap (M)" : "Show minimap (M)"}
+            onClick={toggleMinimap}
+          >
+            <Icon name="map" size={15} />
+          </button>
+        )}
       </div>
       {!isPhone && (
-        <div className="vc-hint">
+        <div className="pointer-events-none absolute bottom-4 left-4 flex items-center gap-1.5 rounded-[10px] border border-line bg-overlay px-2.5 py-1.5 text-[12px] whitespace-nowrap text-dim">
           <Kbd>⇧</Kbd>
           <Kbd>←</Kbd>
           <Kbd>→</Kbd>
           <span>step</span>
-          <Kbd>?</Kbd>
+          <Kbd className="ml-1.5">?</Kbd>
           <span>shortcuts</span>
         </div>
       )}
-      <div className="vc-toasts">
+      <div
+        className={cx(
+          "absolute z-6 flex max-w-[calc(100%-32px)] flex-col items-start gap-2",
+          isPhone ? "top-3 left-3" : "top-4 left-4",
+        )}
+      >
         {layout.truncated > 0 && (
-          <div className="vc-toast">
+          <div className={cx(TOAST, "border-line text-dim")}>
             Showing {layout.placed.length} of {shown} shots
-            <button type="button" className="vc-link" onClick={() => setLimit(undefined)}>
+            <button type="button" className={LINK} onClick={() => setLimit(undefined)}>
               Show all
             </button>
           </div>
         )}
         {!layout.placed.length && (
-          <div className="vc-toast">
+          <div className={cx(TOAST, "border-line text-dim")}>
             No shots match these filters.
             <button
               type="button"
-              className="vc-link"
+              className={LINK}
               onClick={() => {
                 setQuery("");
                 setKindFilter(new Set());
@@ -763,9 +883,9 @@ export default function App() {
           </div>
         )}
         {notice && (
-          <div className="vc-toast is-warn">
+          <div className={cx(TOAST, "border-amber-line text-amber")}>
             {notice}
-            <IconButton icon="x" label="Dismiss" size={24} onClick={() => setNotice(null)} />
+            <IconButton ghost icon="x" label="Dismiss" size={24} onClick={() => setNotice(null)} />
           </div>
         )}
       </div>
@@ -773,7 +893,7 @@ export default function App() {
   );
 
   const body = comparing ? (
-    <div className={"vc-body is-compare" + (isPhone ? " is-phone" : "")}>
+    <div className={cx("flex min-h-0 flex-auto", isPhone && "flex-col-reverse")}>
       {diff ? (
         <>
           <ChangeList
@@ -781,6 +901,7 @@ export default function App() {
             selectedKey={shot?.key ?? null}
             onSelect={setSelectedId}
             devices={data.devices}
+            phone={isPhone}
           />
           <Review
             diff={diff}
@@ -792,18 +913,17 @@ export default function App() {
             mode={reviewMode}
             onMode={setReviewMode}
             device={data.devices.find((d) => d.name === shot?.device)}
+            phone={isPhone}
           />
         </>
       ) : (
-        <div className="vc-review is-empty">
-          <p className="vc-dim">Loading comparison…</p>
-        </div>
+        <ReviewEmpty>Loading comparison…</ReviewEmpty>
       )}
     </div>
   ) : (
-    <div className="vc-body">
+    <div className="flex min-h-0 flex-auto">
       {!isPhone && sidebar}
-      <main className="vc-main">
+      <main className="relative min-w-0 flex-auto">
         <Canvas
           ref={canvas}
           layout={layout}
@@ -811,7 +931,7 @@ export default function App() {
           onSelect={setSelectedId}
           onScaleChange={onScaleChange}
           base={base}
-          showMinimap={!isPhone}
+          showMinimap={!isPhone && minimapOn}
         />
         {canvasOverlays}
       </main>
@@ -822,6 +942,7 @@ export default function App() {
           base={base}
           onSelect={setSelectedId}
           onStep={stepShot}
+          phone={isPhone}
           onCompareDevices={() => {
             setMode("devices");
             setFocusRouteId(selected.routeId);
@@ -835,14 +956,19 @@ export default function App() {
 
   const sheet = isPhone && sheetOpen && (
     <>
-      <div className="vc-scrim" onClick={() => setSheetOpen(false)} />
-      <div className="vc-sheet" role="dialog" aria-modal="true" aria-label="View and filters">
-        <div className="vc-sheet-grip" />
-        <div className="vc-sheet-head">
-          <h2>View &amp; filters</h2>
+      <div className="fixed inset-0 z-20 bg-scrim" onClick={() => setSheetOpen(false)} />
+      <div
+        className="fixed inset-x-0 bottom-0 z-21 flex max-h-[85%] flex-col rounded-t-2xl border-t border-line-strong bg-panel shadow-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="View and filters"
+      >
+        <div className="mx-auto mt-2 mb-0.5 h-1 w-9 rounded-[2px] bg-line-strong" />
+        <div className="flex items-center px-4 pt-1.5 pb-2.5">
+          <h2 className="flex-auto text-[16px] font-semibold">View &amp; filters</h2>
           <button
             type="button"
-            className="vc-link"
+            className="h-11 border-0 bg-transparent px-1 text-[13px] text-accent hover:text-accent-hover"
             onClick={() => {
               setDeviceFilter(new Set(data.devices.map((d) => d.name)));
               setKindFilter(new Set());
@@ -853,15 +979,15 @@ export default function App() {
             Reset
           </button>
         </div>
-        <div className="vc-sheet-body">
+        <div className="flex flex-col gap-[18px] overflow-y-auto px-4">
           {comparing ? (
-            <div className="vc-sheet-group" role="group" aria-label="Show">
+            <div className={SHEET_GROUP} role="group" aria-label="Show">
               <Caption>Show</Caption>
-              <div className="vc-wrap">{statusPills}</div>
+              <div className={WRAP}>{statusPills(true)}</div>
             </div>
           ) : (
             <>
-              <div className="vc-sheet-group">
+              <div className={SHEET_GROUP}>
                 <Caption>Layout</Caption>
                 <Segmented<LayoutMode>
                   fill
@@ -872,26 +998,26 @@ export default function App() {
                 />
               </div>
               {kinds.length > 1 && (
-                <div className="vc-sheet-group" role="group" aria-label="States">
+                <div className={SHEET_GROUP} role="group" aria-label="States">
                   <Caption>States</Caption>
-                  <div className="vc-wrap">{statePills}</div>
+                  <div className={WRAP}>{statePills(true)}</div>
                 </div>
               )}
             </>
           )}
-          <div className="vc-sheet-group" role="group" aria-label="Devices">
+          <div className={SHEET_GROUP} role="group" aria-label="Devices">
             <Caption>Devices</Caption>
-            <div className="vc-device-cards">{deviceToggles(true)}</div>
+            <div className="grid grid-cols-2 gap-2">{deviceToggles(true)}</div>
           </div>
           {!comparing && groupsWithTiles.length > 0 && (
-            <div className="vc-sheet-group">
+            <div className={SHEET_GROUP}>
               <Caption>Jump to route</Caption>
-              <div className="vc-wrap">
+              <div className={WRAP}>
                 {groupsWithTiles.map((g) => (
                   <button
                     key={g.routeId}
                     type="button"
-                    className="vc-chip-btn"
+                    className="flex min-h-[34px] max-w-full items-center border-0 bg-transparent px-0 py-1"
                     onClick={() => focusRoute(g.routeId)}
                   >
                     <RouteBadge path={routePath(g.path)} active={g.routeId === activeRouteId} />
@@ -901,8 +1027,12 @@ export default function App() {
             </div>
           )}
         </div>
-        <div className="vc-sheet-foot">
-          <button type="button" className="vc-primary" onClick={() => setSheetOpen(false)}>
+        <div className="px-4 pt-3 pb-5">
+          <button
+            type="button"
+            className="h-[46px] w-full rounded-[10px] border-0 bg-accent text-[14px] font-semibold text-on-accent"
+            onClick={() => setSheetOpen(false)}
+          >
             Show {comparing ? shots.length : shown} shots
           </button>
         </div>
@@ -911,12 +1041,24 @@ export default function App() {
   );
 
   const shortcuts = shortcutsOpen && (
-    <div className="vc-popover" role="dialog" aria-label="Keyboard shortcuts">
-      <div className="vc-popover-head">
+    <div
+      className="fixed top-[60px] right-3.5 z-30 w-[340px] rounded-xl border border-line-strong bg-panel px-3.5 pt-3 pb-4 shadow-pop"
+      role="dialog"
+      aria-label="Keyboard shortcuts"
+    >
+      <div className="mb-2.5 flex items-center justify-between">
         <Caption>Keyboard shortcuts</Caption>
-        <IconButton icon="x" label="Close" size={24} onClick={() => setShortcutsOpen(false)} />
+        <IconButton
+          ghost
+          icon="x"
+          label="Close"
+          size={24}
+          onClick={() => setShortcutsOpen(false)}
+        />
       </div>
-      <dl className="vc-dl is-keys">
+      <dl
+        className={cx(DL, "grid-cols-[auto_minmax(0,1fr)] items-center [&>dt]:whitespace-nowrap")}
+      >
         <dt>
           <Kbd>⌘K</Kbd> <Kbd>/</Kbd>
         </dt>
@@ -933,6 +1075,10 @@ export default function App() {
           <Kbd>+</Kbd> <Kbd>−</Kbd> <Kbd>0</Kbd>
         </dt>
         <dd>Zoom in, out, fit</dd>
+        <dt>
+          <Kbd>M</Kbd>
+        </dt>
+        <dd>Show / hide the minimap</dd>
         <dt>
           <Kbd>⇧</Kbd> + <Kbd>arrows</Kbd>
         </dt>
@@ -954,17 +1100,21 @@ export default function App() {
       {/* The loader stays on top while it fades out, crossfading into the page. */}
       {!loaderGone && (
         <div
-          className="vc-empty vc-boot is-leaving"
+          className={cx(
+            EMPTY,
+            "pointer-events-none fixed inset-0 z-100 bg-app animate-loader-out",
+            REDUCED,
+          )}
           aria-hidden="true"
           onAnimationEnd={() => setLoaderGone(true)}
         >
           <Loader />
         </div>
       )}
-      <div className={"vc-app" + (isPhone ? " is-phone" : "") + (loaderGone ? "" : " is-entering")}>
+      <div className={cx("flex h-full flex-col", !loaderGone && cx("animate-app-in", REDUCED))}>
         {header}
         {isPhone && (
-          <div className="vc-phone-bar">
+          <div className="flex shrink-0 flex-col gap-2 border-b border-line px-3 py-2.5">
             {modeSwitch}
             {searchOpen && search}
           </div>

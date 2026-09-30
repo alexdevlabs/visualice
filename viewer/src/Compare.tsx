@@ -4,12 +4,29 @@ import type { Device } from "./types";
 import { describe } from "./diff-layout";
 import { heightDelta, percent, runLabel } from "./format";
 import { VirtualList } from "./VirtualList";
-import { Caption, Count, deviceIcon, Icon, IconButton, KindTag, RouteBadge, Segmented } from "./ui";
+import {
+  Caption,
+  Count,
+  cx,
+  deviceIcon,
+  Icon,
+  IconButton,
+  KindTag,
+  ROW_MAIN,
+  ROW_SUB,
+  RouteBadge,
+  row,
+  Segmented,
+  SIDE_EMPTY,
+  SIDE_HEAD,
+  SIDE_LIST,
+  SIDEBAR,
+} from "./ui";
 
-/** Must match `.vc-change-row` in styles.css — the virtual list pins rows to it. */
+/** Must match the rows' `h-[58px]` below — the virtual list pins rows to it. */
 const CHANGE_ROW_H = 58;
 
-/** Theme tokens from styles.css, so each status reads on both backgrounds. */
+/** Theme tokens from index.css, so each status reads on both backgrounds. */
 export const STATUS_COLOR: Record<ShotStatus, string> = {
   changed: "var(--st-changed)",
   added: "var(--st-added)",
@@ -27,24 +44,32 @@ interface ListProps {
   selectedKey: string | null;
   onSelect: (key: string) => void;
   devices: Device[];
+  /** Phone layout: the list sits under the review instead of beside it. */
+  phone?: boolean;
 }
 
 /** Every shot the filters let through, most-changed first — the review queue. */
-export function ChangeList({ shots, selectedKey, onSelect, devices }: ListProps) {
+export function ChangeList({ shots, selectedKey, onSelect, devices, phone }: ListProps) {
   const max = Math.max(1e-9, ...shots.map((s) => s.ratio ?? 0));
   return (
-    <nav className="vc-sidebar is-wide" aria-label="Changed shots">
-      <div className="vc-side-head">
+    <nav
+      className={cx(
+        SIDEBAR,
+        phone ? "flex-[0_0_38%] border-t border-line" : "w-80 shrink-0 border-r border-line",
+      )}
+      aria-label="Changed shots"
+    >
+      <div className={SIDE_HEAD}>
         <Caption>Shots</Caption>
         <Count>{shots.length}</Count>
-        <span className="vc-grow" />
-        <span className="vc-dim vc-small">Largest first</span>
+        <span className="flex-auto" />
+        <span className="text-[12px] text-dim">Largest first</span>
       </div>
       {shots.length === 0 ? (
-        <p className="vc-side-empty">Nothing matches these filters.</p>
+        <p className={SIDE_EMPTY}>Nothing matches these filters.</p>
       ) : (
         <VirtualList
-          className="vc-side-list"
+          className={SIDE_LIST}
           items={shots}
           rowHeight={CHANGE_ROW_H}
           children={(s) => {
@@ -54,29 +79,35 @@ export function ChangeList({ shots, selectedKey, onSelect, devices }: ListProps)
               <li key={s.key}>
                 <button
                   type="button"
-                  className={"vc-change-row" + (on ? " on" : "")}
+                  className={cx(row(on), "h-[58px]")}
                   aria-current={on}
                   onClick={() => onSelect(s.key)}
                 >
-                  <span className="vc-row-icon">
+                  <span className="flex text-dim">
                     <Icon name={deviceIcon(devices.find((d) => d.name === s.device))} size={15} />
                   </span>
-                  <span className="vc-row-main">
-                    <span className="vc-row-title">{s.stateLabel}</span>
-                    <span className="vc-row-sub">
-                      <RouteBadge path={routeOf(s)} active={on} small />
-                      {delta && <span className="vc-dim">page {delta}</span>}
+                  <span className={ROW_MAIN}>
+                    <span className="truncate text-[12.5px] font-medium">{s.stateLabel}</span>
+                    <span className={ROW_SUB}>
+                      <RouteBadge path={routeOf(s)} active={on} size="sm" />
+                      {delta && <span className="text-dim">page {delta}</span>}
                     </span>
                   </span>
                   {s.status === "changed" ? (
-                    <span className="vc-row-metric">
-                      <span className="vc-mono vc-amber">{percent(s.ratio)}</span>
-                      <span className="vc-bar">
-                        <span style={{ width: `${Math.max(5, ((s.ratio ?? 0) / max) * 100)}%` }} />
+                    <span className="flex flex-col items-end gap-1">
+                      <span className="font-mono text-[11.5px] text-amber">{percent(s.ratio)}</span>
+                      <span className="h-[3px] w-16 rounded-[2px] bg-line">
+                        <span
+                          className="block h-[3px] rounded-[2px] bg-amber"
+                          style={{ width: `${Math.max(5, ((s.ratio ?? 0) / max) * 100)}%` }}
+                        />
                       </span>
                     </span>
                   ) : (
-                    <span className="vc-row-status" style={{ color: STATUS_COLOR[s.status] }}>
+                    <span
+                      className="text-[11.5px] font-medium"
+                      style={{ color: STATUS_COLOR[s.status] }}
+                    >
                       {s.status}
                     </span>
                   )}
@@ -100,6 +131,21 @@ interface ReviewProps {
   mode: ReviewMode;
   onMode: (m: ReviewMode) => void;
   device?: Device;
+  phone?: boolean;
+}
+
+const REVIEW = "flex min-w-0 flex-1 flex-col bg-canvas";
+const FRAME = "relative overflow-hidden rounded-lg bg-white shadow-frame select-none";
+const FRAME_TAG =
+  "pointer-events-none absolute top-3 rounded-md bg-chip px-2 py-[3px] text-[11.5px] font-medium text-fg";
+
+/** A centred placeholder in the review pane, also used while a comparison loads. */
+export function ReviewEmpty({ children }: { children: string }) {
+  return (
+    <section className={cx(REVIEW, "items-center justify-center")}>
+      <p className="text-dim">{children}</p>
+    </section>
+  );
 }
 
 /**
@@ -120,6 +166,7 @@ export function Review({
   mode,
   onMode,
   device,
+  phone,
 }: ReviewProps) {
   const [split, setSplit] = useState(50);
   const [opacity, setOpacity] = useState(50);
@@ -127,11 +174,7 @@ export function Review({
   const dragging = useRef(false);
 
   if (!shot) {
-    return (
-      <section className="vc-review is-empty">
-        <p className="vc-dim">Pick a shot on the left to review it.</p>
-      </section>
-    );
+    return <ReviewEmpty>Pick a shot on the left to review it.</ReviewEmpty>;
   }
 
   const before = shot.fromShot && `./runs/${diff.from.runId}/${shot.fromShot}`;
@@ -152,23 +195,29 @@ export function Review({
   };
 
   return (
-    <section className="vc-review" aria-label="Review">
-      <div className="vc-review-head">
-        <div className="vc-review-title">
-          <div className="vc-row-sub">
+    <section className={REVIEW} aria-label="Review">
+      <div
+        className={cx(
+          "flex flex-wrap items-center gap-x-3.5 gap-y-2.5 border-b border-line bg-app",
+          phone ? "px-3 py-2.5" : "px-5 py-3",
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-[3px]">
+          <div className={ROW_SUB}>
             <RouteBadge path={routeOf(shot)} />
-            <strong>{shot.stateLabel}</strong>
+            <strong className="truncate text-[14px] font-semibold">{shot.stateLabel}</strong>
             <KindTag>{shot.device}</KindTag>
           </div>
-          <span className="vc-dim vc-small">
+          <span className="text-[12px] text-dim">
             {shot.status === "changed" ? (
               <>
-                <span className="vc-mono vc-amber">{percent(shot.ratio)}</span> of pixels changed
+                <span className="font-mono text-[11.5px] text-amber">{percent(shot.ratio)}</span> of
+                pixels changed
                 {delta && shot.fromSize && shot.toSize && (
                   <>
                     {" "}
                     · page {delta.startsWith("+") ? "grew" : "shrank"}{" "}
-                    <span className="vc-mono">
+                    <span className="font-mono text-[11.5px]">
                       {shot.fromSize.height} → {shot.toSize.height} px
                     </span>
                   </>
@@ -179,11 +228,12 @@ export function Review({
             )}
           </span>
         </div>
-        <span className="vc-grow" />
+        <span className="flex-auto" />
         {effective === "overlay" && (
-          <label className="vc-opacity">
-            <span className="vc-dim vc-small">After</span>
+          <label className="flex items-center gap-2">
+            <span className="text-[12px] text-dim">After</span>
             <input
+              className="w-[110px] accent-accent"
               type="range"
               min={0}
               max={100}
@@ -205,14 +255,14 @@ export function Review({
             { value: "diff", label: "Diff", icon: "cursor", disabled: !diffImg },
           ]}
         />
-        <div className="vc-stepper">
+        <div className="flex items-center gap-1.5">
           <IconButton
             icon="left"
             label="Previous change (←)"
             onClick={() => onStep(-1)}
             disabled={index <= 0}
           />
-          <span className="vc-mono vc-dim">
+          <span className="min-w-11 text-center font-mono text-[12px] text-dim">
             {index + 1} / {total}
           </span>
           <IconButton
@@ -224,34 +274,44 @@ export function Review({
         </div>
       </div>
 
-      <div className="vc-review-scroll">
+      <div className={cx("min-h-0 flex-1 overflow-auto", phone ? "p-3" : "p-5")}>
         {effective === "side" ? (
-          <div className="vc-side-by-side" style={{ maxWidth: cssWidth * 2 + 20 }}>
+          <div
+            className="mx-auto grid auto-cols-[minmax(0,1fr)] grid-flow-col items-start gap-5"
+            style={{ maxWidth: cssWidth * 2 + 20 }}
+          >
             {[
               { label: beforeLabel, src: before, missing: "Before: not in the old run" },
               { label: afterLabel, src: after, missing: "After: gone from the new run" },
             ].map(({ label, src, missing }) =>
               src ? (
-                <figure key={label} className="vc-frame">
-                  <img src={src} alt={label} />
-                  <figcaption className="vc-frame-tag">{label}</figcaption>
+                <figure key={label} className={FRAME}>
+                  <img className="block w-full" src={src} alt={label} />
+                  <figcaption className={cx(FRAME_TAG, "left-3")}>{label}</figcaption>
                 </figure>
               ) : (
-                <div key={label} className="vc-frame is-missing">
-                  <span className="vc-dim">{missing}</span>
+                <div
+                  key={label}
+                  className="flex min-h-60 items-center justify-center rounded-lg border border-dashed border-line-strong"
+                >
+                  <span className="text-dim">{missing}</span>
                 </div>
               ),
             )}
           </div>
         ) : effective === "diff" ? (
-          <figure className="vc-frame" style={{ maxWidth: cssWidth }}>
-            <img src={diffImg!} alt="Changed pixels highlighted" />
-            <figcaption className="vc-frame-tag">Changed pixels</figcaption>
+          <figure className={cx(FRAME, "mx-auto")} style={{ maxWidth: cssWidth }}>
+            <img className="block w-full" src={diffImg!} alt="Changed pixels highlighted" />
+            <figcaption className={cx(FRAME_TAG, "left-3")}>Changed pixels</figcaption>
           </figure>
         ) : (
           <div
             ref={frame}
-            className={"vc-frame is-stacked" + (effective === "swipe" ? " is-swipe" : "")}
+            className={cx(
+              FRAME,
+              "mx-auto",
+              effective === "swipe" && "cursor-ew-resize touch-pan-y",
+            )}
             style={{ maxWidth: cssWidth }}
             onPointerDown={(e) => {
               if (effective !== "swipe") return;
@@ -264,12 +324,13 @@ export function Review({
           >
             {/* Swipe clips `before` over `after`; overlay fades `after` over `before`. */}
             <img
+              className="block w-full"
               src={effective === "swipe" ? after! : before!}
               alt={effective === "swipe" ? afterLabel : beforeLabel}
               draggable={false}
             />
             <img
-              className="vc-frame-top"
+              className="absolute top-0 left-0 block w-full"
               src={effective === "swipe" ? before! : after!}
               alt=""
               draggable={false}
@@ -280,9 +341,12 @@ export function Review({
               }
             />
             {effective === "swipe" && (
-              <div className="vc-swipe-line" style={{ left: `${split}%` }}>
+              <div
+                className="absolute top-0 bottom-0 -ml-px w-0.5 bg-accent"
+                style={{ left: `${split}%` }}
+              >
                 <div
-                  className="vc-swipe-knob"
+                  className="sticky top-[180px] mt-[180px] -ml-[17px] flex size-9 items-center justify-center rounded-full bg-accent text-on-accent shadow-float"
                   role="slider"
                   tabIndex={0}
                   aria-label="Swipe between before and after"
@@ -303,10 +367,12 @@ export function Review({
                 </div>
               </div>
             )}
-            <span className="vc-frame-tag">
+            <span className={cx(FRAME_TAG, "left-3")}>
               {effective === "swipe" ? beforeLabel : `${afterLabel} at ${opacity}% over before`}
             </span>
-            {effective === "swipe" && <span className="vc-frame-tag is-right">{afterLabel}</span>}
+            {effective === "swipe" && (
+              <span className={cx(FRAME_TAG, "right-3")}>{afterLabel}</span>
+            )}
           </div>
         )}
       </div>

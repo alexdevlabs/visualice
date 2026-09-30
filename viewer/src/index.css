@@ -1,0 +1,168 @@
+/*
+ * The viewer's styles are Tailwind utilities in the components. This file holds
+ * only what utilities can't: the theme tokens (light by default, dark under
+ * data-theme="dark" — see theme.ts), the boot animations and page-wide defaults.
+ */
+@import "tailwindcss" source(".");
+
+/* The header toggle sets data-theme on <html>; `dark:` follows it, not the OS. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* `static`: emit every token, including the status colours only JS references (Compare.tsx). */
+@theme static {
+  /* Only these colours exist, so a stray `bg-gray-100` can't sneak in. */
+  --color-*: initial;
+  --color-white: #ffffff;
+
+  --color-app: #f5f6f8;
+  --color-canvas: #eaecf0;
+  --color-panel: #ffffff;
+  --color-raised: #ffffff;
+  --color-line: #e2e5ea;
+  --color-line-strong: #d0d5dd;
+  --color-fg: #171a20;
+  --color-dim: #5b6472;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4fd8;
+  --color-accent-soft: rgba(37, 99, 235, 0.09);
+  --color-accent-line: rgba(37, 99, 235, 0.35);
+  --color-accent-ink: #1e4fc2;
+  --color-on-accent: #ffffff;
+  --color-amber: #a86400;
+  --color-amber-soft: rgba(214, 140, 16, 0.12);
+  --color-amber-line: rgba(168, 100, 0, 0.35);
+  --color-on-amber: #ffffff;
+  --color-ok: #16804f;
+  /* Behind a screenshot while it loads — the colour most pages start with. */
+  --color-paper: #f5f1ea;
+  --color-overlay: rgba(255, 255, 255, 0.92);
+  --color-hover: rgba(15, 23, 42, 0.04);
+  --color-grid-dot: rgba(15, 23, 42, 0.12);
+  --color-tile-ring: rgba(15, 23, 42, 0.08);
+  --color-tile-shadow: rgba(15, 23, 42, 0.12);
+  --color-tile-scrim: rgba(255, 255, 255, 0.92);
+  --color-chip: rgba(255, 255, 255, 0.9);
+  --color-hatch-a: #fbf4e6;
+  --color-hatch-b: #f4e8cf;
+  --color-mini-tile: #c3c9d3;
+  --color-scrim: rgba(15, 23, 42, 0.25);
+  --color-st-changed: #b26b00;
+  --color-st-added: #0f8a6a;
+  --color-st-removed: #c2410c;
+  --color-st-unchanged: #8a93a3;
+  --color-st-uncomparable: #5b6472;
+
+  --font-sans: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Shadow utilities bake their geometry into the CSS, so what changes per theme
+     is only these colours. */
+  --color-seg-ring: rgba(15, 23, 42, 0.06);
+  --color-seg-highlight: transparent;
+  --color-seg-drop: rgba(15, 23, 42, 0.12);
+  --color-float-shadow: rgba(15, 23, 42, 0.15);
+  --color-pop-shadow: rgba(15, 23, 42, 0.18);
+  --color-sheet-shadow: rgba(15, 23, 42, 0.16);
+
+  --shadow-seg:
+    0 0 0 1px var(--color-seg-ring), 0 1px 0 var(--color-seg-highlight) inset,
+    0 1px 2px var(--color-seg-drop);
+  --shadow-float: 0 4px 12px var(--color-float-shadow);
+  --shadow-pop: 0 18px 50px var(--color-pop-shadow);
+  --shadow-sheet: 0 -16px 40px var(--color-sheet-shadow);
+  --shadow-tile: 0 0 0 1px var(--color-tile-ring), 0 6px 16px var(--color-tile-shadow);
+  --shadow-frame: 0 0 0 1px var(--color-line-strong), 0 12px 32px var(--color-tile-shadow);
+
+  /* Boot: the loader fades in, then crossfades into the page (App.tsx). */
+  --animate-loader-in: fade-in 300ms ease-out both;
+  --animate-loader-out: fade-out 450ms ease-in 60ms both;
+  --animate-app-in: fade-in 450ms ease-out both;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+      visibility: hidden;
+    }
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-app: #1e2025;
+  --color-canvas: #1a1c20;
+  --color-panel: #25282e;
+  --color-raised: #2e3239;
+  --color-line: #363a42;
+  --color-line-strong: #454a54;
+  --color-fg: #e8eaee;
+  --color-dim: #a3abb9;
+  --color-accent: #8ab4ff;
+  --color-accent-hover: #b5ceff;
+  --color-accent-soft: rgba(138, 180, 255, 0.14);
+  --color-accent-line: rgba(138, 180, 255, 0.45);
+  --color-accent-ink: #d6e4ff;
+  --color-on-accent: #0b1220;
+  --color-amber: #f5b94a;
+  --color-amber-soft: rgba(245, 185, 74, 0.14);
+  --color-amber-line: rgba(245, 185, 74, 0.4);
+  --color-on-amber: #1a1206;
+  --color-ok: #7fd4a8;
+  --color-overlay: rgba(37, 40, 46, 0.92);
+  --color-hover: rgba(46, 50, 57, 0.6);
+  --color-grid-dot: rgba(255, 255, 255, 0.08);
+  --color-tile-ring: rgba(255, 255, 255, 0.06);
+  --color-tile-shadow: rgba(0, 0, 0, 0.45);
+  --color-tile-scrim: rgba(26, 28, 32, 0.88);
+  --color-chip: rgba(30, 32, 37, 0.85);
+  --color-hatch-a: #17140f;
+  --color-hatch-b: #1d1912;
+  --color-mini-tile: #3a4254;
+  --color-scrim: rgba(5, 6, 8, 0.45);
+  --color-st-changed: #f5b94a;
+  --color-st-added: #7fe0c2;
+  --color-st-removed: #f0826a;
+  --color-st-unchanged: #5b6475;
+  --color-st-uncomparable: #a3abb9;
+  --color-seg-ring: transparent;
+  --color-seg-highlight: rgba(255, 255, 255, 0.04);
+  --color-seg-drop: rgba(0, 0, 0, 0.4);
+  --color-float-shadow: rgba(0, 0, 0, 0.4);
+  --color-pop-shadow: rgba(0, 0, 0, 0.55);
+  --color-sheet-shadow: rgba(0, 0, 0, 0.55);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+  body {
+    /* `normal`, not preflight's 1.5: every fixed row height is measured against it. */
+    @apply overflow-hidden bg-app font-sans text-[13px] leading-[normal] text-fg antialiased;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    @apply cursor-pointer;
+  }
+  button:disabled {
+    @apply cursor-not-allowed opacity-45;
+  }
+  a {
+    @apply text-accent hover:text-accent-hover;
+  }
+  code {
+    @apply font-mono text-[11.5px];
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}

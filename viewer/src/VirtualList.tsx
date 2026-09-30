@@ -55,7 +55,7 @@ export function VirtualList<T>({
   return (
     <ul
       ref={ref}
-      className={className ? `${className} vc-vlist` : "vc-vlist"}
+      className={className}
       onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       style={{ overflowY: "auto" }}
     >

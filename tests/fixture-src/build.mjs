@@ -36,10 +36,9 @@ async function main() {
   for (const p of pages) console.log(`  ${p.path.padEnd(34)} → tests/fixture/${p.file}`);
 
   // Compile Tailwind against the freshly written HTML.
+  // Tailwind v4: all config lives in the input CSS (the CLI is @tailwindcss/cli).
   const bin = path.join(ROOT, "node_modules", ".bin", "tailwindcss");
   const args = [
-    "-c",
-    "tests/fixture-src/tailwind.config.js",
     "-i",
     "tests/fixture-src/tailwind.input.css",
     "-o",

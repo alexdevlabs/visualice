@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { Layout } from "./layout";
 import type { Transform, Viewport } from "./lod";
+import { cx } from "./ui";
 
 /**
  * Overview of the whole canvas with the current viewport drawn on it.
@@ -63,7 +64,7 @@ export function Minimap({ layout, transform, viewport, selectedId, onJump }: Pro
 
   return (
     <div
-      className="vc-minimap"
+      className="absolute right-4 bottom-4 z-5 cursor-crosshair overflow-hidden rounded-[10px] border border-line bg-overlay"
       style={{ width: w, height: h }}
       onClick={jump}
       onPointerDown={(e) => e.stopPropagation()} // never start a canvas pan
@@ -74,11 +75,14 @@ export function Minimap({ layout, transform, viewport, selectedId, onJump }: Pro
       {rects.map((p) => (
         <div
           key={p.tile.id}
-          className={
-            "vc-mini-tile" +
-            (p.tile.id === selectedId ? " is-selected" : "") +
-            (p.tile.error !== undefined ? " is-failed" : "")
-          }
+          className={cx(
+            "absolute rounded-[1px]",
+            p.tile.error !== undefined
+              ? "bg-amber"
+              : p.tile.id === selectedId
+                ? "bg-accent"
+                : "bg-mini-tile",
+          )}
           style={{
             left: (p.x - bounds.minX) * scale,
             top: (p.y - bounds.minY) * scale,
@@ -88,7 +92,7 @@ export function Minimap({ layout, transform, viewport, selectedId, onJump }: Pro
         />
       ))}
       <div
-        className="vc-mini-view"
+        className="pointer-events-none absolute rounded-[3px] border-[1.5px] border-accent bg-accent-soft"
         style={{
           left: Math.max(0, viewX),
           top: Math.max(0, viewY),

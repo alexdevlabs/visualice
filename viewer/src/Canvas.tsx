@@ -4,6 +4,7 @@ import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SC
 import type { Transform } from "./lod";
 import { Minimap } from "./Minimap";
 import { nextTileId } from "./nav";
+import { cx, RouteBadge } from "./ui";
 
 export interface CanvasHandle {
   fit: () => void;
@@ -213,7 +214,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   return (
     <div
       ref={elRef}
-      className="vc-canvas"
+      className="absolute inset-0 cursor-grab touch-none overflow-hidden bg-canvas bg-[radial-gradient(var(--color-grid-dot)_1px,transparent_1px)] bg-size-[22px_22px] focus-visible:-outline-offset-2 active:cursor-grabbing"
       role="application"
       aria-label="Screenshot canvas — arrow keys pan, shift+arrows move between shots, plus and minus zoom, 0 fits all"
       tabIndex={0}
@@ -223,18 +224,18 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       onKeyDown={onKeyDown}
     >
       <div
-        className="vc-world"
+        className="absolute top-0 left-0 origin-top-left will-change-transform"
         style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})` }}
       >
         {labelsVisible.map((l) => (
           <div
             key={l.routeId}
-            className="vc-group-label"
+            className="absolute flex h-10 items-center gap-3 overflow-hidden whitespace-nowrap"
             style={{ left: l.x, top: l.y, width: l.w }}
           >
-            {l.path && <span className="vc-route vc-group-route">{l.path}</span>}
-            <span className="vc-group-title">{l.title}</span>
-            <span className="vc-group-sub">{l.subtitle}</span>
+            {l.path && <RouteBadge path={l.path} size="lg" />}
+            <span className="truncate text-[20px] font-semibold text-fg">{l.title}</span>
+            <span className="text-[15px] text-dim">{l.subtitle}</span>
           </div>
         ))}
         {visible.map((p) => {
@@ -245,20 +246,26 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
             <div
               key={p.tile.id}
               data-tile-id={p.tile.id}
-              className={
-                "vc-tile" + (selected ? " is-selected" : "") + (failed ? " is-failed" : "")
-              }
+              className={cx(
+                "absolute overflow-hidden rounded-[4px] bg-paper shadow-tile",
+                failed
+                  ? "outline-1 -outline-offset-1 outline-amber outline-dashed"
+                  : selected && "outline-3 outline-offset-3 outline-accent",
+              )}
               style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
             >
               {failed || !src ? (
                 // A failed capture still occupies its place in the catalog: dropping
                 // it would read as "this state doesn't exist".
-                <div className="vc-tile-failed">
-                  <span className="vc-tile-failed-mark">!</span>
-                  {showTileLabels && <span className="vc-tile-failed-msg">{p.tile.error}</span>}
+                <div className="flex size-full flex-col items-center justify-center gap-2.5 bg-[repeating-linear-gradient(45deg,var(--color-hatch-a),var(--color-hatch-a)_12px,var(--color-hatch-b)_12px,var(--color-hatch-b)_24px)] p-3 text-center text-dim">
+                  <span className="text-[44px] leading-none font-bold text-amber">!</span>
+                  {showTileLabels && (
+                    <span className="line-clamp-4 max-w-[90%] text-[13px]">{p.tile.error}</span>
+                  )}
                 </div>
               ) : (
                 <img
+                  className="block size-full object-cover object-top"
                   src={base + src}
                   draggable={false}
                   loading="lazy"
@@ -267,12 +274,12 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
                 />
               )}
               {showTileLabels && (
-                <div className="vc-tile-meta">
-                  <span className="vc-tile-state">{p.tile.stateLabel}</span>
-                  <span className="vc-badge">{p.tile.stateKind}</span>
-                  <span className="vc-badge">{p.tile.device}</span>
-                  {p.cropped && <span className="vc-badge vc-badge-warn">tall</span>}
-                  {p.tile.clamped && <span className="vc-badge vc-badge-warn">cropped</span>}
+                <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-[linear-gradient(180deg,transparent,var(--color-tile-scrim))] px-2.5 pt-[18px] pb-2 text-[13px] font-medium">
+                  <span className="mr-auto truncate text-fg">{p.tile.stateLabel}</span>
+                  <TileBadge>{p.tile.stateKind}</TileBadge>
+                  <TileBadge>{p.tile.device}</TileBadge>
+                  {p.cropped && <TileBadge warn>tall</TileBadge>}
+                  {p.tile.clamped && <TileBadge warn>cropped</TileBadge>}
                 </div>
               )}
             </div>
@@ -291,3 +298,17 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     </div>
   );
 });
+
+/** A tile's kind / device / warning tag, on the scrim along its bottom edge. */
+function TileBadge({ children, warn }: { children: string; warn?: boolean }) {
+  return (
+    <span
+      className={cx(
+        "rounded-[4px] border bg-chip px-[5px] font-mono text-[11px] leading-[17px] whitespace-nowrap",
+        warn ? "border-amber-line text-amber" : "border-line-strong text-dim",
+      )}
+    >
+      {children}
+    </span>
+  );
+}

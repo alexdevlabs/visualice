@@ -1,8 +1,46 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind v4, configured in CSS. Only the GENERATED html is scanned (build.mjs
+   writes it before invoking the CLI) — not the rest of the repo. */
+@import "tailwindcss" source(none);
+@source "../fixture/**/*.html";
+
+@plugin "@tailwindcss/typography";
+@plugin "@tailwindcss/forms";
+
+/* The site's theme toggle puts `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-cream: #faf6f0; /* light page background (warm paper) */
+  --color-paper: #fffdf9; /* light surface / cards */
+  --color-espresso: #241c17; /* dark surface / cards */
+  --color-grounds: #17120f; /* dark page background */
+
+  --font-serif: Georgia, Cambria, "Times New Roman", serif;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
 
 @layer base {
+  /* v3 defaults this site was designed against: a light gray default border
+     (v4 uses currentColor) and pointer cursors on buttons. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* v4's reset zeroes every margin, including the UA's `margin: auto` that
+     centres a modal <dialog>. */
+  dialog {
+    margin: auto;
+  }
+
   html {
     scroll-behavior: smooth;
   }
@@ -27,19 +65,23 @@
     @apply mx-auto w-full max-w-5xl px-5 sm:px-6;
   }
   .card {
-    @apply rounded-2xl border border-stone-200 bg-paper p-6 shadow-sm dark:border-stone-700 dark:bg-espresso;
+    @apply rounded-2xl border border-stone-200 bg-paper p-6 shadow-xs dark:border-stone-700 dark:bg-espresso;
   }
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-cream dark:focus-visible:ring-offset-grounds;
+  /* v4 can't @apply one component class inside another, so btn-primary and
+     btn-ghost repeat the base button utilities. */
+  .btn,
+  .btn-primary,
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition focus:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-cream dark:focus-visible:ring-offset-grounds;
   }
   .btn-primary {
-    @apply btn bg-amber-700 text-white hover:bg-amber-800 dark:bg-amber-500 dark:text-stone-900 dark:hover:bg-amber-400;
+    @apply bg-amber-700 text-white hover:bg-amber-800 dark:bg-amber-500 dark:text-stone-900 dark:hover:bg-amber-400;
   }
   .btn-ghost {
-    @apply btn border border-stone-300 text-stone-700 hover:bg-stone-100 dark:border-stone-600 dark:text-stone-200 dark:hover:bg-stone-800;
+    @apply border border-stone-300 text-stone-700 hover:bg-stone-100 dark:border-stone-600 dark:text-stone-200 dark:hover:bg-stone-800;
   }
   .field {
-    @apply block w-full rounded-lg border-stone-300 bg-white text-stone-900 shadow-sm placeholder:text-stone-400 focus:border-amber-500 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100;
+    @apply block w-full rounded-lg border-stone-300 bg-white text-stone-900 shadow-xs placeholder:text-stone-400 focus:border-amber-500 focus:ring-amber-500 dark:border-stone-600 dark:bg-stone-900 dark:text-stone-100;
   }
   .badge {
     @apply inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300;
