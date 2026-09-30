@@ -1,6 +1,6 @@
 # Visualice — Roadmap
 
-> Updated 2026-09-21. The 2026-07-28 code review's ~43 findings, the **project-file
+> Updated 2026-09-21; test counts and viewer wording refreshed 2026-09-30. The 2026-07-28 code review's ~43 findings, the **project-file
 > UX** (PLAN.md §9, shipped 2026-08-05) and the 2026-09-21 roadmap pass are all done.
 > This second pass closed the 11 items that pass left open, so **the roadmap is
 > currently empty** — what's below is the record of what was built and what it cost,
@@ -12,13 +12,13 @@
 ## Status
 
 The first pass landed in `113e2b2` "Implemented improvements part 1" (87 files) and
-`e690169` "Improvements part 2". The work described under "Second pass" below is in
-the working tree on top of those.
+`e690169` "Improvements part 2". The work described under "Second pass" below landed in
+`3d28b2d`, and the review fixes in `7851a4e` and `df734c5`.
 
 **Verification as of the last run — everything is green:**
 
-- `npm run check` (typecheck · lint · format · unit): **414 unit tests**, 37 files.
-- `npm run test:integration`: **43 tests**, 11 files (~80s).
+- `npm run check` (typecheck · lint · format · unit): **452 unit tests**, 38 files.
+- `npm run test:integration`: **51 tests**, 12 files.
 - `npm run demo:crawl`: 10 routes, **72 shots**, 0 failures, ~31s,
   `page reuse: 20 of 72 shot(s) needed no reload`.
 - `visualice diff` across the pre-change baseline and the post-change crawl of the
@@ -149,17 +149,29 @@ Two bugs were found and fixed by that work rather than reported by anyone:
       artifact can actually collect what a crashed test left behind, wherever that
       runner's temp directory happens to be.
 
+## Since then (viewer, 2026-09)
+
+The records above describe the viewer as it shipped. It has since been restyled, and a
+few of the names changed:
+
+- Comparisons open from an **Explore / Compare** switch rather than a picker, and are
+  reviewed one shot at a time — swipe, side by side, overlay or diff — instead of as
+  before / after / diff tiles. The unchanged toggle is now one of the status filters.
+- The layout modes read **Grouped / Grid / By device** ("Devices" above is By device).
+- The minimap is off by default, toggled from the zoom controls or `M`.
+- Light and dark themes (light by default), a boot loader, and a phone layout.
+- Viewer and fixture styles moved to Tailwind v4.
+
 ## Known limitations
 
 Not roadmap items — things worth knowing before someone reports them as bugs.
 
-- **The diff view loads full-size images.** `visualice diff` writes no thumbnails, so
-  the before/after/diff tiles have only a `full` source and the LOD ladder has nothing
-  to step through. Fine for a handful of changed shots; a diff with hundreds of them
-  will be slow to paint at low zoom.
+- **The Compare view loads full-size images.** `visualice diff` writes no thumbnails, so
+  the before/after/diff images have only a `full` source. Fine for a handful of changed
+  shots; stepping through hundreds of them will be slow.
 - **Comparisons need `visualice serve`, not a bare run directory.** A diff's three
   images live in two run directories and the diff directory; a viewer served from one
-  run has no path to the other two, so the comparison picker simply doesn't appear.
+  run has no path to the other two, so the viewer's Compare switch stays disabled.
 - **`scope.hashRoutes: "always"` will fork on anchors.** It exists for routers that
   drop the slash (`#about`); on a documentation site it turns every heading link into a
   route. `auto` is the default for that reason.

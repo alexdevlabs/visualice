@@ -76,7 +76,7 @@ first mobile device's viewport, so mobile-only states like hamburger navs are di
 too — those capture only on mobile devices. Hover-revealed dropdowns are probed as well.
 
 For agents and CI: `--json` prints a single machine-readable summary to stdout
-(`{runId, runDir, routes, states, shots, failed, failures, wanted}`), `--quiet` silences progress,
+(`{runId, runDir, manifest, report, routes, states, shots, failed, failures, wanted}`), `--quiet` silences progress,
 and `--fail-on-error` exits 3 when any capture failed. Exit codes: 0 ok · 1 error ·
 2 usage · 3 capture failures or visual differences. Failed captures are retried
 (`politeness.retries`), then recorded per-shot in the manifest and listed in a
@@ -103,13 +103,19 @@ visualice serve --shoot=out.png # headless: screenshot the viewer to a file
 The viewer is a standalone static app (`viewer/`); it reads `viewer-data.json` + the
 screenshots and needs no connection to the crawled site. Scroll to pan, ⌘/ctrl+scroll
 (or pinch) to zoom, click any shot for metadata, shift+arrow to step to the next one.
-Toggle **Grouped** (by path), **All at once**, or **Devices** — one route at a time with
-every device drawn at the same width, so the same element lands in the same place across
-the row and a spacing difference is visible by looking straight down. In Devices mode the
-sidebar picks the route. Thumbnails load when zoomed out and step up through a
-mid-resolution image to full resolution as you zoom in. The minimap shows where you are in
-the layout and jumps there on click, and the path list virtualizes past a few dozen routes
-so a large run doesn't build a sidebar it never shows.
+Toggle **Grouped** (by path), **Grid** (everything at once), or **By device** — one route
+at a time with every device drawn at the same width, so the same element lands in the same
+place across the row and a spacing difference is visible by looking straight down. In By
+device mode the sidebar picks the route. Thumbnails load when zoomed out and step up through a
+mid-resolution image to full resolution as you zoom in. The minimap is hidden until you
+turn it on (the button in the zoom controls, or `M`); it shows where you are in the layout
+and jumps there on click. The path list virtualizes past a few dozen routes so a large run
+doesn't build a sidebar it never shows.
+
+`⌘K` or `/` focuses search, `+` `−` `0` zoom in, out and fit, and `?` lists every
+shortcut. The header's sun/moon button switches between the light (default) and dark
+theme; that choice and the minimap's are remembered in the browser. Below 760px the
+viewer switches to a phone layout with the filters in a bottom sheet.
 
 Filter by device or by state kind, search by path, and flip between runs from the run
 switcher — `serve` exposes the sibling runs in the same output directory, so comparing
@@ -144,11 +150,14 @@ so any difference counts; `0.001` lets a page that grew by a few pixels through)
 output, and `--fail-on-error` exits 3 when anything changed, appeared or disappeared —
 the CI gate.
 
-Comparisons show up in the viewer too. `serve` lists them in the **comparison** picker,
-and choosing one lays out every changed shot as before / after / diff, biggest change
-first — the three images live in two run directories and the diff directory, which is why
-this needs the server rather than a single run's data. An **unchanged** toggle brings the
-rest in when you want to confirm that nothing else moved.
+Comparisons show up in the viewer too. Under `serve` the header's **Explore / Compare**
+switch opens them (Compare is disabled until a diff exists): a list of shots, biggest
+change first, beside a review pane with four ways to look at one — **Swipe** (the
+default), **Side by side**, **Overlay** and **Diff**. `←` `→` or `j` `k` step through the
+list. Status filters choose between changed, added, removed, uncomparable and — off by
+default, for confirming that nothing else moved — unchanged. The three images live in two
+run directories and the diff directory, which is why this needs the server rather than a
+single run's data.
 
 ## Configuration
 
@@ -283,7 +292,11 @@ npm run fixture -- --open # browse the bundled fixture site
 npm run fixture:build     # rebuild tests/fixture from tests/fixture-src
 ```
 
-The 309 unit tests are pure and fast. The 36 browser-driven tests in `tests/integration/`
+Both the viewer and the fixture site are styled with Tailwind v4, configured in CSS rather
+than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
+fixture's in `tests/fixture-src/tailwind.input.css`.
+
+The 452 unit tests are pure and fast. The 51 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`

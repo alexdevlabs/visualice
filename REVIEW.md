@@ -1,6 +1,7 @@
 # Visualice — Code review
 
 > Reviewed 2026-09-21 against `3d28b2d` ("Improvements part 3"). Working tree clean.
+> The fixes below have since been committed (`7851a4e`, `df734c5`).
 >
 > **Pass 1** covered `git diff main...HEAD` — 5 commits, ~23k lines, with the careful
 > read on `src/`, `bin/`, `scripts/` and `viewer/src/` (~9.3k diff lines); generated
@@ -554,7 +555,7 @@ deliberate.
 
 ## Still unreviewed
 
-Neither pass has read: the viewer outside `lod.ts` and `diff-layout.ts`, `src/discover/`
+Neither pass has read: the viewer outside `lod.ts` and `diff-layout.ts`, `src/crawl/discover-forms.ts`
 form-state discovery, the plugin/marketplace wiring under `.claude-plugin/`, `scripts/`
 beyond the 15-line `gen-schema.ts` change in the diff, or `doctor`.
 
@@ -580,7 +581,7 @@ of them is visible on the fixture.
   `tests/integration/probe-ladder.test.ts` (8, 12, 13, 14) failed 4/4 against
   `3d28b2d`, each with the exact symptom described above; the three finding-11 tests
   failed 3/3 against `3d28b2d`'s `capture.ts` and `stabilize.ts`.
-- `npm run check` — typecheck, lint, format, **448 unit tests**.
+- `npm run check` — typecheck, lint, format, **448 unit tests** (452 as of 2026-09-30).
 - `npm run test:integration` — **51 tests**, 12 files (8 of them new).
 - `npm run build` — clean.
 - **Fixture, before vs after.** The demo crawl was run twice — once from a `3d28b2d`

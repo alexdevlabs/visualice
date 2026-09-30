@@ -54,7 +54,7 @@ when a failed capture should fail the command (exit 3).
 ### Estimate the size before crawling something big
 
 A run is `routes × states × devices` screenshots, and each full-page shot is roughly
-0.5–1.5 MB. The bundled 10-route fixture produces 68 shots / ~44 MB in ~30s. So:
+0.5–1.5 MB. The bundled 10-route fixture produces 72 shots / ~46 MB in ~30s. So:
 **shots ≈ routes × (1 + states per route) × devices**, and disk ≈ 1 MB per shot.
 
 A 200-route site with 3 states each and 2 devices is ~1,200 shots — well over a
@@ -105,7 +105,7 @@ password-protected staging: [`references/auth.md`](references/auth.md).
   the whole crawl for one flaky shot — fix or mask the cause.
 - Open the viewer: `visualice serve --open` (`--run=<id>` for a specific run instead
   of the latest, `--shoot=out.png` to grab a headless screenshot of the viewer
-  itself). Grouped, all-at-once, or Devices — the last shows one route with every
+  itself). Grouped, Grid, or By device — the last shows one route with every
   device at the same width, which is how you answer "does this look right on mobile?"
   without eyeballing two differently-scaled tiles. Thumbnails when zoomed out, full
   resolution as you zoom in.
@@ -134,9 +134,9 @@ pixel is magenta.
 - A changed `Size` column means the page's height moved; only the overlapping region
   was compared.
 - To show someone the difference rather than describe it, run `visualice serve` and
-  pick the comparison from the viewer's picker: every changed shot is laid out as
-  before / after / diff, biggest change first. The URL carries the comparison, so the
-  link lands on it.
+  switch the viewer from Explore to Compare: changed shots are listed biggest change
+  first, each reviewable as swipe, side by side, overlay or diff. The URL carries the
+  comparison, so the link lands on it.
 
 Full flag reference: [`references/cli.md`](references/cli.md).
 

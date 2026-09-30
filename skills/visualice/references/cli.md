@@ -37,9 +37,10 @@ command are accepted by it.
 | `--no-save`         | `crawl`              | Don't scaffold a config on first run                               |
 | `--manifest=<path>` | `capture`/`validate` | Input manifest path                                                |
 | `--replay`          | `crawl`              | Reuse the cached site model, skip discovery                        |
+| `--resume`          | `crawl`              | Continue the newest interrupted run, keeping its shots             |
 | `--json`            | most                 | Print a machine-readable JSON summary to stdout                    |
 | `--quiet`           | most                 | Suppress progress output on stderr                                 |
-| `--fail-on-error`   | `crawl`/`capture`    | Exit 3 if any capture failed                                       |
+| `--fail-on-error`   | capture cmds, `diff` | Exit 3 if any capture failed (`diff`: if anything changed)         |
 | `--max-pages=<n>`   | `crawl`/`discover`   | Override `scope.maxPages`                                          |
 | `--include=<globs>` | `crawl`/`discover`   | Override `scope.include` (comma-separated)                         |
 | `--exclude=<globs>` | `crawl`/`discover`   | Override `scope.exclude` (comma-separated)                         |
@@ -51,17 +52,20 @@ command are accepted by it.
 | `--port=<n>`        | `serve`/`fixture`    | Fixed port (default: random)                                       |
 | `--open`            | `serve`/`fixture`    | Open in your browser                                               |
 | `--shoot=<file>`    | `serve`              | Headless-screenshot the viewer to a file, then exit                |
-| `--force`           | `auth`               | Re-run the login even if the saved session looks fresh             |
+| `--force`           | `auth`/`init`        | Re-run the login despite a fresh session; `init`: overwrite config |
 | `--no-fix`          | `doctor`             | Report problems without repairing them                             |
 | `--from=<runId>`    | `diff`               | Older run to compare (default: second-most-recent run)             |
 | `--to=<runId>`      | `diff`               | Newer run to compare (default: most-recent run)                    |
+| `--threshold=<n>`   | `diff`               | Per-channel tolerance, 0–255 (default 12)                          |
+| `--min-ratio=<f>`   | `diff`               | Fraction of pixels that must differ to count as changed (def. 0)   |
+| `--diff-out=<dir>`  | `diff`               | Where to write the diff (default `<out>/diffs/<from>__<to>`)       |
 
 ## Exit codes
 
 - `0` — ok
 - `1` — error
 - `2` — usage
-- `3` — capture failures (only when `--fail-on-error` was passed)
+- `3` — capture failures, or visual differences from `diff` (only when `--fail-on-error` was passed)
 
 ## Project files
 
@@ -86,4 +90,4 @@ Everything machine-owned lives under gitignored `.visualice/`:
 - `.visualice/crawl-map.cache.json` — the cached site model that `--replay` and Explore
   mode read/write.
 - `.visualice/auth.json` — saved storage state from `auth`/`crawl`.
-- `.visualice/diffs/<from>__<to>/diff-report.md` — output of `diff`.
+- `.visualice/diffs/<from>__<to>/` — output of `diff`: `diff-report.md`, `diff.json`, `images/`.
