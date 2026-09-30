@@ -39,6 +39,10 @@ const FLAG_TYPES: Record<string, FlagType> = {
   threshold: "string",
   "min-ratio": "string",
   "diff-out": "string",
+  "ignore-antialiasing": "boolean",
+  routes: "string",
+  dest: "string",
+  diff: "string",
 };
 
 /** Commands that accept one bare positional, mapped onto a flag (crawl <url>). */
@@ -46,6 +50,7 @@ const POSITIONAL: Record<string, string> = {
   crawl: "base",
   discover: "base",
   init: "base",
+  export: "dest",
 };
 
 const OVERRIDE_FLAGS = [
@@ -89,11 +94,14 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
     "threshold",
     "min-ratio",
     "diff-out",
+    "ignore-antialiasing",
     "json",
     "quiet",
     "fail-on-error",
     "out",
   ],
+  approve: ["config", "run", "routes", "json", "quiet", "out"],
+  export: ["config", "run", "dest", "diff", "json", "quiet", "out"],
 };
 
 /**
@@ -176,7 +184,7 @@ export function floatFlag(flags: Flags, name: string): number | undefined {
   return n;
 }
 
-const csv = (v: string): string[] =>
+export const csv = (v: string): string[] =>
   v
     .split(",")
     .map((s) => s.trim())

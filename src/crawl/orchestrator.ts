@@ -1,7 +1,8 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import type { Config } from "../shared/config";
-import type { Manifest, InputManifest, ViewerData, ViewerTile } from "../shared/types";
+import type { Manifest, InputManifest, StateNode, ViewerData, ViewerTile } from "../shared/types";
+import { matchesAny } from "../shared/glob";
 import { runCapture } from "./capture";
 import { renderReport } from "./report";
 import {
@@ -22,7 +23,7 @@ import {
   type RoutesIntent,
 } from "./routes-file";
 import { pathExists } from "../shared/fsx";
-import { pathSlug } from "../shared/slug";
+import { pathSlug, stateSlug } from "../shared/slug";
 import {
   findResumableRun,
   listRuns,
@@ -101,6 +102,8 @@ export function toViewerData(m: Manifest): ViewerData {
           width: ref.width ?? (profile ? profile.width * profile.dpr : undefined),
           height: ref.height ?? (profile ? profile.height * profile.dpr : undefined),
           clamped: ref.clamped,
+          meta: ref.meta,
+          a11y: ref.a11y,
           error: ref.error,
         });
       }
@@ -113,6 +116,50 @@ export function toViewerData(m: Manifest): ViewerData {
     tiles,
     groups: m.routes.map((r) => ({ path: pathSlug(r.url), routeId: r.id, title: r.title })),
     failed,
+  };
+}
+
+function routePathOf(url: string): string {
+  try {
+    return new URL(url, "http://_local_").pathname;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Add a state per configured component to every route its globs match.
+ *
+ * Components are config, not discovery: they are added to the run's copy of the
+ * model on the way into capture and never written back to the cache, so removing
+ * one from the config removes it from the next run. A state already carrying the
+ * same id (hand-authored, with a recipe that opens something first) is left alone.
+ */
+export function withComponents(
+  model: InputManifest,
+  components: Config["components"],
+): InputManifest {
+  if (!components.length) return model;
+  return {
+    ...model,
+    routes: model.routes.map((route) => {
+      const added: StateNode[] = [];
+      for (const c of components) {
+        if (!matchesAny(routePathOf(route.url), c.routes)) continue;
+        const id = `component-${stateSlug(c.name)}`;
+        if (route.states.some((s) => s.id === id)) continue;
+        added.push({
+          id,
+          kind: "component",
+          label: c.name,
+          recipe: [],
+          element: c.selector,
+          source: "auto",
+          shots: {},
+        });
+      }
+      return added.length ? { ...route, states: [...route.states, ...added] } : route;
+    }),
   };
 }
 
@@ -192,7 +239,10 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
   // The routes file subtracts (skip:) before capture, and its unmet requests
   // ([ ] lines) surface as `wanted` — the Explore-mode queue.
   const intent = opts.routesIntent ?? (await loadRoutesIntent(config));
-  const inputManifest = applyStateSkips(opts.inputManifest, intent);
+  const inputManifest = withComponents(
+    applyStateSkips(opts.inputManifest, intent),
+    config.components,
+  );
   const wanted = computeWanted(opts.inputManifest, intent);
 
   const manifest: Manifest = {

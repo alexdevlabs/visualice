@@ -141,6 +141,7 @@
                     "hover",
                     "focus",
                     "validation",
+                    "component",
                     "other"
                   ]
                 },
@@ -592,6 +593,10 @@
                     "type": "string"
                   }
                 },
+                "element": {
+                  "description": "Screenshot only this element (a component) instead of the whole page.",
+                  "type": "string"
+                },
                 "shots": {
                   "default": {},
                   "type": "object",
@@ -624,6 +629,9 @@
                       },
                       "clamped": {
                         "type": "boolean"
+                      },
+                      "a11y": {
+                        "type": "number"
                       },
                       "error": {
                         "type": "string"

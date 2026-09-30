@@ -280,6 +280,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
                   <TileBadge>{p.tile.device}</TileBadge>
                   {p.cropped && <TileBadge warn>tall</TileBadge>}
                   {p.tile.clamped && <TileBadge warn>cropped</TileBadge>}
+                  {p.tile.a11y ? <TileBadge warn>{`a11y ${p.tile.a11y}`}</TileBadge> : null}
                 </div>
               )}
             </div>

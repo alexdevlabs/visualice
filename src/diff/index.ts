@@ -3,8 +3,10 @@ import { promises as fs } from "node:fs";
 import type { Manifest } from "../shared/types";
 import { loadManifest as readManifest } from "../crawl/manifest";
 import { pairShots, routeDelta, type ShotPair } from "./compare";
-import { compareImages, writeDiffImage } from "./pixels";
-import { renderDiffReport } from "./report";
+import { compareImages, writeDiffImage, writeDiffThumb, type Rect } from "./pixels";
+import { settingsFor } from "./rules";
+import type { DiffRule } from "../shared/config";
+import { renderDiffReport, renderDiffSummary } from "./report";
 import { mapPool } from "../shared/pool";
 import type { RunDiff, ShotDiff } from "./types";
 
@@ -21,6 +23,12 @@ export interface DiffOptions {
    * change. Default 0 — any difference at all.
    */
   minRatio?: number;
+  /** Leave anti-aliased pixels out of the count. */
+  antialiasing?: boolean;
+  /** Per-route overrides and ignore regions (`diff.rules`). */
+  rules?: DiffRule[];
+  /** `fromDir` is the approved baseline, not a run. */
+  fromBaseline?: boolean;
   concurrency?: number;
   log?: (msg: string) => void;
 }
@@ -69,6 +77,8 @@ function baseDiff(pair: ShotPair): Omit<ShotDiff, "status"> {
     device: pair.device,
     fromShot: pair.from?.full,
     toShot: pair.to?.full,
+    fromPreview: pair.from?.mid ?? pair.from?.thumb,
+    toPreview: pair.to?.mid ?? pair.to?.thumb,
   };
 }
 
@@ -85,8 +95,12 @@ function imageRelPath(pair: ShotPair): string {
 export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
   const log = opts.log ?? (() => {});
   const minRatio = opts.minRatio ?? 0;
+  const threshold = opts.threshold ?? 12;
+  const rules = opts.rules ?? [];
   const [from, to] = await Promise.all([loadManifest(opts.fromDir), loadManifest(opts.toDir)]);
   const pairs = pairShots(from, to);
+  // Ignore regions are authored in CSS px; a shot's pixels are that times its dpr.
+  const dprOf = new Map(to.devices.map((d) => [d.name, d.dpr]));
 
   const results: ShotDiff[] = new Array(pairs.length);
   const comparable = pairs.filter((p) => p.status === "both");
@@ -108,16 +122,31 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
     const base = baseDiff(pair);
     const rel = imageRelPath(pair);
     try {
+      const settings = settingsFor(rules, { threshold, minRatio }, pair);
+      const dpr = dprOf.get(pair.device) ?? 1;
+      const ignore: Rect[] = settings.ignore.map((r) => ({
+        x: r.x * dpr,
+        y: r.y * dpr,
+        width: r.width * dpr,
+        height: r.height * dpr,
+      }));
       const cmp = await compareImages(
         path.join(opts.fromDir, pair.from!.full!),
         path.join(opts.toDir, pair.to!.full!),
-        { threshold: opts.threshold, renderDiff: opts.outDir !== undefined },
+        {
+          threshold: settings.threshold,
+          renderDiff: opts.outDir !== undefined,
+          antialiasing: opts.antialiasing,
+          ignore,
+        },
       );
-      const changed = isChanged(cmp, minRatio);
+      const changed = isChanged(cmp, settings.minRatio);
       // An unchanged pair's diff image is a flat grey rectangle — only the changed
       // ones are worth a file (and a directory) on disk.
+      const thumbRel = rel.replace(/\.png$/, ".thumb.webp");
       if (changed && cmp.diff && opts.outDir) {
         await writeDiffImage(cmp.diff, path.join(opts.outDir, rel));
+        await writeDiffThumb(cmp.diff, path.join(opts.outDir, thumbRel));
       }
       results[i] = {
         ...base,
@@ -125,11 +154,15 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
         ratio: cmp.ratio,
         changedPixels: cmp.changedPixels,
         comparedPixels: cmp.comparedPixels,
+        antialiasedPixels: cmp.antialiasedPixels || undefined,
+        ignoredPixels: cmp.ignoredPixels || undefined,
+        minRatio: settings.minRatio !== minRatio ? settings.minRatio : undefined,
         sizeChanged: cmp.sizeChanged || undefined,
         sizeRatio: cmp.sizeChanged ? sizeRatio(cmp.from, cmp.to) : undefined,
         fromSize: cmp.from,
         toSize: cmp.to,
         image: opts.outDir && changed ? rel : undefined,
+        imageThumb: opts.outDir && changed ? thumbRel : undefined,
       };
       if (changed) log(`  ~ ${pair.route} / ${pair.state} [${pair.device}]`);
     } catch (e) {
@@ -147,7 +180,11 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
   for (const r of results) summary[r.status]++;
 
   const diff: RunDiff = {
-    from: { runId: from.site.runId, dir: opts.fromDir },
+    from: {
+      runId: from.site.runId,
+      dir: opts.fromDir,
+      ...(opts.fromBaseline ? { baseline: true } : {}),
+    },
     to: { runId: to.site.runId, dir: opts.toDir },
     minRatio,
     routes: routeDelta(from, to),
@@ -159,6 +196,7 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
   if (opts.outDir) {
     await fs.mkdir(opts.outDir, { recursive: true });
     await fs.writeFile(path.join(opts.outDir, "diff-report.md"), renderDiffReport(diff));
+    await fs.writeFile(path.join(opts.outDir, "diff-summary.md"), renderDiffSummary(diff));
     await fs.writeFile(
       path.join(opts.outDir, "diff.json"),
       JSON.stringify(diff, null, 2) + "\n",
@@ -171,4 +209,5 @@ export async function diffRuns(opts: DiffOptions): Promise<RunDiff> {
 export type { RunDiff, ShotDiff, ShotStatus } from "./types";
 export { pairShots, routeDelta } from "./compare";
 export { compareImages } from "./pixels";
-export { renderDiffReport } from "./report";
+export { renderDiffReport, renderDiffSummary } from "./report";
+export { settingsFor, ruleMatches } from "./rules";

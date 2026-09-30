@@ -47,6 +47,8 @@ function parseTile(raw: unknown, i: number): ViewerTile {
     width: typeof raw.width === "number" ? raw.width : undefined,
     height: typeof raw.height === "number" ? raw.height : undefined,
     clamped: raw.clamped === true || undefined,
+    meta: isString(raw.meta) ? raw.meta : undefined,
+    a11y: typeof raw.a11y === "number" ? raw.a11y : undefined,
     error: isString(raw.error) ? raw.error : undefined,
   };
 }
@@ -150,11 +152,15 @@ export async function fetchDiffList(url = "./diffs.json"): Promise<DiffRef[]> {
 export function parseRunDiff(raw: unknown): RunDiff {
   if (!isObject(raw)) throw new ViewerDataError("not a JSON object");
   if (!Array.isArray(raw.shots)) throw new ViewerDataError("missing a 'shots' array");
-  const side = (v: unknown, name: string): { runId: string; dir: string } => {
+  const side = (v: unknown, name: string): RunDiff["from"] => {
     if (!isObject(v) || !isString(v.runId)) {
       throw new ViewerDataError(`'${name}' must name a runId`);
     }
-    return { runId: v.runId, dir: isString(v.dir) ? v.dir : "" };
+    return {
+      runId: v.runId,
+      dir: isString(v.dir) ? v.dir : "",
+      ...(v.baseline === true ? { baseline: true } : {}),
+    };
   };
   const summary = isObject(raw.summary) ? raw.summary : {};
   const count = (key: string) => (typeof summary[key] === "number" ? (summary[key] as number) : 0);
@@ -192,8 +198,14 @@ export function parseRunDiff(raw: unknown): RunDiff {
           : undefined,
         toSize: isObject(s.toSize) ? (s.toSize as { width: number; height: number }) : undefined,
         image: isString(s.image) ? s.image : undefined,
+        imageThumb: isString(s.imageThumb) ? s.imageThumb : undefined,
+        antialiasedPixels:
+          typeof s.antialiasedPixels === "number" ? s.antialiasedPixels : undefined,
+        ignoredPixels: typeof s.ignoredPixels === "number" ? s.ignoredPixels : undefined,
         fromShot: isString(s.fromShot) ? s.fromShot : undefined,
         toShot: isString(s.toShot) ? s.toShot : undefined,
+        fromPreview: isString(s.fromPreview) ? s.fromPreview : undefined,
+        toPreview: isString(s.toPreview) ? s.toPreview : undefined,
         note: isString(s.note) ? s.note : undefined,
       };
     }),
@@ -217,4 +229,47 @@ export async function fetchRunDiff(id: string): Promise<RunDiff> {
 
 export async function fetchViewerData(url: string): Promise<ViewerData> {
   return parseViewerData(await fetchJson(url));
+}
+
+/** One accessibility rule a shot broke, as its sidecar records it. */
+export interface ShotViolation {
+  id: string;
+  impact?: string;
+  help: string;
+  helpUrl?: string;
+  count: number;
+  targets: string[];
+}
+
+/** The accessibility findings in a shot's sidecar; empty when it has none. */
+export function parseViolations(raw: unknown): ShotViolation[] {
+  if (!isObject(raw) || !Array.isArray(raw.accessibility)) return [];
+  return raw.accessibility.filter(isObject).flatMap((v) =>
+    isString(v.id) && isString(v.help)
+      ? [
+          {
+            id: v.id,
+            impact: isString(v.impact) ? v.impact : undefined,
+            help: v.help,
+            helpUrl: isString(v.helpUrl) && /^https?:/i.test(v.helpUrl) ? v.helpUrl : undefined,
+            count: typeof v.count === "number" ? v.count : 1,
+            targets: Array.isArray(v.targets) ? v.targets.filter(isString) : [],
+          },
+        ]
+      : [],
+  );
+}
+
+/**
+ * Where a comparison's pictures live, relative to the viewer: the "before" side is
+ * a run directory, or the approved baseline when the diff was taken against it.
+ */
+export function diffSources(diff: RunDiff, diffId: string) {
+  const from = diff.from.baseline ? "./baseline/" : `./runs/${diff.from.runId}/`;
+  const to = `./runs/${diff.to.runId}/`;
+  return {
+    from: (rel?: string) => (rel ? from + rel : undefined),
+    to: (rel?: string) => (rel ? to + rel : undefined),
+    diff: (rel?: string) => (rel ? `./diffs/${diffId}/${rel}` : undefined),
+  };
 }

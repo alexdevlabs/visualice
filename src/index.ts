@@ -66,6 +66,10 @@ export { applyContextInit, stabilizePage, waitForStableSelectors } from "./crawl
 
 export { serveViewer } from "./serve";
 export { listDiffs, listRuns } from "./crawl/runs";
+export { approveRun, baselineDir, hasBaseline, readBaselineInfo } from "./baseline";
+export type { ApproveOptions, ApproveResult, BaselineInfo } from "./baseline";
+export { exportRun } from "./export";
+export type { ExportOptions, ExportResult } from "./export";
 export { serveDirectory } from "./shared/static-server";
 export type { StaticServer } from "./shared/file-serve";
 export { parseRange } from "./shared/file-serve";

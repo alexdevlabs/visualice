@@ -41,7 +41,9 @@ export function renderDiffReport(diff: RunDiff): string {
   const lines: string[] = [];
   lines.push(`# Visual diff — \`${diff.from.runId}\` → \`${diff.to.runId}\``);
   lines.push("");
-  lines.push(`- **Baseline:** \`${diff.from.runId}\``);
+  lines.push(
+    `- **Baseline:** \`${diff.from.runId}\`${diff.from.baseline ? " (approved baseline)" : ""}`,
+  );
   lines.push(`- **New run:** \`${diff.to.runId}\``);
   lines.push(
     `- **Totals:** ${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged` +
@@ -109,5 +111,51 @@ export function renderDiffReport(diff: RunDiff): string {
     lines.push("");
   }
 
+  return lines.join("\n");
+}
+
+/**
+ * The report cut down to what fits in a pull-request comment or a CI step summary:
+ * the verdict, the totals and the loudest rows. No image links — those are relative
+ * to the diff directory and would be dead anywhere else.
+ */
+export function renderDiffSummary(diff: RunDiff, maxRows = 20): string {
+  const { summary } = diff;
+  const differences = summary.changed + summary.added + summary.removed;
+  const lines: string[] = [];
+  lines.push(
+    differences
+      ? `### Visual diff: ${differences} difference${differences === 1 ? "" : "s"}`
+      : `### Visual diff: no differences`,
+  );
+  lines.push("");
+  lines.push(
+    `${summary.changed} changed · ${summary.added} added · ${summary.removed} removed · ${summary.unchanged} unchanged` +
+      (summary.uncomparable ? ` · ${summary.uncomparable} uncomparable` : ""),
+  );
+  lines.push("");
+  lines.push(
+    `Compared \`${diff.to.runId}\` against ${diff.from.baseline ? "the approved baseline" : `\`${diff.from.runId}\``}.`,
+  );
+
+  const rows = diff.shots
+    .filter((s) => s.status !== "unchanged")
+    .sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0) || a.key.localeCompare(b.key));
+  if (rows.length) {
+    lines.push("");
+    lines.push(`| Path | State | Device | Result |`);
+    lines.push(`|---|---|---|---|`);
+    for (const s of rows.slice(0, maxRows)) {
+      const result = s.status === "changed" ? `${pct(s.ratio ?? 0)} changed` : s.status;
+      lines.push(`| \`${s.routeUrl ?? s.route}\` | ${s.state} | ${s.device} | ${result} |`);
+    }
+    if (rows.length > maxRows) {
+      lines.push("");
+      lines.push(
+        `…and ${rows.length - maxRows} more — see the full report in the run's artifacts.`,
+      );
+    }
+  }
+  lines.push("");
   return lines.join("\n");
 }

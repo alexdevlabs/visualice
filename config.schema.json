@@ -262,7 +262,8 @@
           "colorScheme": "light",
           "reducedMotion": "reduce",
           "locale": "en-US",
-          "timezoneId": "UTC"
+          "timezoneId": "UTC",
+          "browser": "chromium"
         },
         {
           "name": "mobile",
@@ -274,7 +275,8 @@
           "colorScheme": "light",
           "reducedMotion": "reduce",
           "locale": "en-US",
-          "timezoneId": "UTC"
+          "timezoneId": "UTC",
+          "browser": "chromium"
         }
       ],
       "description": "Device profiles; every route × state is captured once per device.",
@@ -346,6 +348,16 @@
             "default": "UTC",
             "description": "IANA timezone — pinned so rendered dates are machine-independent.",
             "type": "string"
+          },
+          "browser": {
+            "default": "chromium",
+            "description": "Engine this device is captured with. Discovery always runs in Chromium; add a second device with `firefox` or `webkit` for a cross-browser catalog (install the engine with `npx playwright install <name>`).",
+            "type": "string",
+            "enum": [
+              "chromium",
+              "firefox",
+              "webkit"
+            ]
           }
         },
         "required": [
@@ -689,6 +701,177 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
+        }
+      }
+    },
+    "diff": {
+      "default": {
+        "threshold": 12,
+        "minRatio": 0,
+        "antialiasing": false,
+        "rules": []
+      },
+      "type": "object",
+      "properties": {
+        "threshold": {
+          "default": 12,
+          "description": "Per-channel delta (0–255) that still counts as the same pixel.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "minRatio": {
+          "default": 0,
+          "description": "Fraction of pixels (or of page area, when the height changed) that must differ before a shot counts as changed.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "antialiasing": {
+          "default": false,
+          "description": "Leave anti-aliased pixels out of the count: a differing pixel on a glyph or shape edge that is only a different blend of its neighbours. Quietens sub-pixel text rendering differences between machines.",
+          "type": "boolean"
+        },
+        "rules": {
+          "default": [],
+          "description": "Per-route overrides and ignore regions. Every matching rule applies; later ones win.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "route": {
+                "default": "/**",
+                "description": "Path glob the rule applies to (same syntax as `scope.include`).",
+                "type": "string"
+              },
+              "state": {
+                "description": "Limit the rule to this state id (`*` wildcards allowed).",
+                "type": "string"
+              },
+              "device": {
+                "description": "Limit the rule to this device name.",
+                "type": "string"
+              },
+              "threshold": {
+                "description": "Per-channel tolerance for the shots this rule matches.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "minRatio": {
+                "description": "Noise floor for the shots this rule matches.",
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "ignore": {
+                "default": [],
+                "description": "Regions left out of the comparison — draw one in the viewer's Compare view and paste it here. No re-crawl needed, unlike `stabilize.maskSelectors`.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Left edge, in CSS px from the page's left."
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Top edge, in CSS px from the top of the page."
+                    },
+                    "width": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Width in CSS px."
+                    },
+                    "height": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Height in CSS px."
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "baseline": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "dir": {
+          "description": "Where `visualice approve` keeps the approved shots (default `<output.dir>/baseline`). Point it outside the gitignored output directory to commit the baseline or cache it in CI.",
+          "type": "string"
+        }
+      }
+    },
+    "components": {
+      "default": [],
+      "description": "Elements captured on their own, in addition to the page they sit on.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Label for the component; also its state id (`component-<name>`)."
+          },
+          "selector": {
+            "type": "string",
+            "description": "Selector of the element to screenshot on its own."
+          },
+          "routes": {
+            "default": [
+              "/**"
+            ],
+            "description": "Path globs of the routes to look for it on; a route without it is skipped.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "selector"
+        ]
+      }
+    },
+    "checks": {
+      "default": {
+        "accessibility": false,
+        "accessibilityTags": [
+          "wcag2a",
+          "wcag2aa"
+        ]
+      },
+      "type": "object",
+      "properties": {
+        "accessibility": {
+          "default": false,
+          "description": "Run axe-core against every captured state and record the violations beside the shot.",
+          "type": "boolean"
+        },
+        "accessibilityTags": {
+          "default": [
+            "wcag2a",
+            "wcag2aa"
+          ],
+          "description": "axe rule tags to run.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

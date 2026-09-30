@@ -128,6 +128,17 @@ pixel is magenta.
 - `--json` gives `{changed, added, removed, unchanged, uncomparable, changedShots}`
   on stdout. Report the changed shots; don't paste the whole report.
 - `--fail-on-error` exits 3 when anything changed, for CI.
+- Once the user is happy with a run, `visualice approve` makes it the **baseline**;
+  from then on `diff` compares against that rather than the previous run
+  (`--from=previous` for the old behaviour). An intended change is approved the same
+  way — `--routes=<globs>` approves part of the site. Never approve on the user's
+  behalf without being asked: it is them accepting what the pages look like.
+- A difference that isn't a regression (a clock, an ad, a carousel) is silenced with an
+  ignore region in `diff.rules` — the viewer's Compare view draws one and hands back
+  the JSON — or `--ignore-antialiasing` for sub-pixel text noise. Neither needs a
+  re-crawl.
+- `visualice export <dir>` writes the viewer, the run and its comparisons as a static
+  folder, for sharing without a server.
 - Added/removed states are reported as such rather than diffed, and a shot that
   failed in either run is "uncomparable" with the reason — read those before
   concluding a page changed.
@@ -137,6 +148,12 @@ pixel is magenta.
   switch the viewer from Explore to Compare: changed shots are listed biggest change
   first, each reviewable as swipe, side by side, overlay or diff. The URL carries the
   comparison, so the link lands on it.
+
+Beyond page screenshots, the config can ask for more from the same crawl:
+`devices[].browser` (`firefox` / `webkit`) for cross-browser shots, `components`
+(`{ name, selector, routes }`) for element-level shots, and `checks.accessibility: true`
+for an axe-core audit of every state — reported in `crawl-report.md`, `--json`
+(`accessibility`) and the viewer.
 
 Full flag reference: [`references/cli.md`](references/cli.md).
 

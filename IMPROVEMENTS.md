@@ -1,10 +1,10 @@
 # Visualice — Roadmap
 
-> Updated 2026-09-21; test counts and viewer wording refreshed 2026-09-30. The 2026-07-28 code review's ~43 findings, the **project-file
-> UX** (PLAN.md §9, shipped 2026-08-05) and the 2026-09-21 roadmap pass are all done.
-> This second pass closed the 11 items that pass left open, so **the roadmap is
-> currently empty** — what's below is the record of what was built and what it cost,
-> plus the handful of limitations worth knowing before the next one.
+> Updated 2026-09-30. The 2026-07-28 code review's ~43 findings, the **project-file
+> UX** (PLAN.md §9, shipped 2026-08-05), the two 2026-09-21 roadmap passes and the
+> 2026-09-30 product-gap pass are all done. What's open: a first npm release, and the
+> Windows CI leg's first real run. Below is the record of what was built and what it
+> cost, plus the limitations worth knowing before the next pass.
 >
 > `PLAN.md` holds the design rationale (architecture, pipeline, viewer design);
 > §10 there covers the distribution and diffing decisions.
@@ -17,8 +17,8 @@ The first pass landed in `113e2b2` "Implemented improvements part 1" (87 files) 
 
 **Verification as of the last run — everything is green:**
 
-- `npm run check` (typecheck · lint · format · unit): **452 unit tests**, 38 files.
-- `npm run test:integration`: **51 tests**, 12 files.
+- `npm run check` (typecheck · lint · format · unit): **483 unit tests**, 42 files.
+- `npm run test:integration`: **61 tests**, 15 files.
 - `npm run demo:crawl`: 10 routes, **72 shots**, 0 failures, ~31s,
   `page reuse: 20 of 72 shot(s) needed no reload`.
 - `visualice diff` across the pre-change baseline and the post-change crawl of the
@@ -162,16 +162,75 @@ few of the names changed:
 - Light and dark themes (light by default), a boot loader, and a phone layout.
 - Viewer and fixture styles moved to Tailwind v4.
 
+## ✅ Shipped in the third pass (2026-09-30)
+
+The gaps a product review found once the roadmap was empty — none of them had ever
+been on it.
+
+- [x] **An approved baseline.** `visualice approve` copies a run (or, with `--routes`,
+      part of one) to `<output.dir>/baseline` — outside `runs/`, so pruning can't take
+      it — and `visualice diff` compares against it by default once it exists. Run-vs-run
+      diffing couldn't gate CI: after an intended change every run differs from its
+      predecessor in exactly the way it should. `baseline.dir` moves it somewhere
+      committable. A partial approval removes only the approved routes' own state
+      folders, because a route's folder also holds the folders of routes nested under
+      its path.
+- [x] **Diff noise control without a re-crawl.** `diff.rules` scopes a `threshold`, a
+      `minRatio` and `ignore` regions by route glob, state and device; the viewer's
+      Compare view draws a region and hands back the rule. `diff.antialiasing` /
+      `--ignore-antialiasing` leaves out edge pixels that are only a different blend of
+      their neighbours. Ignored pixels are out of the denominator too, and tinted in the
+      diff image so it stays visible what wasn't compared.
+- [x] **Diff previews.** `diff` writes a thumbnail beside each diff image and records
+      each shot's mid-resolution preview, and the Compare view paints those behind the
+      full images while they load.
+- [x] **`visualice export <dir>`.** The viewer, a run and the comparisons made against
+      it as a static folder — the layout `serve` presents over HTTP, written to disk,
+      with only the before/after shots the comparisons show. Closes "comparisons need
+      `serve`".
+- [x] **A CI recipe.** `examples/github-actions/visualice.yml`, plus `diff-summary.md`:
+      the report cut down to what fits a PR comment, with no image links that would be
+      dead outside the diff directory.
+- [x] **The scroll-closes-the-menu bug.** Stabilization's lazy-load scroll closed
+      Floating-UI popovers, Bootstrap dropdowns and hover menus before the screenshot.
+      When what a recipe opened doesn't survive stabilization, the shot is retaken in
+      the other order: scroll first on a fresh load, then open the state, then settle
+      without scrolling. Every other shot is taken exactly as before.
+- [x] **Viewer tests.** `tests/integration/viewer.test.ts` builds the viewer from source
+      and drives it in a browser: boot, filters and URL state, theme and minimap
+      persistence, the inspector, every Compare mode against a run and against the
+      baseline, region marking, the phone layout, and a static export served by a plain
+      file server.
+- [x] **Other engines.** `devices[].browser: "firefox" | "webkit"` captures that device
+      in another engine, launched on first use. Verified by hand on the fixture (the CI
+      matrix installs Chromium only).
+- [x] **Component shots.** `components: [{ name, selector, routes }]` adds an
+      element-level state to every matching route; a route without the element is
+      skipped, not failed. A state in the model can carry `element` too.
+- [x] **Accessibility checks.** `checks.accessibility` runs axe-core against every state
+      while it is on screen — inside opened modals and menus included — and reports per
+      shot (sidecar, viewer inspector, tile badge) and per run (report section, `--json`).
+- [x] **Image download** from the viewer's inspector.
+
+Also fixed on the way: the Compare list's status colours pointed at theme tokens that
+no longer existed after the Tailwind migration, so "added / removed" rendered in the
+default text colour.
+
 ## Known limitations
 
 Not roadmap items — things worth knowing before someone reports them as bugs.
 
-- **The Compare view loads full-size images.** `visualice diff` writes no thumbnails, so
-  the before/after/diff images have only a `full` source. Fine for a handful of changed
-  shots; stepping through hundreds of them will be slow.
-- **Comparisons need `visualice serve`, not a bare run directory.** A diff's three
-  images live in two run directories and the diff directory; a viewer served from one
-  run has no path to the other two, so the viewer's Compare switch stays disabled.
+- **Approving is a CLI action.** The viewer reviews a comparison but can't accept it:
+  `serve` is read-only on purpose, so the button would need a write endpoint it doesn't
+  have. Review in the viewer, then `visualice approve`.
+- **No annotations in the viewer.** Shots can be downloaded and linked to, not drawn on
+  or commented on.
+- **Ignore regions are rectangles in page coordinates.** They don't follow an element
+  that moves when the content above it changes height; for that, mask it at capture
+  time with `stabilize.maskSelectors`.
+- **Discovery runs in Chromium only.** A Firefox or WebKit device replays the recipes
+  Chromium recorded; a state that only exists in another engine isn't found. Firefox
+  has no mobile emulation, so a `mobile: true` Firefox device is a narrow desktop one.
 - **`scope.hashRoutes: "always"` will fork on anchors.** It exists for routers that
   drop the slash (`#about`); on a documentation site it turns every heading link into a
   route. `auto` is the default for that reason.
@@ -184,7 +243,6 @@ Not roadmap items — things worth knowing before someone reports them as bugs.
   spot still collide, and a region whose text changes between probes (a live timer)
   stops deduping against itself. Named regions (`id`, `aria-label`, `aria-labelledby`)
   are unaffected, which is most of them.
-- **Stabilization can close what a recipe opened.** The lazy-load scroll runs after the
-  recipe, so a menu that closes on scroll is photographed closed. Page reuse now detects
-  this and reloads rather than building on it (`REVIEW.md` finding 11), but the shot of
-  the menu state itself is still taken after the scroll.
+- **A state that closes on scroll is shot without a post-open lazy-load pass.** The
+  page is scrolled before the state is opened instead, so content that only starts
+  loading once the state is open _and_ the page is scrolled isn't woken.

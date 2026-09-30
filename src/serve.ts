@@ -10,6 +10,7 @@ import { isRunComplete, listDiffs, listRuns } from "./crawl/runs";
  * - `/runs.json`     the run list, so the viewer can offer a switcher
  * - `/diffs/<id>/…`  a comparison written by `visualice diff`
  * - `/diffs.json`    the diff list, so the viewer can offer to show one
+ * - `/baseline/…`    the approved baseline, the "before" of a baseline comparison
  *
  * Exposing the sibling runs is what lets the viewer change runs without restarting
  * the server, and exposing the diffs beside them is what lets it show a comparison
@@ -24,6 +25,8 @@ export async function serveViewer(opts: {
   outRoot?: string;
   /** Run id shown as current in `/runs.json`. */
   runId?: string;
+  /** The approved baseline, served at `/baseline/…` for comparisons made against it. */
+  baselineDir?: string;
   port?: number;
 }): Promise<StaticServer> {
   const runDir = path.resolve(opts.runDir);
@@ -63,6 +66,15 @@ export async function serveViewer(opts: {
       if (diffsDir && pathname.startsWith("/diffs/")) {
         const rel = pathname.slice("/diffs/".length);
         if (rel && (await serveFileFromRoot(res, diffsDir, rel, req))) return;
+        res.statusCode = 404;
+        res.end("not found");
+        return;
+      }
+
+      if (opts.baselineDir && pathname.startsWith("/baseline/")) {
+        // Never immutable: `approve` rewrites these files in place.
+        const rel = pathname.slice("/baseline/".length);
+        if (rel && (await serveFileFromRoot(res, path.resolve(opts.baselineDir), rel, req))) return;
         res.statusCode = 404;
         res.end("not found");
         return;

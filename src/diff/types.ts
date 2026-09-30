@@ -27,8 +27,16 @@ export interface ShotDiff {
   sizeRatio?: number;
   fromSize?: { width: number; height: number };
   toSize?: { width: number; height: number };
+  /** Differing pixels not counted because they were anti-aliasing. */
+  antialiasedPixels?: number;
+  /** Pixels inside an ignore region (`diff.rules[].ignore`). */
+  ignoredPixels?: number;
+  /** The noise floor this shot was held to, when a rule set one other than the run's. */
+  minRatio?: number;
   /** Diff image, relative to the diff directory. */
   image?: string;
+  /** A small version of `image`, so a long list of changes paints before the full ones load. */
+  imageThumb?: string;
   /**
    * The two shots themselves, each relative to its own run directory.
    *
@@ -38,11 +46,15 @@ export interface ShotDiff {
    */
   fromShot?: string;
   toShot?: string;
+  /** Each shot's lower-resolution previews, where the run wrote them. */
+  fromPreview?: string;
+  toPreview?: string;
   note?: string;
 }
 
 export interface RunDiff {
-  from: { runId: string; dir: string };
+  /** `baseline` when this side is the approved baseline rather than a run directory. */
+  from: { runId: string; dir: string; baseline?: boolean };
   to: { runId: string; dir: string };
   /** Ratio above which a pair counts as changed — of pixels, or of area gained or lost. */
   minRatio: number;

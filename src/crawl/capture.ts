@@ -1,5 +1,5 @@
-import { chromium } from "playwright";
-import type { Browser, Page } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
+import type { Browser, BrowserType, Page } from "playwright";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Config } from "../shared/config";
@@ -22,6 +22,7 @@ import { createProgress } from "../shared/progress";
 import { pathExists } from "../shared/fsx";
 import { mapPoolWithResource, sleep } from "../shared/pool";
 import { countStates } from "./manifest";
+import { checkAccessibility, rollupViolations, type AccessibilityViolation } from "./accessibility";
 
 export interface CaptureOptions {
   config: Config;
@@ -158,9 +159,12 @@ export function reusePlan(
   shown: PageState,
   url: string,
   recipe: RecipeStep[],
+  /** Also reuse a page showing exactly `recipe` — nothing left to run. */
+  allowSame = false,
 ): RecipeStep[] | null {
   if (shown.url !== url || !shown.recipe) return null;
-  if (shown.recipe.length >= recipe.length) return null;
+  if (shown.recipe.length > recipe.length) return null;
+  if (shown.recipe.length === recipe.length && !allowSame) return null;
   for (let i = 0; i < shown.recipe.length; i++) {
     if (JSON.stringify(shown.recipe[i]) !== JSON.stringify(recipe[i])) return null;
   }
@@ -262,7 +266,9 @@ async function adoptExistingShot(
 
 /** A captured shot, plus whether taking it managed to skip the route's reload. */
 interface Captured {
-  ref: ShotRef;
+  /** Absent when the state's `element` isn't on this route: nothing to capture. */
+  ref?: ShotRef;
+  violations?: AccessibilityViolation[];
   reusedNavigation: boolean;
   /** Reuse was planned, but the page had moved on since the previous shot. */
   reuseDeclined: boolean;
@@ -276,7 +282,9 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // stored absolute finalUrl — that keeps a cached site model portable across runs/hosts.
   const url = resolveUrl(baseUrl, route.url);
   const reuse = config.politeness.reuseNavigation;
-  let remaining = reuse ? reusePlan(shown, url, state.recipe) : null;
+  // A component is photographed out of a page that is already showing what it
+  // needs, so an identical recipe is reusable for it where a page state's isn't.
+  let remaining = reuse ? reusePlan(shown, url, state.recipe, state.element !== undefined) : null;
   const declined = remaining !== null && !(await stillShowing(page, shown));
   if (declined) remaining = null;
 
@@ -285,32 +293,62 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // behind for the next state to trust.
   forget(shown);
 
-  if (remaining === null) {
+  // A reused page keeps the pointer wherever the previous state left it, and the
+  // browser re-applies `:hover` at that position to the newly loaded document — a
+  // phantom hover painted into an unrelated screenshot. Park it off-viewport before
+  // the recipe runs; a recipe that *wants* a hover state moves the pointer itself.
+  // Only after a navigation: when the page is kept, the pointer is part of the
+  // state being extended, and parking it would close a hover-opened menu.
+  const load = async () => {
     const resp = await gotoRoute(page, url, config.stabilize.waitStrategy);
     if (resp && route.status === undefined) route.status = resp.status();
     if (!route.finalUrl) route.finalUrl = page.url();
     if (!route.title) route.title = await page.title().catch(() => undefined);
-
-    // A reused page keeps the pointer wherever the previous state left it, and the
-    // browser re-applies `:hover` at that position to the newly loaded document — a
-    // phantom hover painted into an unrelated screenshot. Park it off-viewport before
-    // the recipe runs; a recipe that *wants* a hover state moves the pointer itself.
-    // Only after a navigation: when the page is kept, the pointer is part of the
-    // state being extended, and parking it would close a hover-opened menu.
     await page.mouse.move(-1, -1).catch(() => {});
-  }
+  };
+
+  if (remaining === null) await load();
 
   await applyRecipe(page, remaining ?? state.recipe);
   // What the recipe left, read before stabilization has a chance to change it: the
-  // baseline `stillShowing` holds the next state's reuse to.
-  const left = reuse ? await takeSnapshot(page).catch(() => undefined) : undefined;
+  // baseline `stillShowing` holds this shot, and the next state's reuse, to.
+  const opens = state.recipe.length > 0;
+  let left = reuse || opens ? await takeSnapshot(page).catch(() => undefined) : undefined;
   // A recipe that scrolls wants the shot taken from where it scrolled to; without
   // this, stabilization's lazy-load pass would put the page back at the top.
   const keepScroll = state.recipe.some((s) => s.action === "scroll");
   await stabilizePage(page, config.stabilize, ctx.log, { keepScroll });
+
+  // Stabilizing scrolls the page to wake lazy content, and a scroll is exactly what
+  // closes a Floating-UI popover, a Bootstrap dropdown or a hover menu — the shot
+  // would then show the state closed. When what the recipe opened didn't survive,
+  // take it again in the other order: scroll first on a fresh load, open the state
+  // on the already-woken page, and leave the scroll out of the final settle.
+  let reopened = false;
+  if (
+    opens &&
+    config.stabilize.lazyScroll &&
+    left &&
+    !(await stillShowing(page, { recipe: state.recipe, sig: left.sig }))
+  ) {
+    await load();
+    await stabilizePage(page, config.stabilize);
+    await applyRecipe(page, state.recipe);
+    left = await takeSnapshot(page).catch(() => undefined);
+    await stabilizePage(page, { ...config.stabilize, lazyScroll: false }, ctx.log, { keepScroll });
+    reopened = true;
+    ctx.log?.(
+      `  ↺ ${pathSlug(route.url)} / ${state.id}: closed by the lazy-load scroll — reopened after it`,
+    );
+  }
   shown.url = url;
   shown.recipe = state.recipe;
-  shown.sig = left?.sig;
+  shown.sig = reuse ? left?.sig : undefined;
+
+  const element = state.element ? page.locator(state.element).first() : undefined;
+  if (element && (await element.count()) === 0) {
+    return { reusedNavigation: remaining !== null && !reopened, reuseDeclined: declined };
+  }
 
   const dir = stateDir(shotsDir, route, state);
   await fs.mkdir(dir, { recursive: true });
@@ -325,19 +363,26 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   const midPath = path.join(dir, `${device.name}.mid.${thumbExt}`);
   const metaPath = path.join(dir, `${device.name}.json`);
 
-  const clip = config.screenshot.fullPage
-    ? await fullPageClip(page, config.screenshot.maxHeight)
-    : undefined;
+  const clip =
+    !element && config.screenshot.fullPage
+      ? await fullPageClip(page, config.screenshot.maxHeight)
+      : undefined;
 
-  const buf = await page.screenshot({
-    // `clip` alone is bounded by the viewport; it only reaches further down the
-    // page when fullPage is set too.
-    fullPage: config.screenshot.fullPage,
-    clip,
-    mask: mask.length ? mask : undefined,
-    type: shotType,
-    quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
-  });
+  const buf = element
+    ? await element.screenshot({
+        mask: mask.length ? mask : undefined,
+        type: shotType,
+        quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
+      })
+    : await page.screenshot({
+        // `clip` alone is bounded by the viewport; it only reaches further down the
+        // page when fullPage is set too.
+        fullPage: config.screenshot.fullPage,
+        clip,
+        mask: mask.length ? mask : undefined,
+        type: shotType,
+        quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
+      });
 
   await writeFull(buf, fullPath, ext, config.screenshot.quality);
   await makeThumb(buf, thumbPath, config.screenshot.thumbnail);
@@ -359,7 +404,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
     ...(clip ? { clamped: true } : {}),
   };
 
-  if (config.screenshot.alsoViewport) {
+  if (config.screenshot.alsoViewport && !element) {
     const viewportPath = path.join(dir, `${device.name}.viewport.${ext}`);
     // Crop the viewport out of the full buffer instead of taking a second screenshot.
     if (config.screenshot.fullPage && dims.width && dims.height) {
@@ -369,6 +414,19 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
       await writeFull(buf, viewportPath, ext, config.screenshot.quality); // full already == viewport
     }
     ref.viewport = rel(viewportPath);
+  }
+
+  // After the screenshot, so nothing axe does to the page can reach the picture.
+  let violations: AccessibilityViolation[] | undefined;
+  if (config.checks.accessibility) {
+    try {
+      violations = await checkAccessibility(page, config.checks.accessibilityTags, state.element);
+      ref.a11y = violations.length;
+    } catch (e) {
+      ctx.log?.(
+        `  ⚠ accessibility check failed on ${pathSlug(route.url)} / ${state.id}: ${(e as Error).message.split("\n")[0]}`,
+      );
+    }
   }
 
   const sidecar = {
@@ -381,11 +439,17 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
     url: page.url(),
     viewport: { width: device.width, height: device.height, dpr: device.dpr },
     shot: ref,
+    ...(violations ? { accessibility: violations } : {}),
     capturedAt: new Date().toISOString(),
   };
   await fs.writeFile(metaPath, JSON.stringify(sidecar, null, 2));
 
-  return { ref, reusedNavigation: remaining !== null, reuseDeclined: declined };
+  return {
+    ref,
+    violations,
+    reusedNavigation: remaining !== null && !reopened,
+    reuseDeclined: declined,
+  };
 }
 
 /**
@@ -418,6 +482,20 @@ async function validateSelectors(
   }
 }
 
+/**
+ * Playwright's "browser isn't downloaded" error is a screenful about its own CLI;
+ * what the person needs is the one command, named for the engine their config asked
+ * for. Anything else (a crashed launch, a sandbox problem) passes through untouched.
+ */
+export function launchError(engine: string, error: Error): Error {
+  if (/Executable doesn't exist|playwright install/i.test(error.message)) {
+    return new Error(
+      `the ${engine} browser isn't installed — run 'npx playwright install ${engine}'`,
+    );
+  }
+  return error;
+}
+
 export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
   const { config, manifest, baseUrl, runDir } = opts;
   const log = opts.log ?? (() => {});
@@ -425,13 +503,27 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
   const shotsDir = path.join(runDir, "screenshots");
   await fs.mkdir(shotsDir, { recursive: true });
 
-  const browser = await chromium.launch();
+  const engines: Record<string, BrowserType> = { chromium, firefox, webkit };
+  const launched = new Map<string, Browser>();
+  /** One browser per engine, started the first time a device asks for it. */
+  const browserFor = async (name: string): Promise<Browser> => {
+    const running = launched.get(name);
+    if (running) return running;
+    try {
+      const browser = await engines[name].launch();
+      launched.set(name, browser);
+      return browser;
+    } catch (e) {
+      throw launchError(name, e as Error);
+    }
+  };
+  const perShotViolations: AccessibilityViolation[][] = [];
   let shotCount = 0;
   let resumed = 0;
   const failures: CaptureFailure[] = [];
 
   try {
-    await validateSelectors(browser, [
+    await validateSelectors(await browserFor(config.devices[0]?.browser ?? "chromium"), [
       ...config.stabilize.maskSelectors.map((value) => ({ value, source: "maskSelectors" })),
       ...config.stabilize.waitForSelectors.map((value) => ({ value, source: "waitForSelectors" })),
     ]);
@@ -462,12 +554,17 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
     let declinedReuses = 0;
 
     for (const { device, groups } of plan) {
-      log(`▸ ${device.name} (${device.width}×${device.height} @${device.dpr})`);
+      const engine = device.browser ?? "chromium";
+      log(
+        `▸ ${device.name} (${device.width}×${device.height} @${device.dpr}${engine === "chromium" ? "" : `, ${engine}`})`,
+      );
+      const browser = await browserFor(engine);
       const context = await browser.newContext({
         ...httpContextOptions(config),
         viewport: { width: device.width, height: device.height },
         deviceScaleFactor: device.dpr,
-        isMobile: device.mobile ?? false,
+        // Firefox has no mobile emulation and rejects the option outright.
+        ...(engine === "firefox" ? {} : { isMobile: device.mobile ?? false }),
         hasTouch: device.touch ?? device.mobile ?? false,
         userAgent: device.userAgent,
         colorScheme: device.colorScheme ?? "light",
@@ -507,13 +604,19 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
             }
             for (let attempt = 0; ; attempt++) {
               try {
-                const { ref, reusedNavigation, reuseDeclined } = await captureState(
+                const { ref, violations, reusedNavigation, reuseDeclined } = await captureState(
                   current,
                   { route, state, device, baseUrl, shotsDir, runDir, config, log },
                   shown,
                 );
+                if (!ref) {
+                  // The component isn't on this route: not a shot, and not a failure.
+                  progress.tick();
+                  break;
+                }
                 if (reusedNavigation) reusedNavigations++;
                 if (reuseDeclined) declinedReuses++;
+                if (violations) perShotViolations.push(violations);
                 state.shots[device.name] = ref;
                 shotCount++;
                 progress.tick();
@@ -555,7 +658,15 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
       log(`page reuse: ${reusedNavigations} of ${shotCount} shot(s) needed no reload${declined}`);
     }
   } finally {
-    await browser.close();
+    await Promise.all([...launched.values()].map((b) => b.close().catch(() => {})));
+  }
+
+  // A component that no device found on a route was never there: drop the state
+  // rather than leave an empty row in the manifest, the viewer and the report.
+  for (const route of manifest.routes) {
+    route.states = route.states.filter(
+      (s) => s.element === undefined || Object.keys(s.shots).length > 0,
+    );
   }
 
   manifest.stats = {
@@ -565,6 +676,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
     failed: failures.length,
     durationMs: Date.now() - started,
     failures,
+    ...(config.checks.accessibility ? { accessibility: rollupViolations(perShotViolations) } : {}),
   };
 
   return { manifest, shots: shotCount, failures, durationMs: manifest.stats.durationMs };

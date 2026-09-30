@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ViewerDataError, parseRunDiff, parseViewerData, resolveDataUrl } from "../viewer/src/load";
+import {
+  ViewerDataError,
+  diffSources,
+  parseRunDiff,
+  parseViewerData,
+  parseViolations,
+  resolveDataUrl,
+} from "../viewer/src/load";
+import { ignoreRule } from "../viewer/src/diff-layout";
 
 const tile = (over: Record<string, unknown> = {}) => ({
   id: "home__default__desktop",
@@ -163,5 +171,106 @@ describe("parseRunDiff", () => {
       shots: [{ key: "k", route: "home", state: "modal", device: "desktop", status: "changed" }],
     });
     expect(d.shots[0].stateLabel).toBe("modal");
+  });
+});
+
+describe("comparison sources", () => {
+  const diff = (baseline: boolean) =>
+    parseRunDiff({
+      from: { runId: "r1", ...(baseline ? { baseline: true } : {}) },
+      to: { runId: "r2" },
+      shots: [],
+    });
+
+  it("reads the before side from the run, or from the baseline when that was compared", () => {
+    const run = diffSources(diff(false), "r1__r2");
+    expect(run.from("a.png")).toBe("./runs/r1/a.png");
+    expect(run.to("a.png")).toBe("./runs/r2/a.png");
+    expect(run.diff("images/a.png")).toBe("./diffs/r1__r2/images/a.png");
+    expect(run.from(undefined)).toBeUndefined();
+
+    expect(diffSources(diff(true), "baseline__r2").from("a.png")).toBe("./baseline/a.png");
+  });
+
+  it("keeps the preview paths a diff records", () => {
+    const parsed = parseRunDiff({
+      from: { runId: "r1" },
+      to: { runId: "r2" },
+      shots: [
+        {
+          key: "k",
+          route: "home",
+          state: "default",
+          device: "desktop",
+          status: "changed",
+          fromPreview: "a.mid.webp",
+          toPreview: "b.mid.webp",
+          imageThumb: "images/x.thumb.webp",
+          ignoredPixels: 40,
+        },
+      ],
+    });
+    expect(parsed.shots[0]).toMatchObject({
+      fromPreview: "a.mid.webp",
+      toPreview: "b.mid.webp",
+      imageThumb: "images/x.thumb.webp",
+      ignoredPixels: 40,
+    });
+  });
+});
+
+describe("ignoreRule", () => {
+  const shot = {
+    key: "k",
+    route: "blog/post",
+    routeUrl: "/blog/post?ref=1",
+    state: "modal-search",
+    stateLabel: "Search",
+    device: "mobile",
+    status: "changed" as const,
+  };
+
+  it("turns a dragged box into CSS px for that one shot", () => {
+    // A quarter-width, tenth-height box on a 1170×6000 px shot taken at dpr 3.
+    const rule = JSON.parse(
+      ignoreRule(shot, { x: 0.5, y: 0.1, w: 0.25, h: 0.1 }, { width: 1170, height: 6000 }, 3),
+    );
+    expect(rule).toEqual({
+      route: "/blog/post",
+      state: "modal-search",
+      device: "mobile",
+      ignore: [{ x: 195, y: 200, width: 98, height: 200 }],
+    });
+  });
+
+  it("never emits an empty region", () => {
+    const rule = JSON.parse(
+      ignoreRule(shot, { x: 0, y: 0, w: 0.0001, h: 0.0001 }, { width: 100, height: 100 }, 1),
+    );
+    expect(rule.ignore[0]).toMatchObject({ width: 1, height: 1 });
+  });
+});
+
+describe("parseViolations", () => {
+  it("reads a sidecar's findings and drops what it can't trust", () => {
+    const out = parseViolations({
+      accessibility: [
+        {
+          id: "image-alt",
+          impact: "critical",
+          help: "Images need alt text",
+          count: 2,
+          targets: ["img"],
+        },
+        { id: "x", help: "bad link", helpUrl: "javascript:alert(1)" },
+        { help: "no id" },
+        "nonsense",
+      ],
+    });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ id: "image-alt", count: 2, targets: ["img"] });
+    expect(out[1].helpUrl).toBeUndefined();
+    expect(parseViolations({})).toEqual([]);
+    expect(parseViolations(null)).toEqual([]);
   });
 });

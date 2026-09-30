@@ -572,7 +572,9 @@ of them is visible on the fixture.
   photographed closed — whichever path produced the page. Finding 11 made reuse agree with
   the fresh path; it did not make the fresh path right. The fix is to scroll for lazy
   content _before_ the recipe's last interaction, which changes every shot and deserves
-  its own diff check. **Not done.**
+  its own diff check. **Done 2026-09-30**, more narrowly than that: only a shot whose
+  open state didn't survive stabilization is retaken scroll-first, so every other shot
+  is produced exactly as before (`src/crawl/capture.ts`, `captureState`).
 - The fix text for finding 6 was wrong, as noted there.
 
 ## Verification

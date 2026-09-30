@@ -12,6 +12,8 @@ export interface Device {
   reducedMotion?: "reduce" | "no-preference";
   locale?: string;
   timezoneId?: string;
+  /** Engine this device is captured with (default chromium). */
+  browser?: "chromium" | "firefox" | "webkit";
 }
 
 /** A robust way to point at an element. Resolved in priority order (see selectors.ts). */
@@ -57,6 +59,7 @@ export type StateKind =
   | "hover"
   | "focus"
   | "validation"
+  | "component"
   | "other";
 
 export interface ShotRef {
@@ -69,6 +72,8 @@ export interface ShotRef {
   height?: number;
   /** The page exceeded `screenshot.maxHeight` and was cropped to it. */
   clamped?: boolean;
+  /** Accessibility rules this state broke, when `checks.accessibility` is on. */
+  a11y?: number;
   error?: string; // capture was attempted but failed (after retries); no image written
 }
 
@@ -106,6 +111,11 @@ export interface StateNode {
    * on mobile viewports). Absent = capture on every configured device.
    */
   devices?: string[];
+  /**
+   * Screenshot only this element instead of the page — a component captured on its
+   * own. A route that doesn't have it is skipped, not failed.
+   */
+  element?: string;
   shots: Record<string, ShotRef>; // keyed by device name
 }
 
@@ -146,6 +156,15 @@ export interface Manifest {
     failures: CaptureFailure[];
     /** Routes-file requests still unmet after this run (the Explore-mode queue). */
     wanted?: WantedState[];
+    /** Accessibility violations by rule, when `checks.accessibility` is on. */
+    accessibility?: {
+      id: string;
+      impact?: string;
+      help: string;
+      helpUrl?: string;
+      shots: number;
+      elements: number;
+    }[];
   };
   hints?: {
     stableSelectors?: string[];
@@ -185,6 +204,10 @@ export interface ViewerTile {
   height?: number;
   /** The page was taller than `screenshot.maxHeight` and the shot was cropped. */
   clamped?: boolean;
+  /** Sidecar JSON with the shot's metadata (and its accessibility findings). */
+  meta?: string;
+  /** Accessibility rules this state broke. */
+  a11y?: number;
   /** Capture failed after retries; the tile is a placeholder carrying the reason. */
   error?: string;
 }

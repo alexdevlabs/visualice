@@ -145,10 +145,12 @@ describe("page reuse", () => {
 /**
  * A menu that closes when the page scrolls — Floating-UI's `hide`, Bootstrap's
  * dropdowns. Stabilization scrolls the page to trigger lazy loading, so between one
- * state's recipe and the next state's reuse of it, the menu has quietly closed.
+ * state's recipe and the next state's reuse of it, the menu has quietly closed —
+ * and, before that, between the recipe and the screenshot.
  */
 const scrollClosingMenu = (aria: boolean) => `<!doctype html><html><head><meta charset="utf-8">
-<title>Menu</title><style>body{margin:0;font:16px system-ui}#spacer{height:3000px}</style></head><body>
+<title>Menu</title><style>body{margin:0;font:16px system-ui}#spacer{height:3000px}
+#dropdown{width:200px;height:60px;background:#0a0}</style></head><body>
   <button id="menu"${aria ? ' aria-expanded="false"' : ""}>Menu</button>
   <div id="dropdown" hidden><button id="sub">Submenu</button></div>
   <div id="subpanel" hidden>Sub content</div>
@@ -196,7 +198,22 @@ describe("reusing a page after stabilization", () => {
         baseUrl: server.url,
         log: (m) => logs.push(m),
       });
-      return { result, logs };
+      // The dropdown is a green box; sample it to the right of the button inside it.
+      const menuShot = path.join(
+        result.runDir,
+        result.manifest.routes[0].states[0].shots.small.full!,
+      );
+      const info = await sharp(menuShot).metadata();
+      const box = await sharp(menuShot)
+        .extract({ left: 0, top: 0, width: info.width!, height: 120 })
+        .removeAlpha()
+        .raw()
+        .toBuffer();
+      let green = 0;
+      for (let i = 0; i < box.length; i += 3) {
+        if (box[i] === 0 && box[i + 1] === 170 && box[i + 2] === 0) green++;
+      }
+      return { result, logs, menuOpenInShot: green > 2000 };
     } finally {
       await server.close();
       await fs.rm(siteDir, { recursive: true, force: true });
@@ -204,12 +221,12 @@ describe("reusing a page after stabilization", () => {
     }
   };
 
-  it("reloads when the recipe's own closing promise no longer holds", async () => {
+  it("photographs the menu open, and reuses it, when the closing promise broke", async () => {
     const openMenu = [
       { action: "click", target: { selector: "#menu" } },
       { action: "waitFor", selector: "#dropdown", state: "visible" },
     ];
-    const { result, logs } = await run(scrollClosingMenu(false), {
+    const { result, logs, menuOpenInShot } = await run(scrollClosingMenu(false), {
       menu: openMenu,
       sub: [
         ...openMenu,
@@ -218,11 +235,14 @@ describe("reusing a page after stabilization", () => {
       ],
     });
     expect(result.manifest.stats?.failures ?? [], logs.join("\n")).toEqual([]);
-    expect(logs.join("\n")).toContain("1 more reloaded: the page had changed");
+    // The lazy-load scroll closed the menu, so the shot was retaken scroll-first —
+    // which also leaves the menu open for the nested state to build on.
+    expect(logs.join("\n")).toContain("closed by the lazy-load scroll — reopened after it");
+    expect(menuOpenInShot).toBe(true);
   }, 120_000);
 
-  it("reloads when the open regions moved, even with no promise to check", async () => {
-    const { result, logs } = await run(scrollClosingMenu(true), {
+  it("photographs the menu open when the open regions moved, with no promise to check", async () => {
+    const { result, logs, menuOpenInShot } = await run(scrollClosingMenu(true), {
       menu: [{ action: "click", target: { selector: "#menu" } }],
       sub: [
         { action: "click", target: { selector: "#menu" } },
@@ -231,7 +251,10 @@ describe("reusing a page after stabilization", () => {
       ],
     });
     expect(result.manifest.stats?.failures ?? [], logs.join("\n")).toEqual([]);
-    expect(logs.join("\n")).toContain("1 more reloaded: the page had changed");
+    // The lazy-load scroll closed the menu, so the shot was retaken scroll-first —
+    // which also leaves the menu open for the nested state to build on.
+    expect(logs.join("\n")).toContain("closed by the lazy-load scroll — reopened after it");
+    expect(menuOpenInShot).toBe(true);
   }, 120_000);
 
   it("still reuses the page when nothing changed under it", async () => {
@@ -241,7 +264,7 @@ describe("reusing a page after stabilization", () => {
       'addEventListener("scroll", () => set(false));',
       "",
     );
-    const { result, logs } = await run(html, {
+    const { result, logs, menuOpenInShot } = await run(html, {
       menu: [{ action: "click", target: { selector: "#menu" } }],
       sub: [
         { action: "click", target: { selector: "#menu" } },
@@ -253,6 +276,8 @@ describe("reusing a page after stabilization", () => {
     // The first state navigates; the second extends it on the same page.
     expect(logs.join("\n")).toContain("page reuse: 1 of 2 shot(s) needed no reload");
     expect(logs.join("\n")).not.toContain("more reloaded");
+    expect(logs.join("\n")).not.toContain("reopened after it");
+    expect(menuOpenInShot).toBe(true);
   }, 120_000);
 
   it("keeps a recipe's scroll position instead of stabilizing back to the top", async () => {

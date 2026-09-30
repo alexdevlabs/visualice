@@ -56,6 +56,7 @@ export const StateKindSchema = z.enum([
   "hover",
   "focus",
   "validation",
+  "component",
   "other",
 ]);
 
@@ -68,6 +69,7 @@ export const ShotRefSchema = z.object({
   height: z.number().optional(),
   mid: z.string().optional(),
   clamped: z.boolean().optional(),
+  a11y: z.number().optional(),
   error: z.string().optional(),
 });
 
@@ -83,6 +85,10 @@ export const StateNodeSchema = z.object({
     .array(z.string())
     .optional()
     .describe("Capture this state only on these device names (default: all devices)."),
+  element: z
+    .string()
+    .optional()
+    .describe("Screenshot only this element (a component) instead of the whole page."),
   shots: z.record(z.string(), ShotRefSchema).default({}),
 });
 

@@ -70,6 +70,7 @@ export function Minimap({ layout, transform, viewport, selectedId, onJump }: Pro
       onPointerDown={(e) => e.stopPropagation()} // never start a canvas pan
       onPointerUp={(e) => e.stopPropagation()}
       role="presentation"
+      data-testid="minimap"
       title="Click to jump"
     >
       {rects.map((p) => (

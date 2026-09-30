@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { parseViolations, type ShotViolation } from "./load";
 import type { Device, ViewerData, ViewerTile } from "./types";
 import { runLabel } from "./format";
 import { routePath } from "./layout";
@@ -69,7 +70,27 @@ export function Inspector({ data, tile, base, onSelect, onStep, onCompareDevices
     );
   };
 
+  // The elements behind the count live in the shot's sidecar; fetch it only when
+  // there is something to list.
+  const [violations, setViolations] = useState<ShotViolation[] | null>(null);
+  const sidecar = tile.a11y && tile.meta ? base + tile.meta : null;
+  useEffect(() => {
+    setViolations(null);
+    if (!sidecar) return;
+    let live = true;
+    fetch(sidecar)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((raw: unknown) => live && setViolations(parseViolations(raw)))
+      .catch(() => live && setViolations([]));
+    return () => {
+      live = false;
+    };
+  }, [sidecar]);
+
   const preview = tile.mid ?? tile.full;
+  const fileName = tile.full
+    ? `${tile.routePath.replace(/[^a-zA-Z0-9._-]+/g, "-")}--${tile.stateId}--${tile.device}.${tile.full.split(".").pop()}`
+    : undefined;
   const navSize = phone ? 40 : 28;
 
   return (
@@ -172,6 +193,12 @@ export function Inspector({ data, tile, base, onSelect, onStep, onCompareDevices
             <span>Full image</span>
           </a>
         )}
+        {tile.full && (
+          <a className={cx(ACTION, SECONDARY)} href={base + tile.full} download={fileName}>
+            <Icon name="download" size={14} />
+            <span>Download</span>
+          </a>
+        )}
         {data.site.baseUrl && (
           <a
             className={cx(ACTION, SECONDARY)}
@@ -214,6 +241,12 @@ export function Inspector({ data, tile, base, onSelect, onStep, onCompareDevices
           <dd className="font-mono text-[11.5px]">{tile.routeUrl}</dd>
           <dt>Captured</dt>
           <dd>{runLabel(data.site.runId)} UTC</dd>
+          {tile.a11y === 0 && (
+            <>
+              <dt>Accessibility</dt>
+              <dd>No violations found</dd>
+            </>
+          )}
         </dl>
         <div className="flex flex-col items-start gap-1.5 text-[12.5px]">
           {tile.viewport && (
@@ -228,6 +261,50 @@ export function Inspector({ data, tile, base, onSelect, onStep, onCompareDevices
           )}
         </div>
       </section>
+
+      {tile.a11y ? (
+        <section className={SECTION} aria-label="Accessibility">
+          <div className="flex items-center gap-2">
+            <Caption>Accessibility</Caption>
+            <span className="rounded-[4px] border border-amber-line bg-amber-soft px-[5px] font-mono text-[11px] leading-[17px] text-amber">
+              {tile.a11y} {tile.a11y === 1 ? "rule" : "rules"} broken
+            </span>
+          </div>
+          {violations === null ? (
+            <span className="text-[12.5px] text-dim">Loading…</span>
+          ) : violations.length === 0 ? (
+            <span className="text-[12.5px] text-dim">
+              The details for this shot couldn’t be read.
+            </span>
+          ) : (
+            <ul className="flex flex-col gap-2.5 text-[12.5px]">
+              {violations.map((v) => (
+                <li key={v.id} className="flex flex-col gap-1">
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    {v.impact && <KindTag>{v.impact}</KindTag>}
+                    {v.helpUrl ? (
+                      <a href={v.helpUrl} target="_blank" rel="noreferrer">
+                        {v.help}
+                      </a>
+                    ) : (
+                      <span>{v.help}</span>
+                    )}
+                  </span>
+                  <span className="text-dim">
+                    {v.count} {v.count === 1 ? "element" : "elements"}
+                    {v.targets[0] && (
+                      <>
+                        {" · "}
+                        <code className="wrap-anywhere">{v.targets[0]}</code>
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {siblings.length > 1 && (
         <section className={SECTION}>

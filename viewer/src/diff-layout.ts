@@ -148,7 +148,11 @@ export function computeDiffLayout(diff: RunDiff, opts: DiffLayoutOptions): Layou
     grow(rb, x0, labelY, rowWidth, HEADER_H);
 
     const sides: [DiffSide, string | undefined][] = [
-      ["before", shot.fromShot && `runs/${diff.from.runId}/${shot.fromShot}`],
+      [
+        "before",
+        shot.fromShot &&
+          (diff.from.baseline ? "baseline/" : `runs/${diff.from.runId}/`) + shot.fromShot,
+      ],
       ["after", shot.toShot && `runs/${diff.to.runId}/${shot.toShot}`],
       ["diff", shot.image && `diffs/${diffId}/${shot.image}`],
     ];
@@ -174,4 +178,44 @@ export function computeDiffLayout(diff: RunDiff, opts: DiffLayoutOptions): Layou
 
   if (!placed.length) Object.assign(bounds, { minX: 0, minY: 0, maxX: 1, maxY: 1 });
   return { placed, labels, bounds, byRoute, routesWithTiles: [...byRoute.keys()], truncated };
+}
+
+/** The path a shot's route is shown and matched by. */
+export const routeOf = (s: ShotDiff): string =>
+  s.routeUrl ?? (s.route === "home" ? "/" : "/" + s.route);
+
+/** A region of the page, as a fraction of the shot's width and height. */
+export interface Region {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The `diff.rules` entry that leaves `region` of this shot out of future diffs. */
+export function ignoreRule(
+  shot: ShotDiff,
+  region: Region,
+  size: { width: number; height: number },
+  dpr: number,
+): string {
+  // The config takes CSS px; the shot's own pixels are that times the device's dpr.
+  const css = (fraction: number, extent: number) => Math.round((fraction * extent) / dpr);
+  return JSON.stringify(
+    {
+      route: new URL(routeOf(shot), "http://_local_").pathname,
+      state: shot.state,
+      device: shot.device,
+      ignore: [
+        {
+          x: css(region.x, size.width),
+          y: css(region.y, size.height),
+          width: Math.max(1, css(region.w, size.width)),
+          height: Math.max(1, css(region.h, size.height)),
+        },
+      ],
+    },
+    null,
+    2,
+  );
 }

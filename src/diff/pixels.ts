@@ -24,6 +24,26 @@ export interface CompareOptions {
    * once it has seen the verdict.
    */
   renderDiff?: boolean;
+  /**
+   * Regions left out of the comparison, in the images' own pixels. They neither
+   * count as changed nor as compared, and the diff image tints them so a reader
+   * can see what was not looked at.
+   */
+  ignore?: Rect[];
+  /**
+   * Don't count anti-aliased pixels. Text and shape edges are blends of their
+   * neighbours, and the blend shifts by a level or two between machines, GPU
+   * drivers and font hinting settings — a difference that is real in the bytes and
+   * invisible on the page.
+   */
+  antialiasing?: boolean;
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /** An in-memory RGB bitmap, ready for `writeDiffImage`. */
@@ -36,6 +56,10 @@ export interface RawImage {
 export interface ImageComparison {
   /** Pixels that differed, out of `comparedPixels`. */
   changedPixels: number;
+  /** Differing pixels left out of the count as anti-aliasing (with `antialiasing`). */
+  antialiasedPixels?: number;
+  /** Pixels inside an `ignore` region. */
+  ignoredPixels?: number;
   comparedPixels: number;
   /** changedPixels / comparedPixels, 0–1. */
   ratio: number;
@@ -80,6 +104,87 @@ async function dimensions(file: string): Promise<{ width: number; height: number
   return { width: m.width, height: m.height };
 }
 
+const brightness = (d: Buffer, i: number): number =>
+  d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+
+/** Does the pixel at (x, y) have at least three neighbours of exactly its colour? */
+function hasManySiblings(img: RawImage, x: number, y: number): boolean {
+  const { data, width, height } = img;
+  const i = (y * width + x) * 3;
+  // A pixel on the image's edge has fewer neighbours to find; count the missing
+  // ones as siblings, as a flat area running off the edge would be.
+  let same = x === 0 || x === width - 1 || y === 0 || y === height - 1 ? 1 : 0;
+  for (let ny = Math.max(0, y - 1); ny <= Math.min(height - 1, y + 1); ny++) {
+    for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
+      if (nx === x && ny === y) continue;
+      const j = (ny * width + nx) * 3;
+      if (data[i] === data[j] && data[i + 1] === data[j + 1] && data[i + 2] === data[j + 2]) {
+        if (++same > 2) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Is the pixel at (x, y) of `img` anti-aliasing? The test from Vyšniauskas,
+ * "Anti-aliased Pixel and Intensity Slope Detector" (2009), which pixelmatch made
+ * the usual way to do this: an anti-aliased pixel sits on a slope — it has a
+ * darker and a brighter neighbour, few neighbours of its own colour — and the two
+ * ends of that slope are flat areas in both images.
+ */
+function isAntialiased(img: RawImage, x: number, y: number, other: RawImage): boolean {
+  const { data, width, height } = img;
+  const i = (y * width + x) * 3;
+  const here = brightness(data, i);
+  let identical = x === 0 || x === width - 1 || y === 0 || y === height - 1 ? 1 : 0;
+  let min = 0;
+  let max = 0;
+  let minX = 0;
+  let minY = 0;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (let ny = Math.max(0, y - 1); ny <= Math.min(height - 1, y + 1); ny++) {
+    for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
+      if (nx === x && ny === y) continue;
+      const delta = brightness(data, (ny * width + nx) * 3) - here;
+      if (delta === 0) {
+        // More than two neighbours this exact brightness: a flat area, not an edge.
+        if (++identical > 2) return false;
+      } else if (delta < min) {
+        min = delta;
+        minX = nx;
+        minY = ny;
+      } else if (delta > max) {
+        max = delta;
+        maxX = nx;
+        maxY = ny;
+      }
+    }
+  }
+  // No darker or no brighter neighbour: a corner or a flat step, not a blend.
+  if (min === 0 || max === 0) return false;
+  return (
+    (hasManySiblings(img, minX, minY) && hasManySiblings(other, minX, minY)) ||
+    (hasManySiblings(img, maxX, maxY) && hasManySiblings(other, maxX, maxY))
+  );
+}
+
+/** Mark the pixels each rect covers, clipped to the compared area. */
+function ignoreMask(rects: Rect[], scale: number, w: number, h: number): Uint8Array | undefined {
+  if (!rects.length) return undefined;
+  const mask = new Uint8Array(w * h);
+  for (const r of rects) {
+    const x0 = Math.max(0, Math.floor(r.x * scale));
+    const y0 = Math.max(0, Math.floor(r.y * scale));
+    const x1 = Math.min(w, Math.ceil((r.x + r.width) * scale));
+    const y1 = Math.min(h, Math.ceil((r.y + r.height) * scale));
+    for (let y = y0; y < y1; y++) mask.fill(1, y * w + x0, y * w + x1);
+  }
+  return mask;
+}
+
 /**
  * Compare two images and (optionally) render a diff PNG: the new shot, faded, with
  * every differing pixel painted magenta.
@@ -109,19 +214,38 @@ export async function compareImages(
 
   const total = cw * ch;
   const diff = opts.renderDiff ? Buffer.alloc(total * 3) : undefined;
+  const mask = ignoreMask(opts.ignore ?? [], scale, cw, ch);
   let changed = 0;
+  let antialiased = 0;
+  let ignored = 0;
 
   for (let i = 0, p = 0; p < total; p++, i += 3) {
+    const skip = mask !== undefined && mask[p] === 1;
+    if (skip) ignored++;
     const dr = Math.abs(a.data[i] - b.data[i]);
     const dg = Math.abs(a.data[i + 1] - b.data[i + 1]);
     const db = Math.abs(a.data[i + 2] - b.data[i + 2]);
-    const differs = dr > threshold || dg > threshold || db > threshold;
+    let differs = !skip && (dr > threshold || dg > threshold || db > threshold);
+    if (differs && opts.antialiasing) {
+      const x = p % cw;
+      const y = (p - x) / cw;
+      if (isAntialiased(a, x, y, b) || isAntialiased(b, x, y, a)) {
+        differs = false;
+        antialiased++;
+      }
+    }
     if (differs) changed++;
     if (diff) {
       if (differs) {
         diff[i] = 255;
         diff[i + 1] = 0;
         diff[i + 2] = 255;
+      } else if (skip) {
+        // Ignored regions get a cool tint: visibly not compared, but not alarming.
+        const grey = brightness(b.data, i) * 0.3;
+        diff[i] = Math.round(grey + 120);
+        diff[i + 1] = Math.round(grey + 150);
+        diff[i + 2] = Math.round(grey + 178);
       } else {
         // Wash the unchanged pixels out so the magenta reads at a glance.
         const grey = (b.data[i] * 0.299 + b.data[i + 1] * 0.587 + b.data[i + 2] * 0.114) * 0.35;
@@ -133,10 +257,13 @@ export async function compareImages(
     }
   }
 
+  const compared = total - ignored;
   return {
     changedPixels: changed,
-    comparedPixels: total,
-    ratio: total ? changed / total : 0,
+    comparedPixels: compared,
+    ratio: compared ? changed / compared : 0,
+    antialiasedPixels: opts.antialiasing ? antialiased : undefined,
+    ignoredPixels: mask ? ignored : undefined,
     from,
     to,
     sizeChanged: from.width !== to.width || from.height !== to.height,
@@ -150,5 +277,14 @@ export async function writeDiffImage(image: RawImage, file: string): Promise<voi
   await fs.mkdir(path.dirname(file), { recursive: true });
   await sharp(image.data, { raw: { width: image.width, height: image.height, channels: 3 } })
     .png({ compressionLevel: 9 })
+    .toFile(file);
+}
+
+/** A small lossy copy of a diff bitmap, for lists and first paint. */
+export async function writeDiffThumb(image: RawImage, file: string, width = 480): Promise<void> {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await sharp(image.data, { raw: { width: image.width, height: image.height, channels: 3 } })
+    .resize({ width, withoutEnlargement: true })
+    .webp({ quality: 70 })
     .toFile(file);
 }

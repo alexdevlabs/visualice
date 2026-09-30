@@ -74,6 +74,30 @@ export function renderReport(m: Manifest): string {
     lines.push("");
   }
 
+  const a11y = m.stats?.accessibility;
+  if (a11y) {
+    lines.push(`## Accessibility`);
+    lines.push("");
+    if (!a11y.length) {
+      lines.push(`No violations found by axe-core in any captured state.`);
+    } else {
+      lines.push(
+        `axe-core found ${a11y.length} rule(s) broken across the captured states. Each shot's`,
+        `sidecar JSON lists the elements; the viewer shows them beside the shot.`,
+      );
+      lines.push("");
+      lines.push(`| Rule | Impact | Shots | Elements | What |`);
+      lines.push(`|---|---|---|---|---|`);
+      for (const r of a11y) {
+        const rule = r.helpUrl ? `[\`${r.id}\`](${r.helpUrl})` : `\`${r.id}\``;
+        lines.push(
+          `| ${rule} | ${r.impact ?? ""} | ${r.shots} | ${r.elements} | ${r.help.replace(/\|/g, "\\|")} |`,
+        );
+      }
+    }
+    lines.push("");
+  }
+
   const wanted = m.stats?.wanted ?? [];
   if (wanted.length) {
     lines.push(`## Wanted`);

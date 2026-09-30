@@ -48,6 +48,18 @@ describe("parseFlags", () => {
     expect(() => parseFlags("serve", ["https://x.dev"])).toThrow(/unexpected argument/);
   });
 
+  it("takes the export directory as a bare argument", () => {
+    expect(parseFlags("export", ["site", "--diff=none"])).toEqual({ dest: "site", diff: "none" });
+    expect(parseFlags("approve", ["--routes=/blog/**,/about"])).toEqual({
+      routes: "/blog/**,/about",
+    });
+    expect(parseFlags("diff", ["--from=baseline", "--ignore-antialiasing"])).toEqual({
+      from: "baseline",
+      "ignore-antialiasing": true,
+    });
+    expect(() => parseFlags("approve", ["--diff=x"])).toThrow(/unknown flag --diff for 'approve'/);
+  });
+
   it("mixes forms", () => {
     expect(parseFlags("crawl", ["--base", "https://x.dev", "--max-pages=5", "--quiet"])).toEqual({
       base: "https://x.dev",

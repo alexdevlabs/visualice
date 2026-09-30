@@ -21,7 +21,9 @@ the dedicated script where one exists, e.g. `npm run crawl -- <args>`).
 | `fixture`                   | Serve the bundled fixture blog so you can browse it                      |
 | `doctor [--no-fix]`         | Idempotent preflight: check Node/Playwright/sharp/viewer, self-heal      |
 | `serve`                     | Launch the zoomable results viewer                                       |
-| `diff`                      | Pixel-diff two runs, emit a report of changed/added/removed states       |
+| `diff`                      | Pixel-diff a run against the baseline (or the run before it)             |
+| `approve`                   | Accept a run, or some of its routes, as the new baseline                 |
+| `export <dir>`              | Write the viewer + a run + its comparisons as a static folder            |
 | `--version`                 | Print the installed version                                              |
 | `help`                      | Print usage                                                              |
 
@@ -30,35 +32,38 @@ the dedicated script where one exists, e.g. `npm run crawl -- <args>`).
 Flags accept `--name=value` or `--name value`; only the flags relevant to a given
 command are accepted by it.
 
-| Flag                | Applies to           | Meaning                                                            |
-| ------------------- | -------------------- | ------------------------------------------------------------------ |
-| `--config=<path>`   | most                 | Config file (`.ts`/`.js`/`.json`); cwd auto-detection if omitted   |
-| `--base=<url>`      | most                 | Base URL (overrides `config.target`); same as the bare `[url]` arg |
-| `--no-save`         | `crawl`              | Don't scaffold a config on first run                               |
-| `--manifest=<path>` | `capture`/`validate` | Input manifest path                                                |
-| `--replay`          | `crawl`              | Reuse the cached site model, skip discovery                        |
-| `--resume`          | `crawl`              | Continue the newest interrupted run, keeping its shots             |
-| `--json`            | most                 | Print a machine-readable JSON summary to stdout                    |
-| `--quiet`           | most                 | Suppress progress output on stderr                                 |
-| `--fail-on-error`   | capture cmds, `diff` | Exit 3 if any capture failed (`diff`: if anything changed)         |
-| `--max-pages=<n>`   | `crawl`/`discover`   | Override `scope.maxPages`                                          |
-| `--include=<globs>` | `crawl`/`discover`   | Override `scope.include` (comma-separated)                         |
-| `--exclude=<globs>` | `crawl`/`discover`   | Override `scope.exclude` (comma-separated)                         |
-| `--devices=<names>` | `crawl`/`capture`    | Capture only these configured devices (comma-separated)            |
-| `--concurrency=<n>` | `crawl`/`capture`    | Override `politeness.concurrency`                                  |
-| `--timeout=<ms>`    | `crawl`/`capture`    | Override `politeness.timeoutMs`                                    |
-| `--out=<dir>`       | most                 | Override `output.dir` (default `.visualice`)                       |
-| `--run=<id>`        | `serve`              | Which run to view (default: latest)                                |
-| `--port=<n>`        | `serve`/`fixture`    | Fixed port (default: random)                                       |
-| `--open`            | `serve`/`fixture`    | Open in your browser                                               |
-| `--shoot=<file>`    | `serve`              | Headless-screenshot the viewer to a file, then exit                |
-| `--force`           | `auth`/`init`        | Re-run the login despite a fresh session; `init`: overwrite config |
-| `--no-fix`          | `doctor`             | Report problems without repairing them                             |
-| `--from=<runId>`    | `diff`               | Older run to compare (default: second-most-recent run)             |
-| `--to=<runId>`      | `diff`               | Newer run to compare (default: most-recent run)                    |
-| `--threshold=<n>`   | `diff`               | Per-channel tolerance, 0–255 (default 12)                          |
-| `--min-ratio=<f>`   | `diff`               | Fraction of pixels that must differ to count as changed (def. 0)   |
-| `--diff-out=<dir>`  | `diff`               | Where to write the diff (default `<out>/diffs/<from>__<to>`)       |
+| Flag                    | Applies to                 | Meaning                                                            |
+| ----------------------- | -------------------------- | ------------------------------------------------------------------ |
+| `--config=<path>`       | most                       | Config file (`.ts`/`.js`/`.json`); cwd auto-detection if omitted   |
+| `--base=<url>`          | most                       | Base URL (overrides `config.target`); same as the bare `[url]` arg |
+| `--no-save`             | `crawl`                    | Don't scaffold a config on first run                               |
+| `--manifest=<path>`     | `capture`/`validate`       | Input manifest path                                                |
+| `--replay`              | `crawl`                    | Reuse the cached site model, skip discovery                        |
+| `--resume`              | `crawl`                    | Continue the newest interrupted run, keeping its shots             |
+| `--json`                | most                       | Print a machine-readable JSON summary to stdout                    |
+| `--quiet`               | most                       | Suppress progress output on stderr                                 |
+| `--fail-on-error`       | capture cmds, `diff`       | Exit 3 if any capture failed (`diff`: if anything changed)         |
+| `--max-pages=<n>`       | `crawl`/`discover`         | Override `scope.maxPages`                                          |
+| `--include=<globs>`     | `crawl`/`discover`         | Override `scope.include` (comma-separated)                         |
+| `--exclude=<globs>`     | `crawl`/`discover`         | Override `scope.exclude` (comma-separated)                         |
+| `--devices=<names>`     | `crawl`/`capture`          | Capture only these configured devices (comma-separated)            |
+| `--concurrency=<n>`     | `crawl`/`capture`          | Override `politeness.concurrency`                                  |
+| `--timeout=<ms>`        | `crawl`/`capture`          | Override `politeness.timeoutMs`                                    |
+| `--out=<dir>`           | most                       | Override `output.dir` (default `.visualice`)                       |
+| `--run=<id>`            | `serve`/`approve`/`export` | Which run to act on (default: latest)                              |
+| `--port=<n>`            | `serve`/`fixture`          | Fixed port (default: random)                                       |
+| `--open`                | `serve`/`fixture`          | Open in your browser                                               |
+| `--shoot=<file>`        | `serve`                    | Headless-screenshot the viewer to a file, then exit                |
+| `--force`               | `auth`/`init`              | Re-run the login despite a fresh session; `init`: overwrite config |
+| `--no-fix`              | `doctor`                   | Report problems without repairing them                             |
+| `--from=<runId>`        | `diff`                     | A run id, `baseline` or `previous` (default: baseline if approved) |
+| `--to=<runId>`          | `diff`                     | Newer run to compare (default: most-recent run)                    |
+| `--threshold=<n>`       | `diff`                     | Per-channel tolerance, 0–255 (default 12)                          |
+| `--min-ratio=<f>`       | `diff`                     | Fraction of pixels that must differ to count as changed (def. 0)   |
+| `--diff-out=<dir>`      | `diff`                     | Where to write the diff (default `<out>/diffs/<from>__<to>`)       |
+| `--ignore-antialiasing` | `diff`                     | Don't count anti-aliased edge pixels                               |
+| `--routes=<globs>`      | `approve`                  | Approve only these routes (comma-separated path globs)             |
+| `--diff=<ids>`          | `export`                   | Comparisons to include (default: those against the run; `none`)    |
 
 ## Exit codes
 
@@ -70,7 +75,8 @@ command are accepted by it.
 ## Project files
 
 - **`visualice.config.json`** — behavior: `$schema`, `target`, `scope`, `devices`,
-  `auth`, `http`, `politeness`, `output`, … The first `crawl` scaffolds a minimal one
+  `auth`, `http`, `politeness`, `output`, `diff` (thresholds, ignore regions),
+  `baseline`, `components`, `checks`, … The first `crawl` scaffolds a minimal one
   (`$schema` + `target`); `init` does the same without crawling. Any
   `visualice.config.*` in the cwd is picked up automatically.
 - **`visualice.routes.md`** — the editable site index. Pages as top-level bullets, UI
@@ -90,4 +96,8 @@ Everything machine-owned lives under gitignored `.visualice/`:
 - `.visualice/crawl-map.cache.json` — the cached site model that `--replay` and Explore
   mode read/write.
 - `.visualice/auth.json` — saved storage state from `auth`/`crawl`.
-- `.visualice/diffs/<from>__<to>/` — output of `diff`: `diff-report.md`, `diff.json`, `images/`.
+- `.visualice/diffs/<from>__<to>/` — output of `diff`: `diff-report.md`, `diff-summary.md`
+  (short, for a PR comment), `diff.json`, `images/`. `<from>` is `baseline` for a
+  comparison against the approved baseline.
+- `.visualice/baseline/` — the run `approve` accepted (`baseline.dir` moves it, e.g. to a
+  committed folder). Never pruned.

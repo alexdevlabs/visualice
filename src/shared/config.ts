@@ -33,6 +33,12 @@ export const DeviceSchema = z.object({
     .string()
     .default("UTC")
     .describe("IANA timezone — pinned so rendered dates are machine-independent."),
+  browser: z
+    .enum(["chromium", "firefox", "webkit"])
+    .default("chromium")
+    .describe(
+      "Engine this device is captured with. Discovery always runs in Chromium; add a second device with `firefox` or `webkit` for a cross-browser catalog (install the engine with `npx playwright install <name>`).",
+    ),
 });
 
 const ScopeSchema = z.object({
@@ -304,6 +310,102 @@ const OutputSchema = z.object({
   keepRuns: z.number().int().positive().default(5).describe("Prune all but the newest N runs."),
 });
 
+const RectSchema = z.object({
+  x: z.number().nonnegative().describe("Left edge, in CSS px from the page's left."),
+  y: z.number().nonnegative().describe("Top edge, in CSS px from the top of the page."),
+  width: z.number().positive().describe("Width in CSS px."),
+  height: z.number().positive().describe("Height in CSS px."),
+});
+
+const DiffRuleSchema = z.object({
+  route: z
+    .string()
+    .default("/**")
+    .describe("Path glob the rule applies to (same syntax as `scope.include`)."),
+  state: z.string().optional().describe("Limit the rule to this state id (`*` wildcards allowed)."),
+  device: z.string().optional().describe("Limit the rule to this device name."),
+  threshold: z
+    .number()
+    .int()
+    .min(0)
+    .max(255)
+    .optional()
+    .describe("Per-channel tolerance for the shots this rule matches."),
+  minRatio: z
+    .number()
+    .min(0)
+    .max(1)
+    .optional()
+    .describe("Noise floor for the shots this rule matches."),
+  ignore: z
+    .array(RectSchema)
+    .default([])
+    .describe(
+      "Regions left out of the comparison — draw one in the viewer's Compare view and paste it here. No re-crawl needed, unlike `stabilize.maskSelectors`.",
+    ),
+});
+
+const DiffSchema = z.object({
+  threshold: z
+    .number()
+    .int()
+    .min(0)
+    .max(255)
+    .default(12)
+    .describe("Per-channel delta (0–255) that still counts as the same pixel."),
+  minRatio: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0)
+    .describe(
+      "Fraction of pixels (or of page area, when the height changed) that must differ before a shot counts as changed.",
+    ),
+  antialiasing: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Leave anti-aliased pixels out of the count: a differing pixel on a glyph or shape edge that is only a different blend of its neighbours. Quietens sub-pixel text rendering differences between machines.",
+    ),
+  rules: z
+    .array(DiffRuleSchema)
+    .default([])
+    .describe(
+      "Per-route overrides and ignore regions. Every matching rule applies; later ones win.",
+    ),
+});
+
+const BaselineSchema = z.object({
+  dir: z
+    .string()
+    .optional()
+    .describe(
+      "Where `visualice approve` keeps the approved shots (default `<output.dir>/baseline`). Point it outside the gitignored output directory to commit the baseline or cache it in CI.",
+    ),
+});
+
+const ComponentSchema = z.object({
+  name: z.string().describe("Label for the component; also its state id (`component-<name>`)."),
+  selector: z.string().describe("Selector of the element to screenshot on its own."),
+  routes: z
+    .array(z.string())
+    .default(["/**"])
+    .describe("Path globs of the routes to look for it on; a route without it is skipped."),
+});
+
+const ChecksSchema = z.object({
+  accessibility: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Run axe-core against every captured state and record the violations beside the shot.",
+    ),
+  accessibilityTags: z
+    .array(z.string())
+    .default(["wcag2a", "wcag2aa"])
+    .describe("axe rule tags to run."),
+});
+
 const PolitenessSchema = z.object({
   concurrency: z.number().int().positive().default(4).describe("Pages captured in parallel."),
   minDelayMs: z
@@ -364,10 +466,18 @@ export const ConfigSchema = z.object({
       "Human/LLM-editable site index (routes + states), regenerated after every crawl; `false` disables it.",
     ),
   output: OutputSchema.default(OutputSchema.parse({})),
+  diff: DiffSchema.default(DiffSchema.parse({})),
+  baseline: BaselineSchema.default(BaselineSchema.parse({})),
+  components: z
+    .array(ComponentSchema)
+    .default([])
+    .describe("Elements captured on their own, in addition to the page they sit on."),
+  checks: ChecksSchema.default(ChecksSchema.parse({})),
   politeness: PolitenessSchema.default(PolitenessSchema.parse({})),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
+export type DiffRule = z.infer<typeof DiffRuleSchema>;
 /** Authoring type for `visualice.config.ts` — everything optional thanks to defaults. */
 export type VisualiceConfig = z.input<typeof ConfigSchema>;
 
