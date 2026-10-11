@@ -68,9 +68,16 @@ const CARD = 360; // world px for the widest device
  */
 const COMPARE_CARD = 560;
 const GAP = 26;
-const ROW_GAP = 30;
+/** Room above every tile for its caption: the state name, then a row of badges. */
+const CAPTION_H = 44;
+/**
+ * The least width a caption gets. A phone-width tile is narrower than its own
+ * badges, so its slot in the row is this wide even though the tile isn't.
+ */
+export const CAPTION_MIN_W = 180;
+const ROW_GAP = 12 + CAPTION_H;
 const SECTION_GAP = 90;
-const HEADER_H = 52;
+const HEADER_H = 46 + CAPTION_H;
 const MAX_H = 1120; // cap very tall full-page shots so the overview stays tidy
 
 /** Roughly the shape of a screen — what "fit to window" has to fill. */
@@ -151,6 +158,8 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   const devices = data.devices.filter((d) => deviceFilter.has(d.name));
   const maxW = Math.max(1, ...devices.map((d) => d.width));
   const colW = (d: Device) => Math.max(60, Math.round((CARD * d.width) / maxW));
+  /** The room a tile takes in its row: its own width, or its caption's if wider. */
+  const slotW = (w: number) => Math.max(w, CAPTION_MIN_W);
 
   const matching = data.tiles.filter(
     (t) =>
@@ -259,7 +268,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       else tilesByRoute.set(t.routeId, [t]);
     }
 
-    const rowWidth = Math.max(1, devices.reduce((sum, d) => sum + colW(d) + GAP, 0) - GAP);
+    const rowWidth = Math.max(1, devices.reduce((sum, d) => sum + slotW(colW(d)) + GAP, 0) - GAP);
 
     // Measure every section before placing any, so the column count can be chosen
     // from the real total height rather than guessed.
@@ -316,7 +325,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
         row.tiles.forEach((t, i) => {
           const w = colW(devices[i]);
           if (t) rowH = Math.max(rowH, place(t, x, y, w));
-          x += w + GAP;
+          x += slotW(w) + GAP;
         });
         y += rowH + ROW_GAP;
       }
@@ -345,13 +354,13 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       const w = d ? colW(d) : CARD;
       const full = w * aspect(t);
       const h = Math.min(full, MAX_H);
-      if (x > 0 && x + w > targetRow) {
+      if (x > 0 && x + slotW(w) > targetRow) {
         x = 0;
-        y += rowH + GAP;
+        y += rowH + ROW_GAP;
         rowH = 0;
       }
       place(t, x, y, w);
-      x += w + GAP;
+      x += slotW(w) + GAP;
       rowH = Math.max(rowH, h);
     }
   }

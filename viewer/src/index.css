@@ -40,7 +40,6 @@
   --color-grid-dot: rgba(15, 23, 42, 0.12);
   --color-tile-ring: rgba(15, 23, 42, 0.08);
   --color-tile-shadow: rgba(15, 23, 42, 0.12);
-  --color-tile-scrim: rgba(255, 255, 255, 0.92);
   --color-chip: rgba(255, 255, 255, 0.9);
   --color-hatch-a: #fbf4e6;
   --color-hatch-b: #f4e8cf;
@@ -117,7 +116,6 @@
   --color-grid-dot: rgba(255, 255, 255, 0.08);
   --color-tile-ring: rgba(255, 255, 255, 0.06);
   --color-tile-shadow: rgba(0, 0, 0, 0.45);
-  --color-tile-scrim: rgba(26, 28, 32, 0.88);
   --color-chip: rgba(30, 32, 37, 0.85);
   --color-hatch-a: #17140f;
   --color-hatch-b: #1d1912;

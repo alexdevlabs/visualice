@@ -131,7 +131,7 @@ export function cullTilesIndexed(
 
 // ---- Level of detail ----
 
-/** Below this on-screen width a thumbnail is indistinguishable from the full image. */
+/** Below this on-screen width, in device pixels, a thumbnail is indistinguishable from the full image. */
 export const FULL_RES_WIDTH_PX = 460;
 
 /** Above this on-screen width the mid tier stops being enough and the full image wins. */

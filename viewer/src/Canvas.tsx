@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { CAPTION_MIN_W } from "./layout";
 import type { Layout, Bounds } from "./layout";
 import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
 import type { Transform } from "./lod";
@@ -15,6 +16,11 @@ export interface CanvasHandle {
 
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 8;
+/** Zoom per pixel of wheel delta, and the most one event may contribute. */
+const WHEEL_ZOOM_RATE = 0.01;
+const WHEEL_ZOOM_MAX = 30;
+/** How long the view has to sit still before it is redrawn sharp. */
+const SETTLE_MS = 160;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
@@ -43,6 +49,21 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   useEffect(() => {
     onScaleChange?.(t.scale);
   }, [t.scale, onScaleChange]);
+
+  // `will-change: transform` keeps pan and zoom on the compositor, but the browser
+  // then stretches the layer it rasterized at the old scale instead of redrawing it —
+  // everything goes soft after zooming in. So promote only while the view is moving.
+  const [moving, setMoving] = useState(false);
+  const skipFirst = useRef(true);
+  useEffect(() => {
+    if (skipFirst.current) {
+      skipFirst.current = false;
+      return;
+    }
+    setMoving(true);
+    const timer = setTimeout(() => setMoving(false), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [t]);
 
   // measure viewport
   useEffect(() => {
@@ -99,17 +120,48 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   useEffect(() => {
     const el = elRef.current;
     if (!el) return;
+    // Coalesced to one setT per frame: a trackpad fires wheel events well past 60Hz.
+    let raf: number | null = null;
+    let zoom = 1;
+    let at = { x: 0, y: 0 };
+    let pan = { x: 0, y: 0 };
+    const flush = () => {
+      raf = null;
+      const factor = zoom;
+      const { x: sx, y: sy } = at;
+      const { x: dx, y: dy } = pan;
+      zoom = 1;
+      pan = { x: 0, y: 0 };
+      setT((cur) => {
+        const ns = clamp(cur.scale * factor, MIN_SCALE, MAX_SCALE);
+        const wx = (sx - cur.x) / cur.scale;
+        const wy = (sy - cur.y) / cur.scale;
+        const zoomed = factor === 1 ? cur : { scale: ns, x: sx - wx * ns, y: sy - wy * ns };
+        return { ...zoomed, x: zoomed.x - dx, y: zoomed.y - dy };
+      });
+    };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const rect = el.getBoundingClientRect();
+      // Firefox reports a mouse wheel in lines, not pixels.
+      const unit = e.deltaMode === 1 ? 16 : 1;
       if (e.ctrlKey || e.metaKey) {
-        zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0015));
+        const rect = el.getBoundingClientRect();
+        at = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        // A pinch arrives as many small deltas, a wheel notch as one of ~100. The
+        // clamp lets the rate suit the pinch without a notch jumping several levels.
+        zoom *= Math.exp(
+          -clamp(e.deltaY * unit, -WHEEL_ZOOM_MAX, WHEEL_ZOOM_MAX) * WHEEL_ZOOM_RATE,
+        );
       } else {
-        setT((cur) => ({ ...cur, x: cur.x - e.deltaX, y: cur.y - e.deltaY }));
+        pan = { x: pan.x + e.deltaX * unit, y: pan.y + e.deltaY * unit };
       }
+      raf ??= requestAnimationFrame(flush);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (raf != null) cancelAnimationFrame(raf);
+    };
   }, []);
 
   // pointer pan + click-to-select
@@ -209,6 +261,9 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   const visible = useMemo(() => cullTilesIndexed(index, t, vp), [index, t, vp]);
   const labelsVisible = useMemo(() => cullLabels(layout.labels, t, vp), [layout, t, vp]);
 
+  // Sources are picked by the device pixels a tile covers: on a 2x display a 400px
+  // tile needs 800px of image, which a thumbnail doesn't have.
+  const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
   const showTileLabels = t.scale > TILE_LABEL_MIN_SCALE;
 
   return (
@@ -224,7 +279,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       onKeyDown={onKeyDown}
     >
       <div
-        className="absolute top-0 left-0 origin-top-left will-change-transform"
+        className={cx("absolute top-0 left-0 origin-top-left", moving && "will-change-transform")}
         style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})` }}
       >
         {labelsVisible.map((l) => (
@@ -239,50 +294,64 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
           </div>
         ))}
         {visible.map((p) => {
-          const src = lodFor(p.tile, p.w * t.scale);
+          const src = lodFor(p.tile, p.w * t.scale * dpr);
           const selected = p.tile.id === selectedId;
           const failed = p.tile.error !== undefined;
           return (
             <div
               key={p.tile.id}
               data-tile-id={p.tile.id}
-              className={cx(
-                "absolute overflow-hidden rounded-[4px] bg-paper shadow-tile",
-                failed
-                  ? "outline-1 -outline-offset-1 outline-amber outline-dashed"
-                  : selected && "outline-3 outline-offset-3 outline-accent",
-              )}
+              className="absolute"
               style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
             >
-              {failed || !src ? (
-                // A failed capture still occupies its place in the catalog: dropping
-                // it would read as "this state doesn't exist".
-                <div className="flex size-full flex-col items-center justify-center gap-2.5 bg-[repeating-linear-gradient(45deg,var(--color-hatch-a),var(--color-hatch-a)_12px,var(--color-hatch-b)_12px,var(--color-hatch-b)_24px)] p-3 text-center text-dim">
-                  <span className="text-[44px] leading-none font-bold text-amber">!</span>
-                  {showTileLabels && (
-                    <span className="line-clamp-4 max-w-[90%] text-[13px]">{p.tile.error}</span>
-                  )}
-                </div>
-              ) : (
-                <img
-                  className="block size-full object-cover object-top"
-                  src={base + src}
-                  draggable={false}
-                  loading="lazy"
-                  decoding="async"
-                  alt={p.tile.stateLabel}
-                />
-              )}
               {showTileLabels && (
-                <div className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-[linear-gradient(180deg,transparent,var(--color-tile-scrim))] px-2.5 pt-[18px] pb-2 text-[13px] font-medium">
-                  <span className="mr-auto truncate text-fg">{p.tile.stateLabel}</span>
-                  <TileBadge>{p.tile.stateKind}</TileBadge>
-                  <TileBadge>{p.tile.device}</TileBadge>
-                  {p.cropped && <TileBadge warn>tall</TileBadge>}
-                  {p.tile.clamped && <TileBadge warn>cropped</TileBadge>}
-                  {p.tile.a11y ? <TileBadge warn>{`a11y ${p.tile.a11y}`}</TileBadge> : null}
+                // Above the shot, in the row gap — never over the page it describes.
+                // The name gets a row to itself: beside the badges, a phone-width tile
+                // leaves it a letter or two.
+                <div
+                  className="absolute bottom-full left-0 flex flex-col gap-0.5 pb-1.5"
+                  style={{ width: Math.max(p.w, CAPTION_MIN_W) }}
+                >
+                  <span className="truncate text-[12px] leading-[16px] font-medium text-fg">
+                    {p.tile.stateLabel}
+                  </span>
+                  <div className="flex items-center gap-1 overflow-hidden">
+                    <TileBadge>{p.tile.stateKind}</TileBadge>
+                    <TileBadge>{p.tile.device}</TileBadge>
+                    {p.cropped && <TileBadge warn>tall</TileBadge>}
+                    {p.tile.clamped && <TileBadge warn>cropped</TileBadge>}
+                    {p.tile.a11y ? <TileBadge warn>{`a11y ${p.tile.a11y}`}</TileBadge> : null}
+                  </div>
                 </div>
               )}
+              <div
+                className={cx(
+                  "size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
+                  failed
+                    ? "outline-1 -outline-offset-1 outline-amber outline-dashed"
+                    : selected && "outline-3 outline-offset-3 outline-accent",
+                )}
+              >
+                {failed || !src ? (
+                  // A failed capture still occupies its place in the catalog: dropping
+                  // it would read as "this state doesn't exist".
+                  <div className="flex size-full flex-col items-center justify-center gap-2.5 bg-[repeating-linear-gradient(45deg,var(--color-hatch-a),var(--color-hatch-a)_12px,var(--color-hatch-b)_12px,var(--color-hatch-b)_24px)] p-3 text-center text-dim">
+                    <span className="text-[44px] leading-none font-bold text-amber">!</span>
+                    {showTileLabels && (
+                      <span className="line-clamp-4 max-w-[90%] text-[13px]">{p.tile.error}</span>
+                    )}
+                  </div>
+                ) : (
+                  <img
+                    className="block size-full object-cover object-top"
+                    src={base + src}
+                    draggable={false}
+                    loading="lazy"
+                    decoding="async"
+                    alt={p.tile.stateLabel}
+                  />
+                )}
+              </div>
             </div>
           );
         })}
@@ -300,12 +369,12 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   );
 });
 
-/** A tile's kind / device / warning tag, on the scrim along its bottom edge. */
+/** A tile's kind / device / warning tag, in the caption above it. */
 function TileBadge({ children, warn }: { children: string; warn?: boolean }) {
   return (
     <span
       className={cx(
-        "rounded-[4px] border bg-chip px-[5px] font-mono text-[11px] leading-[17px] whitespace-nowrap",
+        "rounded-[4px] border bg-chip px-1 font-mono text-[10px] leading-[15px] whitespace-nowrap",
         warn ? "border-amber-line text-amber" : "border-line-strong text-dim",
       )}
     >
