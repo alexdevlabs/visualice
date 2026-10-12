@@ -9,7 +9,6 @@ import {
   listRuns,
   markRunComplete,
   markRunIncomplete,
-  previousRunId,
   runDir,
   runIdTime,
   runsToPrune,
@@ -150,35 +149,6 @@ describe("run directories", () => {
     it("has nothing to resume when no run exists at all", async () => {
       expect(await findResumableRun(out)).toBeUndefined();
     });
-  });
-});
-
-describe("previousRunId", () => {
-  const [a, b, c] = [
-    "2026-01-01T00-00-00-000Z",
-    "2026-01-02T00-00-00-000Z",
-    "2026-01-03T00-00-00-000Z",
-  ];
-
-  it("is the run just before the newest one by default", () => {
-    expect(previousRunId([a, b, c], c)).toBe(b);
-  });
-
-  it("picks an older baseline for an older --to, never a newer one", () => {
-    // The regression: "newest run that isn't --to" picked c here, which compared the
-    // newest run against yesterday's and reported every change backwards.
-    expect(previousRunId([a, b, c], b)).toBe(a);
-  });
-
-  it("has nothing to offer for the oldest run", () => {
-    expect(previousRunId([a, b, c], a)).toBeUndefined();
-    expect(previousRunId([a], a)).toBeUndefined();
-  });
-
-  it("places a run passed by path where its id sorts", () => {
-    expect(previousRunId([a, c], b)).toBe(a);
-    // A hand-named directory sorts after every generated id, so the newest is its baseline.
-    expect(previousRunId([a, b], "baseline-copy")).toBe(b);
   });
 });
 

@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ViewerDataError,
-  diffSources,
-  parseRunDiff,
   parseViewerData,
   parseViolations,
   resolveDataUrl,
 } from "../viewer/src/load";
-import { ignoreRule } from "../viewer/src/diff-layout";
 
 const tile = (over: Record<string, unknown> = {}) => ({
   id: "home__default__desktop",
@@ -109,145 +106,6 @@ describe("resolveDataUrl", () => {
       expect(result.url).toBe("./d.json");
       expect(result.note).toContain("only same-origin");
     }
-  });
-});
-
-describe("parseRunDiff", () => {
-  const minimal = {
-    from: { runId: "a", dir: "/tmp/a" },
-    to: { runId: "b", dir: "/tmp/b" },
-    shots: [],
-  };
-
-  it("accepts a comparison with only the fields it needs", () => {
-    const d = parseRunDiff(minimal);
-    expect(d.from.runId).toBe("a");
-    expect(d.to.runId).toBe("b");
-    expect(d.summary).toEqual({
-      added: 0,
-      removed: 0,
-      changed: 0,
-      unchanged: 0,
-      uncomparable: 0,
-    });
-  });
-
-  it("rejects input that names no runs — there'd be nothing to fetch images from", () => {
-    expect(() => parseRunDiff({ ...minimal, from: {} })).toThrow(ViewerDataError);
-    expect(() => parseRunDiff({ to: minimal.to, shots: [] })).toThrow(ViewerDataError);
-  });
-
-  it("rejects input with no shots array", () => {
-    expect(() => parseRunDiff({ from: minimal.from, to: minimal.to })).toThrow(ViewerDataError);
-  });
-
-  it("keeps the shot paths, which is what lets the viewer find the pictures", () => {
-    const d = parseRunDiff({
-      ...minimal,
-      shots: [
-        {
-          key: "home|default|desktop",
-          route: "home",
-          routeUrl: "/",
-          state: "default",
-          stateLabel: "Default",
-          device: "desktop",
-          status: "changed",
-          ratio: 0.5,
-          image: "images/home/default/desktop.png",
-          fromShot: "screenshots/home/default/desktop.png",
-          toShot: "screenshots/home/default/desktop.png",
-        },
-      ],
-    });
-    expect(d.shots[0].fromShot).toBe("screenshots/home/default/desktop.png");
-    expect(d.shots[0].image).toBe("images/home/default/desktop.png");
-    expect(d.shots[0].ratio).toBe(0.5);
-  });
-
-  it("falls back to the state id when a shot carries no label", () => {
-    const d = parseRunDiff({
-      ...minimal,
-      shots: [{ key: "k", route: "home", state: "modal", device: "desktop", status: "changed" }],
-    });
-    expect(d.shots[0].stateLabel).toBe("modal");
-  });
-});
-
-describe("comparison sources", () => {
-  const diff = (baseline: boolean) =>
-    parseRunDiff({
-      from: { runId: "r1", ...(baseline ? { baseline: true } : {}) },
-      to: { runId: "r2" },
-      shots: [],
-    });
-
-  it("reads the before side from the run, or from the baseline when that was compared", () => {
-    const run = diffSources(diff(false), "r1__r2");
-    expect(run.from("a.png")).toBe("./runs/r1/a.png");
-    expect(run.to("a.png")).toBe("./runs/r2/a.png");
-    expect(run.diff("images/a.png")).toBe("./diffs/r1__r2/images/a.png");
-    expect(run.from(undefined)).toBeUndefined();
-
-    expect(diffSources(diff(true), "baseline__r2").from("a.png")).toBe("./baseline/a.png");
-  });
-
-  it("keeps the preview paths a diff records", () => {
-    const parsed = parseRunDiff({
-      from: { runId: "r1" },
-      to: { runId: "r2" },
-      shots: [
-        {
-          key: "k",
-          route: "home",
-          state: "default",
-          device: "desktop",
-          status: "changed",
-          fromPreview: "a.mid.webp",
-          toPreview: "b.mid.webp",
-          imageThumb: "images/x.thumb.webp",
-          ignoredPixels: 40,
-        },
-      ],
-    });
-    expect(parsed.shots[0]).toMatchObject({
-      fromPreview: "a.mid.webp",
-      toPreview: "b.mid.webp",
-      imageThumb: "images/x.thumb.webp",
-      ignoredPixels: 40,
-    });
-  });
-});
-
-describe("ignoreRule", () => {
-  const shot = {
-    key: "k",
-    route: "blog/post",
-    routeUrl: "/blog/post?ref=1",
-    state: "modal-search",
-    stateLabel: "Search",
-    device: "mobile",
-    status: "changed" as const,
-  };
-
-  it("turns a dragged box into CSS px for that one shot", () => {
-    // A quarter-width, tenth-height box on a 1170×6000 px shot taken at dpr 3.
-    const rule = JSON.parse(
-      ignoreRule(shot, { x: 0.5, y: 0.1, w: 0.25, h: 0.1 }, { width: 1170, height: 6000 }, 3),
-    );
-    expect(rule).toEqual({
-      route: "/blog/post",
-      state: "modal-search",
-      device: "mobile",
-      ignore: [{ x: 195, y: 200, width: 98, height: 200 }],
-    });
-  });
-
-  it("never emits an empty region", () => {
-    const rule = JSON.parse(
-      ignoreRule(shot, { x: 0, y: 0, w: 0.0001, h: 0.0001 }, { width: 100, height: 100 }, 1),
-    );
-    expect(rule.ignore[0]).toMatchObject({ width: 1, height: 1 });
   });
 });
 

@@ -370,6 +370,8 @@
     "screenshot": {
       "default": {
         "fullPage": true,
+        "screens": true,
+        "maxScreens": 30,
         "alsoViewport": false,
         "format": "png",
         "quality": 90,
@@ -387,6 +389,18 @@
           "default": true,
           "description": "Capture the whole scrollable page.",
           "type": "boolean"
+        },
+        "screens": {
+          "default": true,
+          "description": "Capture a full page the way a user sees it: one screen at a time, scrolling between them, stacked into one image. Fixed banners and modal backdrops then appear on every screen, as they do in the browser. Off renders the page as one tall screen, which draws fixed elements once, mid-page.",
+          "type": "boolean"
+        },
+        "maxScreens": {
+          "default": 30,
+          "description": "Most screens captured per shot when `screens` is on; a longer page is cut off there and flagged. Bounds an infinite-scroll page.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         },
         "alsoViewport": {
           "default": false,
@@ -412,7 +426,7 @@
         },
         "maxHeight": {
           "default": 20000,
-          "description": "Clamp for full-page shots, in CSS px; taller pages are cropped to this and flagged. 0 disables the clamp (infinite-scroll pages can then exhaust memory).",
+          "description": "Clamp for full-page shots when `screens` is off, in CSS px; taller pages are cropped to this and flagged. 0 disables the clamp (infinite-scroll pages can then exhaust memory).",
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
@@ -701,117 +715,6 @@
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
-        }
-      }
-    },
-    "diff": {
-      "default": {
-        "threshold": 12,
-        "minRatio": 0,
-        "antialiasing": false,
-        "rules": []
-      },
-      "type": "object",
-      "properties": {
-        "threshold": {
-          "default": 12,
-          "description": "Per-channel delta (0–255) that still counts as the same pixel.",
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 255
-        },
-        "minRatio": {
-          "default": 0,
-          "description": "Fraction of pixels (or of page area, when the height changed) that must differ before a shot counts as changed.",
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "antialiasing": {
-          "default": false,
-          "description": "Leave anti-aliased pixels out of the count: a differing pixel on a glyph or shape edge that is only a different blend of its neighbours. Quietens sub-pixel text rendering differences between machines.",
-          "type": "boolean"
-        },
-        "rules": {
-          "default": [],
-          "description": "Per-route overrides and ignore regions. Every matching rule applies; later ones win.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "route": {
-                "default": "/**",
-                "description": "Path glob the rule applies to (same syntax as `scope.include`).",
-                "type": "string"
-              },
-              "state": {
-                "description": "Limit the rule to this state id (`*` wildcards allowed).",
-                "type": "string"
-              },
-              "device": {
-                "description": "Limit the rule to this device name.",
-                "type": "string"
-              },
-              "threshold": {
-                "description": "Per-channel tolerance for the shots this rule matches.",
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 255
-              },
-              "minRatio": {
-                "description": "Noise floor for the shots this rule matches.",
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
-              },
-              "ignore": {
-                "default": [],
-                "description": "Regions left out of the comparison — draw one in the viewer's Compare view and paste it here. No re-crawl needed, unlike `stabilize.maskSelectors`.",
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "x": {
-                      "type": "number",
-                      "minimum": 0,
-                      "description": "Left edge, in CSS px from the page's left."
-                    },
-                    "y": {
-                      "type": "number",
-                      "minimum": 0,
-                      "description": "Top edge, in CSS px from the top of the page."
-                    },
-                    "width": {
-                      "type": "number",
-                      "exclusiveMinimum": 0,
-                      "description": "Width in CSS px."
-                    },
-                    "height": {
-                      "type": "number",
-                      "exclusiveMinimum": 0,
-                      "description": "Height in CSS px."
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y",
-                    "width",
-                    "height"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "baseline": {
-      "default": {},
-      "type": "object",
-      "properties": {
-        "dir": {
-          "description": "Where `visualice approve` keeps the approved shots (default `<output.dir>/baseline`). Point it outside the gitignored output directory to commit the baseline or cache it in CI.",
-          "type": "string"
         }
       }
     },

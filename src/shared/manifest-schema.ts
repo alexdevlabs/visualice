@@ -69,6 +69,7 @@ export const ShotRefSchema = z.object({
   height: z.number().optional(),
   mid: z.string().optional(),
   clamped: z.boolean().optional(),
+  screens: z.number().int().positive().optional(),
   a11y: z.number().optional(),
   error: z.string().optional(),
 });

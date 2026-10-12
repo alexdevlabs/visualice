@@ -1,7 +1,5 @@
 import type { ViewerData, ViewerTile, Device } from "./types";
 
-export type LayoutMode = "grouped" | "all" | "devices";
-
 export interface Placed {
   tile: ViewerTile;
   x: number;
@@ -9,6 +7,10 @@ export interface Placed {
   w: number;
   h: number;
   cropped: boolean;
+  /** Height of one screen on the canvas, when the shot stacks several. */
+  screenH?: number;
+  /** Screens that fit in `h` — all of them unless the tile was cut short. */
+  screensShown?: number;
 }
 
 export interface GroupLabel {
@@ -34,20 +36,13 @@ export interface Layout {
   labels: GroupLabel[];
   bounds: Bounds;
   byRoute: Map<string, Bounds>;
-  /**
-   * Routes with tiles matching the filters, in the data's own order.
-   *
-   * Not the same as the keys of `byRoute`: device-compare mode places one route at
-   * a time, and the sidebar still has to offer the others — they're what you'd
-   * click to compare next.
-   */
+  /** Routes with tiles matching the filters, in the data's own order. */
   routesWithTiles: string[];
   /** Tiles matching the filters but left unplaced by `limit`. */
   truncated: number;
 }
 
 export interface LayoutFilters {
-  mode: LayoutMode;
   devices: Set<string>;
   /** State kinds to show; empty or absent means all of them. */
   kinds?: Set<string>;
@@ -56,17 +51,11 @@ export interface LayoutFilters {
   failedOnly?: boolean;
   /** Cap on placed tiles, so a huge run can't lock up the canvas. */
   limit?: number;
-  /** The route `devices` mode lays out. Defaults to the first one with tiles. */
-  focusRouteId?: string;
+  /** Lay out only this route; the others still count toward `routesWithTiles`. */
+  routeId?: string;
 }
 
 const CARD = 360; // world px for the widest device
-/**
- * Device compare draws every device at one width, so the same element lands in the
- * same place across the row and a spacing change is visible by looking straight
- * down. Wider than a catalog card because comparing means reading.
- */
-const COMPARE_CARD = 560;
 const GAP = 26;
 /** Room above every tile for its caption: the state name, then a row of badges. */
 const CAPTION_H = 44;
@@ -78,10 +67,39 @@ export const CAPTION_MIN_W = 180;
 const ROW_GAP = 12 + CAPTION_H;
 const SECTION_GAP = 90;
 const HEADER_H = 46 + CAPTION_H;
+/** Space between the screens of a stacked shot, so each reads as its own frame. */
+export const SCREEN_GAP = 20;
 const MAX_H = 1120; // cap very tall full-page shots so the overview stays tidy
 
 /** Roughly the shape of a screen — what "fit to window" has to fill. */
 const TARGET_ASPECT = 1.6;
+
+/**
+ * How tall a tile of width `w` is drawn, and where it's cut.
+ *
+ * A shot of stacked screens is cut at a screen's edge rather than through the
+ * middle of one, so the canvas only ever shows whole screens: a half screen reads
+ * as a broken capture.
+ */
+export function tileHeight(
+  tile: ViewerTile,
+  w: number,
+): { h: number; cropped: boolean; screenH?: number; screensShown?: number } {
+  const full = w * aspect(tile);
+  const n = tile.screens;
+  if (!n || n < 2) return { h: Math.min(full, MAX_H), cropped: full > MAX_H };
+  const screenH = full / n;
+  const screensShown = Math.max(
+    1,
+    Math.min(n, Math.floor((MAX_H + SCREEN_GAP) / (screenH + SCREEN_GAP))),
+  );
+  return {
+    h: screensShown * screenH + (screensShown - 1) * SCREEN_GAP,
+    cropped: screensShown < n,
+    screenH,
+    screensShown,
+  };
+}
 
 function aspect(t: ViewerTile): number {
   if (t.width && t.height && t.width > 0) return t.height / t.width;
@@ -139,22 +157,8 @@ interface GroupBlock {
   height: number;
 }
 
-/**
- * The route device-compare should lay out: the one asked for if it still has
- * tiles, otherwise the first that does. Falling back rather than showing nothing
- * matters because the filters can empty the focused route out from under the mode.
- */
-export function resolveFocusRoute(
-  groups: ViewerData["groups"],
-  withTiles: Set<string>,
-  asked?: string,
-): string | undefined {
-  if (asked && withTiles.has(asked)) return asked;
-  return groups.find((g) => withTiles.has(g.routeId))?.routeId;
-}
-
 export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout {
-  const { mode, devices: deviceFilter, kinds, query = "", failedOnly, limit } = filters;
+  const { devices: deviceFilter, kinds, query = "", failedOnly, limit, routeId } = filters;
   const devices = data.devices.filter((d) => deviceFilter.has(d.name));
   const maxW = Math.max(1, ...devices.map((d) => d.width));
   const colW = (d: Device) => Math.max(60, Math.round((CARD * d.width) / maxW));
@@ -171,14 +175,8 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   const routesMatching = new Set(matching.map((t) => t.routeId));
   const routesWithTiles = data.groups.map((g) => g.routeId).filter((id) => routesMatching.has(id));
 
-  // Device compare is about one route at a time; everything else lays out the lot.
-  const focusRouteId =
-    mode === "devices"
-      ? resolveFocusRoute(data.groups, routesMatching, filters.focusRouteId)
-      : undefined;
-  const inScope =
-    mode === "devices" ? matching.filter((t) => t.routeId === focusRouteId) : matching;
-
+  // The sidebar still lists every route the filters leave, so it can switch to them.
+  const inScope = routeId ? matching.filter((t) => t.routeId === routeId) : matching;
   const tiles = limit !== undefined && inScope.length > limit ? inScope.slice(0, limit) : inScope;
   const truncated = inScope.length - tiles.length;
 
@@ -188,9 +186,8 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   const byRoute = new Map<string, Bounds>();
 
   const place = (tile: ViewerTile, x: number, y: number, w: number): number => {
-    const full = w * aspect(tile);
-    const h = Math.min(full, MAX_H);
-    placed.push({ tile, x, y, w, h, cropped: full > MAX_H });
+    const { h, cropped, screenH, screensShown } = tileHeight(tile, w);
+    placed.push({ tile, x, y, w, h, cropped, screenH, screensShown });
     growBounds(bounds, x, y, w, h);
     const rb = byRoute.get(tile.routeId) ?? emptyBounds();
     growBounds(rb, x, y, w, h);
@@ -198,171 +195,129 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
     return h;
   };
 
-  if (mode === "devices") {
-    // One block per state of the focused route: every device at the same width,
-    // top-aligned, in the order the devices were configured.
-    const group = data.groups.find((g) => g.routeId === focusRouteId);
-    const byStateDevice = new Map(tiles.map((t) => [`${t.stateId} ${t.device}`, t]));
-    const stateIds = [...new Set(tiles.map((t) => t.stateId))];
-    const rowWidth = Math.max(1, devices.length * (COMPARE_CARD + GAP) - GAP);
+  // Index once — per-group filter/find scans are O(routes × tiles) and this
+  // recomputes on every search keystroke.
+  const tilesByRoute = new Map<string, ViewerTile[]>();
+  for (const t of tiles) {
+    const arr = tilesByRoute.get(t.routeId);
+    if (arr) arr.push(t);
+    else tilesByRoute.set(t.routeId, [t]);
+  }
 
-    const blocks = stateIds.map((stateId) => {
-      const row = devices.map((d) => byStateDevice.get(`${stateId} ${d.name}`));
-      const height =
-        HEADER_H +
-        row.reduce((h, t) => (t ? Math.max(h, Math.min(COMPARE_CARD * aspect(t), MAX_H)) : h), 0);
-      return { stateId, row, height };
-    });
+  const rowWidth = Math.max(1, devices.reduce((sum, d) => sum + slotW(colW(d)) + GAP, 0) - GAP);
 
-    // Same reason as the grouped mode: a single column of full-page shots is a
-    // ribbon, and Fit then shows it as a sliver.
-    const totalHeight = blocks.reduce((sum, b) => sum + b.height + SECTION_GAP, 0);
-    const columns = columnCount(totalHeight, rowWidth, blocks.length);
-    const columnX = Array.from({ length: columns }, (_, i) => i * (rowWidth + SECTION_GAP));
-    const columnY = new Array<number>(columns).fill(0);
+  // Measure every section before placing any, so the column count can be chosen
+  // from the real total height rather than guessed.
+  const blocks: GroupBlock[] = [];
+  for (const g of data.groups) {
+    const routeTiles = tilesByRoute.get(g.routeId) ?? [];
+    if (!routeTiles.length) continue;
+    const stateIds = [...new Set(routeTiles.map((t) => t.stateId))];
+    const byStateDevice = new Map(routeTiles.map((t) => [`${t.stateId} ${t.device}`, t]));
 
-    for (const block of blocks) {
-      let col = 0;
-      for (let i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
-      const x0 = columnX[col];
-      const labelY = columnY[col];
-      const y = labelY + HEADER_H;
-
-      growBounds(bounds, x0, labelY, rowWidth, HEADER_H);
-      let rowH = 0;
-      block.row.forEach((t, i) => {
-        if (t) rowH = Math.max(rowH, place(t, x0 + i * (COMPARE_CARD + GAP), y, COMPARE_CARD));
-      });
-
-      const rb = byRoute.get(focusRouteId ?? "") ?? emptyBounds();
-      growBounds(rb, x0, labelY, rowWidth, HEADER_H);
-      if (focusRouteId) byRoute.set(focusRouteId, rb);
-      labels.push({
-        routeId: `${focusRouteId}:${block.stateId}`,
-        title: block.row.find(Boolean)?.stateLabel ?? block.stateId,
-        subtitle: `${block.stateId}  ·  ${devices.map((d) => d.name).join("  ·  ")}`,
-        x: x0,
-        y: labelY,
-        w: rowWidth,
-      });
-      columnY[col] = y + rowH + SECTION_GAP;
-    }
-
-    if (group && !stateIds.length) {
-      labels.push({
-        routeId: group.routeId,
-        title: group.title || group.path,
-        subtitle: "no shots match the current filters",
-        x: 0,
-        y: 0,
-        w: rowWidth,
-      });
-    }
-  } else if (mode === "grouped") {
-    // Index once — per-group filter/find scans are O(routes × tiles) and this
-    // recomputes on every search keystroke.
-    const tilesByRoute = new Map<string, ViewerTile[]>();
-    for (const t of tiles) {
-      const arr = tilesByRoute.get(t.routeId);
-      if (arr) arr.push(t);
-      else tilesByRoute.set(t.routeId, [t]);
-    }
-
-    const rowWidth = Math.max(1, devices.reduce((sum, d) => sum + slotW(colW(d)) + GAP, 0) - GAP);
-
-    // Measure every section before placing any, so the column count can be chosen
-    // from the real total height rather than guessed.
-    const blocks: GroupBlock[] = [];
-    for (const g of data.groups) {
-      const routeTiles = tilesByRoute.get(g.routeId) ?? [];
-      if (!routeTiles.length) continue;
-      const stateIds = [...new Set(routeTiles.map((t) => t.stateId))];
-      const byStateDevice = new Map(routeTiles.map((t) => [`${t.stateId} ${t.device}`, t]));
-
-      const rows = stateIds.map((stateId) => ({
-        stateId,
-        tiles: devices.map((d) => byStateDevice.get(`${stateId} ${d.name}`)),
-      }));
-      const height =
-        HEADER_H +
-        rows.reduce((sum, row) => {
-          const rowH = row.tiles.reduce((h, t, i) => {
-            if (!t) return h;
-            return Math.max(h, Math.min(colW(devices[i]) * aspect(t), MAX_H));
-          }, 0);
-          return sum + rowH + ROW_GAP;
+    const rows = stateIds.map((stateId) => ({
+      stateId,
+      tiles: devices.map((d) => byStateDevice.get(`${stateId} ${d.name}`)),
+    }));
+    const height =
+      HEADER_H +
+      rows.reduce((sum, row) => {
+        const rowH = row.tiles.reduce((h, t, i) => {
+          if (!t) return h;
+          return Math.max(h, tileHeight(t, colW(devices[i])).h);
         }, 0);
-      blocks.push({
-        routeId: g.routeId,
-        title: g.title || g.path,
-        path: g.path,
-        stateIds,
-        rows,
-        height,
-      });
-    }
+        return sum + rowH + ROW_GAP;
+      }, 0);
+    blocks.push({
+      routeId: g.routeId,
+      title: g.title || g.path,
+      path: g.path,
+      stateIds,
+      rows,
+      height,
+    });
+  }
 
-    const totalHeight = blocks.reduce((sum, b) => sum + b.height + SECTION_GAP, 0);
-    const columns = columnCount(totalHeight, rowWidth, blocks.length);
-    const columnX = Array.from({ length: columns }, (_, i) => i * (rowWidth + SECTION_GAP));
-    const columnY = new Array(columns).fill(0);
+  const rowHeight = (row: GroupBlock["rows"][number]) =>
+    row.tiles.reduce((h, t, i) => (t ? Math.max(h, tileHeight(t, colW(devices[i])).h) : h), 0);
 
-    for (const block of blocks) {
-      // Shortest column first keeps the bottom edge roughly level, so Fit doesn't
-      // have to zoom out for one runaway column.
+  // One route on its own would be a single tall column of states, which Fit can
+  // only show as a sliver; its states flow across columns instead, under one header.
+  if (blocks.length === 1) {
+    const block = blocks[0];
+    const heights = block.rows.map(rowHeight);
+    const total = heights.reduce((sum, h) => sum + h + ROW_GAP, 0);
+    const columns = columnCount(total, rowWidth, block.rows.length);
+    const columnY = new Array<number>(columns).fill(HEADER_H);
+    block.rows.forEach((row, r) => {
       let col = 0;
       for (let i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
-      const x0 = columnX[col];
-      let y = columnY[col];
-
-      const labelY = y;
-      growBounds(bounds, x0, y, rowWidth, HEADER_H);
-      y += HEADER_H;
-
-      for (const row of block.rows) {
-        let x = x0;
-        let rowH = 0;
-        row.tiles.forEach((t, i) => {
-          const w = colW(devices[i]);
-          if (t) rowH = Math.max(rowH, place(t, x, y, w));
-          x += slotW(w) + GAP;
-        });
-        y += rowH + ROW_GAP;
-      }
-
-      const existing = byRoute.get(block.routeId) ?? emptyBounds();
-      growBounds(existing, x0, labelY, rowWidth, HEADER_H);
-      byRoute.set(block.routeId, existing);
-      labels.push({
-        routeId: block.routeId,
-        title: block.title,
-        subtitle: `${block.stateIds.length} state${block.stateIds.length === 1 ? "" : "s"}`,
-        path: routePath(block.path),
-        x: x0,
-        y: labelY,
-        w: rowWidth,
+      let x = col * (rowWidth + SECTION_GAP);
+      row.tiles.forEach((t, i) => {
+        const w = colW(devices[i]);
+        if (t) place(t, x, columnY[col], w);
+        x += slotW(w) + GAP;
       });
-      columnY[col] = y + SECTION_GAP;
+      columnY[col] += heights[r] + ROW_GAP;
+    });
+    const width = columns * rowWidth + (columns - 1) * SECTION_GAP;
+    growBounds(bounds, 0, 0, width, HEADER_H);
+    const rb = byRoute.get(block.routeId) ?? emptyBounds();
+    growBounds(rb, 0, 0, width, HEADER_H);
+    byRoute.set(block.routeId, rb);
+    labels.push({
+      routeId: block.routeId,
+      title: block.title,
+      subtitle: `${block.stateIds.length} state${block.stateIds.length === 1 ? "" : "s"}`,
+      path: routePath(block.path),
+      x: 0,
+      y: 0,
+      w: width,
+    });
+    return { placed, labels, bounds, byRoute, routesWithTiles, truncated };
+  }
+
+  const totalHeight = blocks.reduce((sum, b) => sum + b.height + SECTION_GAP, 0);
+  const columns = columnCount(totalHeight, rowWidth, blocks.length);
+  const columnX = Array.from({ length: columns }, (_, i) => i * (rowWidth + SECTION_GAP));
+  const columnY = new Array(columns).fill(0);
+
+  for (const block of blocks) {
+    // Shortest column first keeps the bottom edge roughly level, so Fit doesn't
+    // have to zoom out for one runaway column.
+    let col = 0;
+    for (let i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
+    const x0 = columnX[col];
+    let y = columnY[col];
+
+    const labelY = y;
+    growBounds(bounds, x0, y, rowWidth, HEADER_H);
+    y += HEADER_H;
+
+    for (const row of block.rows) {
+      let x = x0;
+      let rowH = 0;
+      row.tiles.forEach((t, i) => {
+        const w = colW(devices[i]);
+        if (t) rowH = Math.max(rowH, place(t, x, y, w));
+        x += slotW(w) + GAP;
+      });
+      y += rowH + ROW_GAP;
     }
-  } else {
-    const targetRow = CARD * 5;
-    let x = 0;
-    let y = 0;
-    let rowH = 0;
-    for (const t of tiles) {
-      const d = data.devices.find((dd) => dd.name === t.device);
-      const w = d ? colW(d) : CARD;
-      const full = w * aspect(t);
-      const h = Math.min(full, MAX_H);
-      if (x > 0 && x + slotW(w) > targetRow) {
-        x = 0;
-        y += rowH + ROW_GAP;
-        rowH = 0;
-      }
-      place(t, x, y, w);
-      x += slotW(w) + GAP;
-      rowH = Math.max(rowH, h);
-    }
+
+    const existing = byRoute.get(block.routeId) ?? emptyBounds();
+    growBounds(existing, x0, labelY, rowWidth, HEADER_H);
+    byRoute.set(block.routeId, existing);
+    labels.push({
+      routeId: block.routeId,
+      title: block.title,
+      subtitle: `${block.stateIds.length} state${block.stateIds.length === 1 ? "" : "s"}`,
+      path: routePath(block.path),
+      x: x0,
+      y: labelY,
+      w: rowWidth,
+    });
+    columnY[col] = y + SECTION_GAP;
   }
 
   if (!placed.length) Object.assign(bounds, { minX: 0, minY: 0, maxX: 1, maxY: 1 });

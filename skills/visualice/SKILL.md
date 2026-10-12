@@ -1,6 +1,6 @@
 ---
 name: visualice
-description: Crawl a website and capture every page and UI state (modals, menus, drawers, accordions, tabs) across device profiles, then browse the screenshots on a zoomable canvas. Use when the user wants to screenshot/snapshot a whole site, visually crawl it, audit UI across breakpoints, capture all pages and interactive states, build a visual catalog/regression baseline of a web app, or "see every screen" of a site.
+description: Crawl a website and capture every page and UI state (modals, menus, drawers, accordions, tabs) across device profiles, then browse the screenshots on a zoomable canvas. Use when the user wants to screenshot/snapshot a whole site, visually crawl it, audit UI across breakpoints, capture all pages and interactive states, build a visual catalog of a web app, or "see every screen" of a site.
 ---
 
 # Visualice
@@ -116,38 +116,10 @@ password-protected staging: [`references/auth.md`](references/auth.md).
 - Interrupted mid-crawl? `visualice crawl --resume` continues the newest unfinished
   run and keeps the shots already on disk instead of starting over.
 
-## 6. Compare two runs
+## 6. Share a run
 
-`visualice diff` is the visual-regression step: it pairs shots by route|state|device
-across two runs, pixel-diffs them, and writes
-`.visualice/diffs/<from>__<to>/diff-report.md` plus `images/` where every changed
-pixel is magenta.
-
-- With no arguments it compares the two most recent runs — the "what did my change
-  do?" case. `--from=<runId> --to=<runId>` picks specific ones.
-- `--json` gives `{changed, added, removed, unchanged, uncomparable, changedShots}`
-  on stdout. Report the changed shots; don't paste the whole report.
-- `--fail-on-error` exits 3 when anything changed, for CI.
-- Once the user is happy with a run, `visualice approve` makes it the **baseline**;
-  from then on `diff` compares against that rather than the previous run
-  (`--from=previous` for the old behaviour). An intended change is approved the same
-  way — `--routes=<globs>` approves part of the site. Never approve on the user's
-  behalf without being asked: it is them accepting what the pages look like.
-- A difference that isn't a regression (a clock, an ad, a carousel) is silenced with an
-  ignore region in `diff.rules` — the viewer's Compare view draws one and hands back
-  the JSON — or `--ignore-antialiasing` for sub-pixel text noise. Neither needs a
-  re-crawl.
-- `visualice export <dir>` writes the viewer, the run and its comparisons as a static
-  folder, for sharing without a server.
-- Added/removed states are reported as such rather than diffed, and a shot that
-  failed in either run is "uncomparable" with the reason — read those before
-  concluding a page changed.
-- A changed `Size` column means the page's height moved; only the overlapping region
-  was compared.
-- To show someone the difference rather than describe it, run `visualice serve` and
-  switch the viewer from Explore to Compare: changed shots are listed biggest change
-  first, each reviewable as swipe, side by side, overlay or diff. The URL carries the
-  comparison, so the link lands on it.
+`visualice export <dir>` writes the viewer and the run as a static folder, for
+sharing without a server.
 
 Beyond page screenshots, the config can ask for more from the same crawl:
 `devices[].browser` (`firefox` / `webkit`) for cross-browser shots, `components`

@@ -1,8 +1,6 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { pathExists } from "./shared/fsx";
-import { listDiffs } from "./crawl/runs";
-import type { RunDiff } from "./diff/types";
 
 /**
  * A self-contained copy of the viewer and one run, for somewhere `visualice serve`
@@ -13,35 +11,20 @@ import type { RunDiff } from "./diff/types";
  *
  *   index.html, assets/   the built viewer
  *   data/                 the run
- *   runs.json, diffs.json the (one-entry) run list and the exported comparisons
- *   diffs/<id>/           each comparison's report and diff images
- *   runs/<id>/, baseline/ only the shots those comparisons point at
+ *   runs.json             the (one-entry) run list
  */
 
 export interface ExportOptions {
   runDir: string;
   runId: string;
   viewerDist: string;
-  outRoot: string;
-  baselineDir: string;
   dest: string;
-  /** Comparison ids to include; default is every comparison made against this run. */
-  diffs?: string[];
-  log?: (msg: string) => void;
 }
 
 export interface ExportResult {
   dest: string;
   runId: string;
-  diffs: string[];
   files: number;
-}
-
-async function copyFile(from: string, to: string): Promise<boolean> {
-  if (!(await pathExists(from))) return false;
-  await fs.mkdir(path.dirname(to), { recursive: true });
-  await fs.copyFile(from, to);
-  return true;
 }
 
 async function countFiles(dir: string): Promise<number> {
@@ -50,7 +33,6 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 export async function exportRun(opts: ExportOptions): Promise<ExportResult> {
-  const log = opts.log ?? (() => {});
   const dest = path.resolve(opts.dest);
   // Is `dest` at or under `p`? (An absolute result means another drive on Windows.)
   const inside = (p: string) => {
@@ -76,44 +58,10 @@ export async function exportRun(opts: ExportOptions): Promise<ExportResult> {
   await fs.cp(opts.runDir, path.join(dest, "data"), { recursive: true, dereference: true });
   await fs.rm(path.join(dest, "data", ".incomplete"), { force: true });
 
-  const available = await listDiffs(opts.outRoot);
-  const wanted = opts.diffs
-    ? available.filter((d) => opts.diffs!.includes(d.id))
-    : available.filter((d) => d.to === opts.runId);
-  const missing = (opts.diffs ?? []).filter((id) => !available.some((d) => d.id === id));
-  if (missing.length) throw new Error(`no such comparison: ${missing.join(", ")}`);
-
-  for (const d of wanted) {
-    const src = path.join(opts.outRoot, "diffs", d.id);
-    await fs.cp(src, path.join(dest, "diffs", d.id), { recursive: true });
-    const diff = JSON.parse(await fs.readFile(path.join(src, "diff.json"), "utf8")) as RunDiff;
-    // The before/after pictures live in the two runs (or the baseline); copy just
-    // the ones this comparison shows, not both runs whole.
-    const fromRoot = diff.from.baseline
-      ? opts.baselineDir
-      : path.join(opts.outRoot, "runs", diff.from.runId);
-    const fromDest = diff.from.baseline
-      ? path.join(dest, "baseline")
-      : path.join(dest, "runs", diff.from.runId);
-    const toRoot = path.join(opts.outRoot, "runs", diff.to.runId);
-    const toDest = path.join(dest, "runs", diff.to.runId);
-    let lost = 0;
-    for (const shot of diff.shots) {
-      for (const rel of [shot.fromShot, shot.fromPreview]) {
-        if (rel && !(await copyFile(path.join(fromRoot, rel), path.join(fromDest, rel)))) lost++;
-      }
-      for (const rel of [shot.toShot, shot.toPreview]) {
-        if (rel && !(await copyFile(path.join(toRoot, rel), path.join(toDest, rel)))) lost++;
-      }
-    }
-    if (lost) log(`⚠ ${d.id}: ${lost} shot(s) it refers to are no longer on disk`);
-  }
-
   await fs.writeFile(
     path.join(dest, "runs.json"),
     JSON.stringify({ current: opts.runId, runs: [opts.runId] }),
   );
-  await fs.writeFile(path.join(dest, "diffs.json"), JSON.stringify({ diffs: wanted }));
 
-  return { dest, runId: opts.runId, diffs: wanted.map((d) => d.id), files: await countFiles(dest) };
+  return { dest, runId: opts.runId, files: await countFiles(dest) };
 }

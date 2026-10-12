@@ -78,7 +78,7 @@ too — those capture only on mobile devices. Hover-revealed dropdowns are probe
 For agents and CI: `--json` prints a single machine-readable summary to stdout
 (`{runId, runDir, manifest, report, routes, states, shots, failed, failures, wanted}`), `--quiet` silences progress,
 and `--fail-on-error` exits 3 when any capture failed. Exit codes: 0 ok · 1 error ·
-2 usage · 3 capture failures or visual differences. Failed captures are retried
+2 usage · 3 capture failures. Failed captures are retried
 (`politeness.retries`), then recorded per-shot in the manifest and listed in a
 **Failures** section of the report.
 
@@ -103,10 +103,8 @@ visualice serve --shoot=out.png # headless: screenshot the viewer to a file
 The viewer is a standalone static app (`viewer/`); it reads `viewer-data.json` + the
 screenshots and needs no connection to the crawled site. Scroll to pan, ⌘/ctrl+scroll
 (or pinch) to zoom, click any shot for metadata (and to download the image), shift+arrow to step to the next one.
-Toggle **Grouped** (by path), **Grid** (everything at once), or **By device** — one route
-at a time with every device drawn at the same width, so the same element lands in the same
-place across the row and a spacing difference is visible by looking straight down. In By
-device mode the sidebar picks the route. Thumbnails load when zoomed out and step up through a
+Shots are grouped by route: one section per path, a row per state, a column per device.
+Thumbnails load when zoomed out and step up through a
 mid-resolution image to full resolution as you zoom in. The minimap is hidden until you
 turn it on (the button in the zoom controls, or `M`); it shows where you are in the layout
 and jumps there on click. The path list virtualizes past a few dozen routes so a large run
@@ -121,111 +119,20 @@ Filter by device or by state kind, search by path, and flip between runs from th
 switcher — `serve` exposes the sibling runs in the same output directory, so comparing
 runs needs no restart. Failed captures are tiles too: a placeholder carrying its error,
 an **N failed** toggle and a **Failed** list in the sidebar, so a broken shot is visible
-rather than missing. The view lives in the URL (mode, query, devices, kinds, selected
-tile, run, comparison), so copying the address bar shares the exact shot you're looking
+rather than missing. The view lives in the URL (route, query, devices, kinds, selected
+tile, run), so copying the address bar shares the exact shot you're looking
 at. `?data=`
 accepts same-origin paths only, and a `viewer-data.json` the viewer can't read gets an
 error naming the offending field instead of a blank canvas.
 
-## Compare runs
+## Share a run
 
 ```bash
-visualice diff                              # latest run vs the approved baseline —
-                                            # or vs the run before it, if there is none
-visualice diff --from=<runId> --to=<runId>  # specific ones
-visualice diff --from=previous              # the run before, even with a baseline
-visualice diff --threshold=20 --min-ratio=0.001 --fail-on-error
-```
-
-Writes `.visualice/diffs/<from>__<to>/` — `diff-report.md`, `diff-summary.md` (the short
-version, for a PR comment), `diff.json`, and `images/<route>/<state>/<device>.png`, the new
-shot washed out with every changed pixel painted magenta. Shots are paired on route|state|device, so a renamed route reads as one
-removal plus one addition instead of a bogus diff; when a page's height changed only the
-overlapping region is compared and the size change is reported separately; a capture that
-failed in either run is listed as **uncomparable** with the reason.
-
-`--threshold=<n>` is the per-channel tolerance (0–255, default 12) and `--min-ratio=<f>`
-the noise floor: the fraction of pixels that must differ — or, when the height changed,
-the fraction of the page gained or lost — before a pair counts as changed (default 0,
-so any difference counts; `0.001` lets a page that grew by a few pixels through).
-`--json` prints the summary instead of the report path, `--diff-out=<dir>` moves the
-output, and `--fail-on-error` exits 3 when anything changed, appeared or disappeared —
-the CI gate.
-
-### Approve a baseline
-
-Comparing a run with the one before it answers "what did my last change do?", but it
-can't gate a pipeline: once a change is intended, every later run differs from its
-predecessor in exactly the way it should. A baseline is a run someone looked at and
-accepted.
-
-```bash
-visualice approve                     # the latest run becomes the baseline
-visualice approve --run=<runId>       # a specific one
-visualice approve --routes=/blog/**   # only these routes; the rest stay as they were
-```
-
-From then on `visualice diff` compares against it, and keeps failing under
-`--fail-on-error` until the difference is fixed or approved. The baseline is a copy kept
-at `.visualice/baseline/` — outside `runs/`, so pruning never takes it. Set
-`baseline.dir` to a folder outside the gitignored output directory to commit it, which is
-what lets a fresh CI checkout compare against it.
-
-### Quieten the noise
-
-Three ways to stop a difference that isn't a regression from failing the diff, none of
-which needs a re-crawl:
-
-- **Ignore regions.** In the viewer's Compare view, press the **mark a region** button,
-  drag a box over the clock / ad / carousel, and paste the rule it gives you into
-  `diff.rules`. The diff image tints ignored areas so it stays obvious what wasn't looked
-  at. (`stabilize.maskSelectors` does the same job at capture time, by selector.)
-- **Per-route settings.** A rule can also carry its own `threshold` or `minRatio`, scoped
-  by route glob, state and device.
-- **Anti-aliasing.** `--ignore-antialiasing` (or `diff.antialiasing: true`) leaves out
-  edge pixels that are only a different blend of their neighbours — the sub-pixel text
-  differences two machines produce for the same page.
-
-```jsonc
-"diff": {
-  "minRatio": 0.001,
-  "antialiasing": true,
-  "rules": [
-    { "route": "/**", "ignore": [{ "x": 0, "y": 0, "width": 1440, "height": 64 }] },
-    { "route": "/video/**", "device": "mobile", "threshold": 40 }
-  ]
-}
-```
-
-### Share a run
-
-```bash
-visualice export report/     # the viewer + the latest run + its comparisons
+visualice export report/     # the viewer + the latest run
 ```
 
 writes a static folder that any file server can host (`npx serve report`) — a CI
-artifact, a preview deploy, a zip for a reviewer. It includes the comparisons made
-against the exported run and only the before/after shots those show; `--diff=<ids>`
-picks specific ones and `--diff=none` leaves them out.
-
-### In CI
-
-[`examples/github-actions/visualice.yml`](./examples/github-actions/visualice.yml) is a
-complete pull-request workflow: crawl the PR's build, diff against the committed
-baseline, post `diff-summary.md` as a PR comment, upload the exported report as an
-artifact, and fail the job when something changed. An intended change is approved in the
-same PR (`visualice crawl && visualice approve`, then commit the baseline folder).
-
-### In the viewer
-
-Under `serve` (or in an export) the header's **Explore / Compare**
-switch opens the comparisons (Compare is disabled until a diff exists): a list of shots,
-biggest change first, beside a review pane with four ways to look at one — **Swipe** (the
-default), **Side by side**, **Overlay** and **Diff**. `←` `→` or `j` `k` step through the
-list. Status filters choose between changed, added, removed, uncomparable and — off by
-default, for confirming that nothing else moved — unchanged. The three images live in two
-run directories (or the baseline) and the diff directory, which is why this needs `serve`
-or an export rather than a single run's data.
+artifact, a preview deploy, a zip for a reviewer.
 
 ## Configuration
 
@@ -246,34 +153,32 @@ Run `npm run schema` after changing the zod schema — a unit test fails if the 
 
 Options worth knowing:
 
-| Option                                      | Default                 | What it does                                                                                              |
-| ------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------- |
-| `politeness.respectRobots`                  | `true`                  | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes                            |
-| `politeness.retries`                        | `1`                     | Extra attempts for a failed navigation/capture before recording a failure                                 |
-| `politeness.reuseNavigation`                | `true`                  | Skip the reload when the next state's recipe just extends what the page already shows                     |
-| `scope.hashRoutes`                          | `"auto"`                | `auto` treats `#/about`-style fragments as routes and plain anchors as anchors; `never`/`always` force it |
-| `discovery.interactions.nestDepth`          | `1`                     | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states                      |
-| `discovery.interactions.maxPerPage`         | `12`                    | Hard cap on states per route, whatever the nesting depth                                                  |
-| `discovery.interactions.hover`              | `true`                  | Also probe hover-revealed states (dropdown navs)                                                          |
-| `discovery.mobileStates`                    | `true`                  | Second probe pass at the first mobile device's viewport (finds hamburger navs)                            |
-| `devices[].colorScheme`                     | `"light"`               | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog                           |
-| `devices[].locale` / `timezoneId`           | `en-US` / `UTC`         | Pinned so `Intl`/date rendering is machine-independent                                                    |
-| `devices[].browser`                         | `"chromium"`            | `firefox` or `webkit` captures that device in another engine (`npx playwright install <name>` first)      |
-| `components`                                | `[]`                    | `{ name, selector, routes }` — screenshot an element on its own, on every route that has it               |
-| `checks.accessibility`                      | `false`                 | Run axe-core on every captured state; results land in the report, the sidecars and the viewer             |
-| `diff.threshold` / `minRatio`               | `12` / `0`              | Defaults for `visualice diff`; the flags override them                                                    |
-| `diff.antialiasing`                         | `false`                 | Don't count anti-aliased edge pixels as changes                                                           |
-| `diff.rules`                                | `[]`                    | Per-route `threshold` / `minRatio` and `ignore` regions (CSS px)                                          |
-| `baseline.dir`                              | `<output.dir>/baseline` | Where `approve` keeps the baseline — point it outside the output dir to commit it                         |
-| `stabilize.freezeTime` / `seedRandom`       | unset                   | Pin `Date` / `Math.random` in the page so reruns are byte-identical                                       |
-| `stabilize.maskSelectors`                   | `[]`                    | Paint opaque boxes over volatile regions (ads, clocks, carousels)                                         |
-| `stabilize.waitForSelectors` / `…TimeoutMs` | `[]` / `5000`           | Selectors that must be visible before a shot; they are waited on together and share the budget            |
-| `screenshot.alsoViewport`                   | `false`                 | Also write an above-the-fold crop next to each full-page shot                                             |
-| `screenshot.maxHeight`                      | `20000`                 | Crop full-page shots to this CSS-px height and flag them `clamped`; `0` disables (watch memory)           |
-| `screenshot.thumbnail.midWidth`             | `1024`                  | Mid-resolution LOD step between the thumbnail and the full image; `0` disables                            |
-| `http.ignoreHTTPSErrors`                    | `false`                 | Accept self-signed TLS (staging environments)                                                             |
-| `http.httpCredentials` / `extraHTTPHeaders` | unset                   | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                                           |
-| `routesFile`                                | `visualice.routes.md`   | Where the editable site index lives; `false` disables it entirely                                         |
+| Option                                      | Default               | What it does                                                                                                        |
+| ------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `politeness.respectRobots`                  | `true`                | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes                                      |
+| `politeness.retries`                        | `1`                   | Extra attempts for a failed navigation/capture before recording a failure                                           |
+| `politeness.reuseNavigation`                | `true`                | Skip the reload when the next state's recipe just extends what the page already shows                               |
+| `scope.hashRoutes`                          | `"auto"`              | `auto` treats `#/about`-style fragments as routes and plain anchors as anchors; `never`/`always` force it           |
+| `discovery.interactions.nestDepth`          | `1`                   | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states                                |
+| `discovery.interactions.maxPerPage`         | `12`                  | Hard cap on states per route, whatever the nesting depth                                                            |
+| `discovery.interactions.hover`              | `true`                | Also probe hover-revealed states (dropdown navs)                                                                    |
+| `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)                                      |
+| `devices[].colorScheme`                     | `"light"`             | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog                                     |
+| `devices[].locale` / `timezoneId`           | `en-US` / `UTC`       | Pinned so `Intl`/date rendering is machine-independent                                                              |
+| `devices[].browser`                         | `"chromium"`          | `firefox` or `webkit` captures that device in another engine (`npx playwright install <name>` first)                |
+| `components`                                | `[]`                  | `{ name, selector, routes }` — screenshot an element on its own, on every route that has it                         |
+| `checks.accessibility`                      | `false`               | Run axe-core on every captured state; results land in the report, the sidecars and the viewer                       |
+| `stabilize.freezeTime` / `seedRandom`       | unset                 | Pin `Date` / `Math.random` in the page so reruns are byte-identical                                                 |
+| `stabilize.maskSelectors`                   | `[]`                  | Paint opaque boxes over volatile regions (ads, clocks, carousels)                                                   |
+| `stabilize.waitForSelectors` / `…TimeoutMs` | `[]` / `5000`         | Selectors that must be visible before a shot; they are waited on together and share the budget                      |
+| `screenshot.alsoViewport`                   | `false`               | Also write an above-the-fold crop next to each full-page shot                                                       |
+| `screenshot.screens`                        | `true`                | Capture full pages one screen at a time, as a user scrolls, so fixed bars and backdrops show truthfully             |
+| `screenshot.maxScreens`                     | `30`                  | Most screens per shot; a longer page is cut there and flagged `clamped`                                             |
+| `screenshot.maxHeight`                      | `20000`               | With `screens` off, crop full-page shots to this CSS-px height and flag them `clamped`; `0` disables (watch memory) |
+| `screenshot.thumbnail.midWidth`             | `1024`                | Mid-resolution LOD step between the thumbnail and the full image; `0` disables                                      |
+| `http.ignoreHTTPSErrors`                    | `false`               | Accept self-signed TLS (staging environments)                                                                       |
+| `http.httpCredentials` / `extraHTTPHeaders` | unset                 | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                                                     |
+| `routesFile`                                | `visualice.routes.md` | Where the editable site index lives; `false` disables it entirely                                                   |
 
 ## More than page screenshots
 
@@ -353,8 +258,8 @@ installs from a checkout or a git URL:
 ```
 
 That brings in the `visualice` skill (`skills/visualice/`, with references for the CLI,
-auth recipes and Explore mode) and three commands: `/visualice [url]` to crawl,
-`/visualice-view` to open the viewer, `/visualice-diff` to compare two runs. Or just ask
+auth recipes and Explore mode) and two commands: `/visualice [url]` to crawl and
+`/visualice-view` to open the viewer. Or just ask
 Claude to "visually crawl https://your.site" — the skill picks the right mode
 (replay / auto / agentic explore for auth + tricky states), captures, and opens the viewer.
 
@@ -366,8 +271,6 @@ runs/<runId>/
   crawl-map.json      # reusable manifest (routes, states, recipes, shots)
   viewer-data.json    # flattened tile index for the viewer
   crawl-report.md     # human summary
-baseline/             # visualice approve: the accepted shots, shaped like a run
-diffs/<from>__<to>/   # visualice diff: diff-report.md, diff-summary.md, diff.json, images/
 ```
 
 One run owns that directory while it works (`<out>/.lock`, reclaimed automatically when
@@ -403,13 +306,12 @@ Both the viewer and the fixture site are styled with Tailwind v4, configured in 
 than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
 fixture's in `tests/fixture-src/tailwind.input.css`.
 
-The 483 unit tests are pure and fast. The 61 browser-driven tests in `tests/integration/`
+The 411 unit tests are pure and fast. The 58 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`
 entry point run from an unrelated cwd, hover states not leaking between shots that share a
-page, `screenshot.maxHeight` clamping, `--resume`, run diffing, the baseline workflow through
-the real CLI (approve → gate → ignore rule → export), component shots and accessibility
+page, `screenshot.maxHeight` clamping, `--resume`, component shots and accessibility
 checks, and the viewer itself — built from source and driven in a browser, from `serve` and
 from a static export.
 

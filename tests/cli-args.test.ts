@@ -49,15 +49,11 @@ describe("parseFlags", () => {
   });
 
   it("takes the export directory as a bare argument", () => {
-    expect(parseFlags("export", ["site", "--diff=none"])).toEqual({ dest: "site", diff: "none" });
-    expect(parseFlags("approve", ["--routes=/blog/**,/about"])).toEqual({
-      routes: "/blog/**,/about",
-    });
-    expect(parseFlags("diff", ["--from=baseline", "--ignore-antialiasing"])).toEqual({
-      from: "baseline",
-      "ignore-antialiasing": true,
-    });
-    expect(() => parseFlags("approve", ["--diff=x"])).toThrow(/unknown flag --diff for 'approve'/);
+    expect(parseFlags("export", ["site", "--run=r1"])).toEqual({ dest: "site", run: "r1" });
+  });
+
+  it("no longer knows the retired comparison commands' flags", () => {
+    expect(() => parseFlags("export", ["site", "--diff=none"])).toThrow(/unknown flag --diff/);
   });
 
   it("mixes forms", () => {
@@ -71,7 +67,9 @@ describe("parseFlags", () => {
 
 describe("isCommand", () => {
   it("knows the real commands", () => {
-    for (const cmd of ["crawl", "diff", "serve", "doctor"]) expect(isCommand(cmd), cmd).toBe(true);
+    for (const cmd of ["crawl", "export", "serve", "doctor"])
+      expect(isCommand(cmd), cmd).toBe(true);
+    for (const cmd of ["diff", "approve"]) expect(isCommand(cmd), cmd).toBe(false);
   });
 
   it("does not mistake Object.prototype's names for commands", () => {

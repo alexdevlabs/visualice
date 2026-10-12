@@ -58,7 +58,7 @@ exploring keeps paying off:
 ```
 
 - `flakyRegions` → merged into `stabilize.maskSelectors`: painted over, so a
-  never-identical region stops making every diff noisy.
+  never-identical region (a clock, an ad) doesn't change from run to run.
 - `stableSelectors` → waited for (visible) before each screenshot, so a shot isn't
   taken mid-hydration. Each has a short timeout and logs a warning if it never
   appears — don't leave a stale one in place.

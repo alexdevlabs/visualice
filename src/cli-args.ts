@@ -34,15 +34,7 @@ const FLAG_TYPES: Record<string, FlagType> = {
   out: "string",
   "no-save": "boolean",
   "no-fix": "boolean",
-  from: "string",
-  to: "string",
-  threshold: "string",
-  "min-ratio": "string",
-  "diff-out": "string",
-  "ignore-antialiasing": "boolean",
-  routes: "string",
   dest: "string",
-  diff: "string",
 };
 
 /** Commands that accept one bare positional, mapped onto a flag (crawl <url>). */
@@ -87,21 +79,7 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   demo: ["config", "json", "quiet", "fail-on-error"],
   "demo-crawl": ["config", "replay", "json", "quiet", "fail-on-error"],
   doctor: ["json", "quiet", "no-fix"],
-  diff: [
-    "config",
-    "from",
-    "to",
-    "threshold",
-    "min-ratio",
-    "diff-out",
-    "ignore-antialiasing",
-    "json",
-    "quiet",
-    "fail-on-error",
-    "out",
-  ],
-  approve: ["config", "run", "routes", "json", "quiet", "out"],
-  export: ["config", "run", "dest", "diff", "json", "quiet", "out"],
+  export: ["config", "run", "dest", "json", "quiet", "out"],
 };
 
 /**
@@ -169,17 +147,6 @@ export function intFlag(flags: Flags, name: string): number | undefined {
   const n = Number(v);
   if (!Number.isInteger(n) || n <= 0) {
     throw new UsageError(`--${name} must be a positive integer (got "${v}")`);
-  }
-  return n;
-}
-
-/** A non-negative decimal flag (a ratio/fraction), rejecting junk loudly. */
-export function floatFlag(flags: Flags, name: string): number | undefined {
-  const v = str(flags, name);
-  if (v === undefined) return undefined;
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0) {
-    throw new UsageError(`--${name} must be a non-negative number (got "${v}")`);
   }
   return n;
 }

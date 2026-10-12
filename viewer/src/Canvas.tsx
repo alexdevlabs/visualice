@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { CAPTION_MIN_W } from "./layout";
+import { CAPTION_MIN_W, SCREEN_GAP } from "./layout";
 import type { Layout, Bounds } from "./layout";
 import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
 import type { Transform } from "./lod";
@@ -318,40 +318,80 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
                   <div className="flex items-center gap-1 overflow-hidden">
                     <TileBadge>{p.tile.stateKind}</TileBadge>
                     <TileBadge>{p.tile.device}</TileBadge>
-                    {p.cropped && <TileBadge warn>tall</TileBadge>}
+                    {p.tile.screens ? (
+                      <TileBadge warn={p.cropped}>
+                        {p.cropped
+                          ? `${p.screensShown} of ${p.tile.screens} screens`
+                          : `${p.tile.screens} screens`}
+                      </TileBadge>
+                    ) : (
+                      p.cropped && <TileBadge warn>tall</TileBadge>
+                    )}
                     {p.tile.clamped && <TileBadge warn>cropped</TileBadge>}
                     {p.tile.a11y ? <TileBadge warn>{`a11y ${p.tile.a11y}`}</TileBadge> : null}
                   </div>
                 </div>
               )}
-              <div
-                className={cx(
-                  "size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
-                  failed
-                    ? "outline-1 -outline-offset-1 outline-amber outline-dashed"
-                    : selected && "outline-3 outline-offset-3 outline-accent",
-                )}
-              >
-                {failed || !src ? (
-                  // A failed capture still occupies its place in the catalog: dropping
-                  // it would read as "this state doesn't exist".
-                  <div className="flex size-full flex-col items-center justify-center gap-2.5 bg-[repeating-linear-gradient(45deg,var(--color-hatch-a),var(--color-hatch-a)_12px,var(--color-hatch-b)_12px,var(--color-hatch-b)_24px)] p-3 text-center text-dim">
-                    <span className="text-[44px] leading-none font-bold text-amber">!</span>
-                    {showTileLabels && (
-                      <span className="line-clamp-4 max-w-[90%] text-[13px]">{p.tile.error}</span>
-                    )}
-                  </div>
-                ) : (
-                  <img
-                    className="block size-full object-cover object-top"
-                    src={base + src}
-                    draggable={false}
-                    loading="lazy"
-                    decoding="async"
-                    alt={p.tile.stateLabel}
-                  />
-                )}
-              </div>
+              {!failed && src && p.screenH ? (
+                // Each screen is its own frame with canvas between them: a fixed bar
+                // repeating on every screen then reads as what it is, not a glitch.
+                <div
+                  className={cx(
+                    "relative size-full rounded-[4px]",
+                    selected && "outline-3 outline-offset-3 outline-accent",
+                  )}
+                >
+                  {Array.from({ length: p.screensShown ?? 1 }, (_, i) => (
+                    <div
+                      key={i}
+                      className="absolute inset-x-0 overflow-hidden rounded-[4px] bg-paper shadow-tile"
+                      style={{ top: i * (p.screenH! + SCREEN_GAP), height: p.screenH }}
+                    >
+                      <img
+                        className="absolute inset-x-0 block w-full max-w-none"
+                        style={{
+                          top: -i * p.screenH!,
+                          height: p.screenH! * (p.tile.screens ?? 1),
+                        }}
+                        src={base + src}
+                        draggable={false}
+                        loading="lazy"
+                        decoding="async"
+                        alt={i === 0 ? p.tile.stateLabel : ""}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div
+                  className={cx(
+                    "size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
+                    failed
+                      ? "outline-1 -outline-offset-1 outline-amber outline-dashed"
+                      : selected && "outline-3 outline-offset-3 outline-accent",
+                  )}
+                >
+                  {failed || !src ? (
+                    // A failed capture still occupies its place in the catalog: dropping
+                    // it would read as "this state doesn't exist".
+                    <div className="flex size-full flex-col items-center justify-center gap-2.5 bg-[repeating-linear-gradient(45deg,var(--color-hatch-a),var(--color-hatch-a)_12px,var(--color-hatch-b)_12px,var(--color-hatch-b)_24px)] p-3 text-center text-dim">
+                      <span className="text-[44px] leading-none font-bold text-amber">!</span>
+                      {showTileLabels && (
+                        <span className="line-clamp-4 max-w-[90%] text-[13px]">{p.tile.error}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <img
+                      className="block size-full object-cover object-top"
+                      src={base + src}
+                      draggable={false}
+                      loading="lazy"
+                      decoding="async"
+                      alt={p.tile.stateLabel}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           );
         })}

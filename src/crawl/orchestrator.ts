@@ -102,6 +102,7 @@ export function toViewerData(m: Manifest): ViewerData {
           width: ref.width ?? (profile ? profile.width * profile.dpr : undefined),
           height: ref.height ?? (profile ? profile.height * profile.dpr : undefined),
           clamped: ref.clamped,
+          screens: ref.screens,
           meta: ref.meta,
           a11y: ref.a11y,
           error: ref.error,

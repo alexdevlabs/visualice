@@ -1,5 +1,4 @@
 import type { ViewerData, ViewerTile } from "./types";
-import type { RunDiff } from "./diff-types";
 
 /**
  * Loading and validating `viewer-data.json`.
@@ -47,6 +46,8 @@ function parseTile(raw: unknown, i: number): ViewerTile {
     width: typeof raw.width === "number" ? raw.width : undefined,
     height: typeof raw.height === "number" ? raw.height : undefined,
     clamped: raw.clamped === true || undefined,
+    screens:
+      typeof raw.screens === "number" && raw.screens > 1 ? Math.floor(raw.screens) : undefined,
     meta: isString(raw.meta) ? raw.meta : undefined,
     a11y: typeof raw.a11y === "number" ? raw.a11y : undefined,
     error: isString(raw.error) ? raw.error : undefined,
@@ -72,7 +73,7 @@ export function parseViewerData(raw: unknown): ViewerData {
   });
 
   // Groups are a convenience index; rebuild them from the tiles when absent so an
-  // older run still opens in grouped mode.
+  // older run still opens.
   const groups = Array.isArray(raw.groups)
     ? raw.groups.filter(isObject).map((g, i) => ({
         path: requireString(g, "path", `groups[${i}]`),
@@ -122,96 +123,6 @@ export function resolveDataUrl(search: string, fallback: string): { url: string;
   return { url: requested };
 }
 
-/**
- * One comparison written by `visualice diff`, as the server lists it.
- *
- * The list is separate from the diffs themselves so opening the viewer costs one
- * small request rather than every comparison's full shot table.
- */
-export interface DiffRef {
-  id: string;
-  from: string;
-  to: string;
-}
-
-export async function fetchDiffList(url = "./diffs.json"): Promise<DiffRef[]> {
-  const res = await fetch(url);
-  if (!res.ok) return [];
-  const raw: unknown = await res.json().catch(() => null);
-  if (!isObject(raw) || !Array.isArray(raw.diffs)) return [];
-  return raw.diffs.filter(
-    (d): d is DiffRef => isObject(d) && isString(d.id) && isString(d.from) && isString(d.to),
-  );
-}
-
-/**
- * Validate a `diff.json`. Looser than the manifest check on purpose: a comparison
- * is read-only decoration over two runs, so a field the viewer doesn't recognise
- * should cost that one row's detail rather than the whole view.
- */
-export function parseRunDiff(raw: unknown): RunDiff {
-  if (!isObject(raw)) throw new ViewerDataError("not a JSON object");
-  if (!Array.isArray(raw.shots)) throw new ViewerDataError("missing a 'shots' array");
-  const side = (v: unknown, name: string): RunDiff["from"] => {
-    if (!isObject(v) || !isString(v.runId)) {
-      throw new ViewerDataError(`'${name}' must name a runId`);
-    }
-    return {
-      runId: v.runId,
-      dir: isString(v.dir) ? v.dir : "",
-      ...(v.baseline === true ? { baseline: true } : {}),
-    };
-  };
-  const summary = isObject(raw.summary) ? raw.summary : {};
-  const count = (key: string) => (typeof summary[key] === "number" ? (summary[key] as number) : 0);
-  const routes = isObject(raw.routes) ? raw.routes : {};
-  const list = (v: unknown) => (Array.isArray(v) ? v.filter(isString) : []);
-
-  return {
-    from: side(raw.from, "from"),
-    to: side(raw.to, "to"),
-    minRatio: typeof raw.minRatio === "number" ? raw.minRatio : 0,
-    routes: { added: list(routes.added), removed: list(routes.removed) },
-    summary: {
-      added: count("added"),
-      removed: count("removed"),
-      changed: count("changed"),
-      unchanged: count("unchanged"),
-      uncomparable: count("uncomparable"),
-    },
-    shots: raw.shots.filter(isObject).map((s, i) => {
-      const where = `shots[${i}]`;
-      return {
-        key: requireString(s, "key", where),
-        route: requireString(s, "route", where),
-        routeUrl: isString(s.routeUrl) ? s.routeUrl : undefined,
-        state: requireString(s, "state", where),
-        stateLabel: isString(s.stateLabel) ? s.stateLabel : requireString(s, "state", where),
-        device: requireString(s, "device", where),
-        status: (isString(s.status)
-          ? s.status
-          : "uncomparable") as RunDiff["shots"][number]["status"],
-        ratio: typeof s.ratio === "number" ? s.ratio : undefined,
-        sizeChanged: s.sizeChanged === true || undefined,
-        fromSize: isObject(s.fromSize)
-          ? (s.fromSize as { width: number; height: number })
-          : undefined,
-        toSize: isObject(s.toSize) ? (s.toSize as { width: number; height: number }) : undefined,
-        image: isString(s.image) ? s.image : undefined,
-        imageThumb: isString(s.imageThumb) ? s.imageThumb : undefined,
-        antialiasedPixels:
-          typeof s.antialiasedPixels === "number" ? s.antialiasedPixels : undefined,
-        ignoredPixels: typeof s.ignoredPixels === "number" ? s.ignoredPixels : undefined,
-        fromShot: isString(s.fromShot) ? s.fromShot : undefined,
-        toShot: isString(s.toShot) ? s.toShot : undefined,
-        fromPreview: isString(s.fromPreview) ? s.fromPreview : undefined,
-        toPreview: isString(s.toPreview) ? s.toPreview : undefined,
-        note: isString(s.note) ? s.note : undefined,
-      };
-    }),
-  };
-}
-
 /** Fetch a JSON document, turning HTTP and parse failures into `ViewerDataError`s. */
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url);
@@ -221,10 +132,6 @@ async function fetchJson(url: string): Promise<unknown> {
   } catch (e) {
     throw new ViewerDataError(`not valid JSON — ${(e as Error).message}`);
   }
-}
-
-export async function fetchRunDiff(id: string): Promise<RunDiff> {
-  return parseRunDiff(await fetchJson(`./diffs/${encodeURIComponent(id)}/diff.json`));
 }
 
 export async function fetchViewerData(url: string): Promise<ViewerData> {
@@ -258,18 +165,4 @@ export function parseViolations(raw: unknown): ShotViolation[] {
         ]
       : [],
   );
-}
-
-/**
- * Where a comparison's pictures live, relative to the viewer: the "before" side is
- * a run directory, or the approved baseline when the diff was taken against it.
- */
-export function diffSources(diff: RunDiff, diffId: string) {
-  const from = diff.from.baseline ? "./baseline/" : `./runs/${diff.from.runId}/`;
-  const to = `./runs/${diff.to.runId}/`;
-  return {
-    from: (rel?: string) => (rel ? from + rel : undefined),
-    to: (rel?: string) => (rel ? to + rel : undefined),
-    diff: (rel?: string) => (rel ? `./diffs/${diffId}/${rel}` : undefined),
-  };
 }

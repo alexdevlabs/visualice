@@ -85,7 +85,6 @@
     "dist",
     "viewer/dist",
     "tests/fixture",
-    "examples",
     "config.schema.json",
     "README.md",
     "LICENSE"

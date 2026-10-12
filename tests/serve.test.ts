@@ -54,58 +54,28 @@ describe("serveViewer path confinement", () => {
   });
 });
 
-describe("serveViewer comparisons", () => {
+describe("serveViewer sibling runs", () => {
   let root: string;
-  let withDiffs: StaticServer;
+  let withRuns: StaticServer;
 
   beforeAll(async () => {
-    root = await fs.mkdtemp(path.join(os.tmpdir(), "vc-serve-diffs-"));
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "vc-serve-runs-"));
     const runDir = path.join(root, "runs", "2026-01-01T00-00-00-000Z");
     const viewer = path.join(root, "viewer");
     await fs.mkdir(runDir, { recursive: true });
     await fs.mkdir(viewer, { recursive: true });
     await fs.writeFile(path.join(runDir, "viewer-data.json"), '{"ok":true}');
     await fs.writeFile(path.join(viewer, "index.html"), "<!doctype html><title>v</title>");
-
-    const diffs = path.join(root, "diffs");
-    const good = path.join(diffs, "2026-01-01T00-00-00-000Z__2026-01-02T00-00-00-000Z");
-    await fs.mkdir(path.join(good, "images"), { recursive: true });
-    await fs.writeFile(path.join(good, "diff.json"), '{"shots":[]}');
-    await fs.writeFile(path.join(good, "images", "a.png"), "PNG");
-    // A directory that isn't a comparison — offering it would only fail to open.
-    await fs.mkdir(path.join(diffs, "scratch"), { recursive: true });
-    // …and one whose name is right but which was never written.
-    await fs.mkdir(path.join(diffs, "aaa__bbb"), { recursive: true });
-
-    withDiffs = await serveViewer({ runDir, viewerDist: viewer, outRoot: root });
+    withRuns = await serveViewer({ runDir, viewerDist: viewer, outRoot: root });
   });
 
   afterAll(async () => {
-    await withDiffs.close();
+    await withRuns.close();
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it("lists only the directories that hold a comparison", async () => {
-    const res = await fetch(`${withDiffs.url}/diffs.json`);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { diffs: { id: string; from: string; to: string }[] };
-    expect(body.diffs).toEqual([
-      {
-        id: "2026-01-01T00-00-00-000Z__2026-01-02T00-00-00-000Z",
-        from: "2026-01-01T00-00-00-000Z",
-        to: "2026-01-02T00-00-00-000Z",
-      },
-    ]);
-  });
-
-  it("serves a comparison's own files", async () => {
-    const id = "2026-01-01T00-00-00-000Z__2026-01-02T00-00-00-000Z";
-    expect((await fetch(`${withDiffs.url}/diffs/${id}/diff.json`)).status).toBe(200);
-    expect(await (await fetch(`${withDiffs.url}/diffs/${id}/images/a.png`)).text()).toBe("PNG");
-  });
-
-  it("serves the runs a comparison points at, which is what makes it renderable", async () => {
-    const res = await fetch(`${withDiffs.url}/runs/2026-01-01T00-00-00-000Z/viewer-data.json`);
+  it("serves the other runs, which is what the run switcher opens", async () => {
+    const res = await fetch(`${withRuns.url}/runs/2026-01-01T00-00-00-000Z/viewer-data.json`);
     expect(res.status).toBe(200);
   });
 
@@ -117,13 +87,12 @@ describe("serveViewer comparisons", () => {
     await fs.writeFile(path.join(runsDir, id, "shot.png"), "PNG");
     await fs.symlink(id, path.join(runsDir, "latest"), "dir").catch(() => {});
     const header = async (url: string) => {
-      const res = await fetch(withDiffs.url + url);
+      const res = await fetch(withRuns.url + url);
       await res.arrayBuffer();
       return res.headers.get("cache-control");
     };
     expect(await header(`/runs/${id}/shot.png`)).toBe("public, max-age=31536000, immutable");
     expect(await header("/data/shot.png")).toBe("no-cache");
-    expect(await header(`/diffs/${id}__2026-01-02T00-00-00-000Z/images/a.png`)).toBe("no-cache");
     if (await fs.readlink(path.join(runsDir, "latest")).catch(() => undefined)) {
       expect(await header("/runs/latest/shot.png")).toBe("no-cache");
     }
@@ -131,15 +100,5 @@ describe("serveViewer comparisons", () => {
     await fs.writeFile(path.join(runsDir, id, ".incomplete"), "");
     expect(await header(`/runs/${id}/shot.png`)).toBe("no-cache");
     await fs.rm(path.join(runsDir, id, ".incomplete"));
-  });
-
-  it("confines diff paths to the diffs directory", async () => {
-    const res = await fetch(`${withDiffs.url}/diffs/%2e%2e%2fruns%2fsecret.txt`);
-    expect(res.status).toBe(404);
-  });
-
-  it("reports an empty list rather than an error when nothing was diffed", async () => {
-    const body = (await (await fetch(`${server.url}/diffs.json`)).json()) as { diffs: unknown[] };
-    expect(body.diffs).toEqual([]);
   });
 });

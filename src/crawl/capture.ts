@@ -14,7 +14,8 @@ import type {
 } from "../shared/types";
 import { pathSlug, stateSlug } from "../shared/slug";
 import { applyContextInit, stabilizePage } from "./stabilize";
-import { makeThumb, imageSize, writeFull, writeViewportCrop } from "./thumbnails";
+import { makeThumb, imageSize, stackScreens, writeFull, writeViewportCrop } from "./thumbnails";
+import { captureScreens } from "./screens";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
 import { takeSnapshot } from "./snapshot";
 import { httpContextOptions } from "./context-options";
@@ -317,7 +318,12 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // A recipe that scrolls wants the shot taken from where it scrolled to; without
   // this, stabilization's lazy-load pass would put the page back at the top.
   const keepScroll = state.recipe.some((s) => s.action === "scroll");
-  await stabilizePage(page, config.stabilize, ctx.log, { keepScroll });
+  // Taking a page a screen at a time scrolls it the way a user would, which wakes
+  // lazy content on its own — the separate scroll-to-the-bottom-and-back pass would
+  // only be a second, earlier scroll through the same page.
+  const screens = !state.element && config.screenshot.fullPage && config.screenshot.screens;
+  const stabilize = screens ? { ...config.stabilize, lazyScroll: false } : config.stabilize;
+  await stabilizePage(page, stabilize, ctx.log, { keepScroll });
 
   // Stabilizing scrolls the page to wake lazy content, and a scroll is exactly what
   // closes a Floating-UI popover, a Bootstrap dropdown or a hover menu — the shot
@@ -327,7 +333,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   let reopened = false;
   if (
     opens &&
-    config.stabilize.lazyScroll &&
+    stabilize.lazyScroll &&
     left &&
     !(await stillShowing(page, { recipe: state.recipe, sig: left.sig }))
   ) {
@@ -364,25 +370,38 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   const metaPath = path.join(dir, `${device.name}.json`);
 
   const clip =
-    !element && config.screenshot.fullPage
+    !element && config.screenshot.fullPage && !screens
       ? await fullPageClip(page, config.screenshot.maxHeight)
       : undefined;
 
-  const buf = element
-    ? await element.screenshot({
-        mask: mask.length ? mask : undefined,
+  const taken = screens
+    ? await captureScreens(page, {
+        maxScreens: config.screenshot.maxScreens,
+        settleMs: config.stabilize.extraDelayMs,
         type: shotType,
-        quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
+        quality: config.screenshot.quality,
+        mask,
+        keepScroll,
       })
-    : await page.screenshot({
-        // `clip` alone is bounded by the viewport; it only reaches further down the
-        // page when fullPage is set too.
-        fullPage: config.screenshot.fullPage,
-        clip,
-        mask: mask.length ? mask : undefined,
-        type: shotType,
-        quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
-      });
+    : undefined;
+
+  const buf = taken
+    ? await stackScreens(taken.frames, shotType, config.screenshot.quality)
+    : element
+      ? await element.screenshot({
+          mask: mask.length ? mask : undefined,
+          type: shotType,
+          quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
+        })
+      : await page.screenshot({
+          // `clip` alone is bounded by the viewport; it only reaches further down the
+          // page when fullPage is set too.
+          fullPage: config.screenshot.fullPage,
+          clip,
+          mask: mask.length ? mask : undefined,
+          type: shotType,
+          quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
+        });
 
   await writeFull(buf, fullPath, ext, config.screenshot.quality);
   await makeThumb(buf, thumbPath, config.screenshot.thumbnail);
@@ -401,7 +420,8 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
     meta: rel(metaPath),
     width: dims.width,
     height: dims.height,
-    ...(clip ? { clamped: true } : {}),
+    ...(clip || taken?.clamped ? { clamped: true } : {}),
+    ...(taken && taken.frames.length > 1 ? { screens: taken.frames.length } : {}),
   };
 
   if (config.screenshot.alsoViewport && !element) {

@@ -4,7 +4,7 @@ import { pathExists } from "../shared/fsx";
 
 /**
  * Run directories are named by `makeRunId` (an ISO timestamp with `:`/`.` replaced
- * by `-`). Parsing the id back to a time is what lets pruning and diffing order runs
+ * by `-`). Parsing the id back to a time is what lets pruning order runs
  * by *when they happened* rather than trusting a lexical sort of whatever names
  * happen to be in the directory.
  */
@@ -22,7 +22,7 @@ export function runIdTime(id: string): number | undefined {
 
 /**
  * Oldest → newest. Ids we can parse sort by time; anything else (a hand-named
- * directory, a baseline someone copied in) sorts lexically *after* them, so an
+ * directory) sorts lexically *after* them, so an
  * unrecognized name is never silently treated as the oldest run and pruned first.
  */
 export function sortRunIds(ids: string[]): string[] {
@@ -47,20 +47,6 @@ export async function listRuns(outRoot: string): Promise<string[]> {
 }
 
 /**
- * The run a diff against `toId` should start from: the newest one strictly older
- * than it, by the same ordering `listRuns` uses.
- *
- * Not "the newest run that isn't `toId`" — that is only the same thing when `toId`
- * is the newest run. Pointed at an older one, it would pick a *newer* baseline and
- * report every addition as a removal. `toId` doesn't have to be in `runs` (a run
- * directory passed by path); it is placed where its id sorts.
- */
-export function previousRunId(runs: string[], toId: string): string | undefined {
-  const ordered = sortRunIds([...new Set([...runs, toId])]);
-  return ordered[ordered.indexOf(toId) - 1];
-}
-
-/**
  * Which of `ids` (oldest → newest) to delete so that `keep` runs remain.
  *
  * `current` — the run just written — survives whatever its age, and it spends one
@@ -72,34 +58,6 @@ export function runsToPrune(ids: string[], keep: number, current?: string): stri
   const others = ids.filter((id) => id !== current);
   const budget = current !== undefined && ids.includes(current) ? keep - 1 : keep;
   return others.slice(0, Math.max(0, others.length - budget));
-}
-
-/**
- * Diff directories under `<outRoot>/diffs`, newest first.
- *
- * `visualice diff` names them `<fromId>__<toId>`, so the *second* id is what
- * orders them: a diff is as recent as the run it was taken against. A directory
- * without a readable `diff.json` isn't a diff and is left out rather than offered
- * as one that fails to open.
- */
-export async function listDiffs(
-  outRoot: string,
-): Promise<{ id: string; from: string; to: string }[]> {
-  const dir = path.join(outRoot, "diffs");
-  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-  const found: { id: string; from: string; to: string }[] = [];
-  for (const e of entries) {
-    if (!e.isDirectory() && !e.isSymbolicLink()) continue;
-    const [from, to] = e.name.split("__");
-    if (!from || !to) continue;
-    if (await pathExists(path.join(dir, e.name, "diff.json"))) found.push({ id: e.name, from, to });
-  }
-  return found.sort((a, b) => {
-    const ta = runIdTime(a.to);
-    const tb = runIdTime(b.to);
-    if (ta !== undefined && tb !== undefined) return tb - ta || b.id.localeCompare(a.id);
-    return b.id.localeCompare(a.id);
-  });
 }
 
 /**

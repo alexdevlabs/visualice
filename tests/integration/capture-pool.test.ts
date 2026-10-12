@@ -4,7 +4,6 @@ import path from "node:path";
 import { ConfigSchema, type Config } from "../../src/shared/config";
 import { capturePipeline } from "../../src/crawl/orchestrator";
 import sharp from "sharp";
-import { compareImages } from "../../src/diff/pixels";
 import type { InputManifest } from "../../src/shared/types";
 import { serveFiles, silent, tempDir } from "./helpers";
 
@@ -22,6 +21,19 @@ const HOVER_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Hove
   #mark{width:300px;height:200px;background:#eee}
   #mark:hover{background:#c00}
 </style></head><body><div id="mark"></div></body></html>`;
+
+/** Share of pixels that differ at all between two same-sized images. */
+async function differingRatio(a: string, b: string): Promise<number> {
+  const [x, y] = await Promise.all(
+    [a, b].map((f) => sharp(f).ensureAlpha().raw().toBuffer({ resolveWithObject: true })),
+  );
+  expect([x.info.width, x.info.height]).toEqual([y.info.width, y.info.height]);
+  let diff = 0;
+  for (let i = 0; i < x.data.length; i += 4) {
+    if (x.data.readUInt32BE(i) !== y.data.readUInt32BE(i)) diff++;
+  }
+  return diff / (x.data.length / 4);
+}
 
 const config = (dir: string): Config =>
   ConfigSchema.parse({
@@ -88,12 +100,10 @@ describe("page reuse", () => {
         );
 
       // The hover *was* captured where it was asked for…
-      const hovered = await compareImages(shotOf(dirty, 0), shotOf(clean, 0));
-      expect(hovered.ratio).toBeGreaterThan(0.1);
+      expect(await differingRatio(shotOf(dirty, 0), shotOf(clean, 0))).toBeGreaterThan(0.1);
 
       // …and did not survive into the next page's shot.
-      const next = await compareImages(shotOf(dirty, 1), shotOf(clean, 0));
-      expect(next.changedPixels).toBe(0);
+      expect(await differingRatio(shotOf(dirty, 1), shotOf(clean, 0))).toBe(0);
     } finally {
       await server.close();
       await fs.rm(siteDir, { recursive: true, force: true });
@@ -175,6 +185,9 @@ describe("reusing a page after stabilization", () => {
       ...c,
       politeness: { ...c.politeness, retries: 0, timeoutMs: 2500 },
       stabilize: { ...c.stabilize, lazyScroll: true },
+      // The lazy-load pass under test only runs for a single full-page render; a
+      // screen-by-screen capture does its scrolling while it shoots.
+      screenshot: { ...c.screenshot, screens: false },
     };
   };
 

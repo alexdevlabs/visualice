@@ -52,3 +52,28 @@ export async function writeViewportCrop(
   const img = sharp(buf).extract({ left: 0, top: 0, width, height });
   await encode(img, format, quality).toFile(destPath);
 }
+
+/**
+ * Stack equally sized screens into one image, top to bottom, in the encoding
+ * Playwright would have produced — so the result drops in where a single
+ * full-page buffer went.
+ */
+export async function stackScreens(
+  frames: Buffer[],
+  type: "png" | "jpeg",
+  quality: number,
+): Promise<Buffer> {
+  if (frames.length === 1) return frames[0];
+  const { width = 1, height = 1 } = await sharp(frames[0]).metadata();
+  const img = sharp({
+    create: {
+      width,
+      height: height * frames.length,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    },
+    // A long phone page stacks past sharp's default pixel limit.
+    limitInputPixels: false,
+  }).composite(frames.map((input, i) => ({ input, top: i * height, left: 0 })));
+  return (type === "jpeg" ? img.jpeg({ quality }) : img.png()).toBuffer();
+}

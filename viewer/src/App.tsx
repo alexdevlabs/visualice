@@ -1,15 +1,12 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewerData } from "./types";
-import type { RunDiff, ShotStatus } from "./diff-types";
-import { computeLayout, routePath, type LayoutMode } from "./layout";
-import { interestingShots, matches } from "./diff-layout";
+import { computeLayout, routePath } from "./layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
-import { ChangeList, Review, ReviewEmpty, STATUS_COLOR, type ReviewMode } from "./Compare";
 import { DL, Inspector } from "./Inspector";
 import { VirtualList } from "./VirtualList";
-import { fetchDiffList, fetchRunDiff, fetchViewerData, resolveDataUrl, type DiffRef } from "./load";
+import { fetchViewerData, resolveDataUrl } from "./load";
 import { readUrlState, writeUrlState, type UrlState } from "./url-state";
-import { percent, runLabel } from "./format";
+import { runLabel } from "./format";
 import { Loader, Logo } from "./brand";
 import { applyTheme, readTheme, type Theme } from "./theme";
 import {
@@ -28,7 +25,6 @@ import {
   ROW_MAIN,
   RouteBadge,
   row,
-  Segmented,
   SIDE_EMPTY,
   SIDE_HEAD,
   SIDE_LIST,
@@ -45,25 +41,6 @@ const SIDEBAR_ROW_H = 56;
 
 /** Below this width the viewer switches to the phone layout: no sidebar, filters in a sheet. */
 const PHONE_QUERY = "(max-width: 760px)";
-
-/** A comparison opens on what needs looking at; unchanged pairs are opt-in. */
-const DEFAULT_STATUSES: ShotStatus[] = ["changed", "added", "removed", "uncomparable"];
-
-const LAYOUTS: {
-  value: LayoutMode;
-  label: string;
-  icon: "grouped" | "grid" | "bydevice";
-  title: string;
-}[] = [
-  { value: "grouped", label: "Grouped", icon: "grouped", title: "One section per route" },
-  { value: "all", label: "Grid", icon: "grid", title: "Every shot in one grid" },
-  {
-    value: "devices",
-    label: "By device",
-    icon: "bydevice",
-    title: "One route, every device at the same width",
-  },
-];
 
 interface RunList {
   current: string;
@@ -113,7 +90,6 @@ export default function App() {
   const [data, setData] = useState<ViewerData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [mode, setMode] = useState<LayoutMode>(initial.mode ?? "grouped");
   const [query, setQuery] = useState(initial.q ?? "");
   const [selectedId, setSelectedId] = useState<string | null>(initial.tile ?? null);
   const [scale, setScale] = useState(1);
@@ -123,13 +99,7 @@ export default function App() {
   const [run, setRun] = useState<string | null>(initial.run ?? null);
   const [failedOnly, setFailedOnly] = useState(false);
   const [limit, setLimit] = useState<number | undefined>(DEFAULT_LIMIT);
-  const [focusRouteId, setFocusRouteId] = useState<string | undefined>(initial.route);
-  const [lastRouteId, setLastRouteId] = useState<string | null>(null);
-  const [diffs, setDiffs] = useState<DiffRef[]>([]);
-  const [diffId, setDiffId] = useState<string | null>(initial.diff ?? null);
-  const [diff, setDiff] = useState<RunDiff | null>(null);
-  const [statuses, setStatuses] = useState<Set<ShotStatus>>(new Set(DEFAULT_STATUSES));
-  const [reviewMode, setReviewMode] = useState<ReviewMode>("swipe");
+  const [routeId, setRouteId] = useState<string | null>(initial.route ?? null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -182,90 +152,48 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Comparisons are optional in the same way — there simply may not be any yet.
-  useEffect(() => {
-    fetchDiffList()
-      .then(setDiffs)
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!diffId) {
-      setDiff(null);
-      return;
-    }
-    let cancelled = false;
-    fetchRunDiff(diffId)
-      .then((d) => !cancelled && setDiff(d))
-      .catch((e) => {
-        if (cancelled) return;
-        setNotice(`couldn't load that comparison — ${String(e.message ?? e)}`);
-        setDiffId(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [diffId]);
-
   // Deferred: typing in the search box must not recompute the full layout per keystroke.
   const deferredQuery = useDeferredValue(query);
   const layout = useMemo(
     () =>
       data
         ? computeLayout(data, {
-            mode,
             devices: deviceFilter,
             kinds: kindFilter,
             query: deferredQuery,
             failedOnly,
             limit,
-            focusRouteId,
+            routeId: routeId ?? undefined,
           })
         : null,
-    [data, mode, deviceFilter, kindFilter, deferredQuery, failedOnly, limit, focusRouteId],
+    [data, deviceFilter, kindFilter, deferredQuery, failedOnly, limit, routeId],
   );
-
-  const comparing = diffId !== null;
-  const knownDevices = useMemo(() => new Set(data?.devices.map((d) => d.name)), [data]);
-  const shots = useMemo(
-    () =>
-      diff
-        ? interestingShots(diff, true).filter(
-            (s) =>
-              statuses.has(s.status) &&
-              // A device this run doesn't know can't be toggled, so it isn't filtered.
-              (!knownDevices.has(s.device) || deviceFilter.has(s.device)) &&
-              matches(s, deferredQuery),
-          )
-        : [],
-    [diff, statuses, knownDevices, deviceFilter, deferredQuery],
-  );
-  const shotIndex = comparing ? shots.findIndex((s) => s.key === selectedId) : -1;
-
-  // Opening a comparison lands on its biggest change, and a filter that hides the
-  // shot under review moves on to the next one rather than showing nothing.
-  useEffect(() => {
-    if (comparing && diff && shots.length && shotIndex < 0) setSelectedId(shots[0].key);
-  }, [comparing, diff, shots, shotIndex]);
 
   const selected = useMemo(
-    () => (comparing ? null : (data?.tiles.find((t) => t.id === selectedId) ?? null)),
-    [comparing, data, selectedId],
+    () => data?.tiles.find((t) => t.id === selectedId) ?? null,
+    [data, selectedId],
   );
+  // Two routes can lay out to the same size, which the canvas alone takes for the
+  // same layout; a route change always starts from the whole of the new one.
+  const firstRoute = useRef(true);
   useEffect(() => {
-    if (selected) setLastRouteId(selected.routeId);
-  }, [selected]);
+    if (firstRoute.current) firstRoute.current = false;
+    else canvas.current?.fit();
+  }, [routeId]);
+
+  // A link to a shot opens on that shot's route, not on one it isn't part of.
+  useEffect(() => {
+    if (selected && routeId && selected.routeId !== routeId) setRouteId(selected.routeId);
+  }, [selected, routeId]);
 
   // Keep the URL in step with the view, so a link reproduces what's on screen.
   useEffect(() => {
     if (!data) return;
     const state: UrlState = {
-      mode,
       q: query || undefined,
       tile: selectedId ?? undefined,
       run: run ?? undefined,
-      diff: diffId ?? undefined,
-      route: mode === "devices" ? focusRouteId : undefined,
+      route: routeId ?? undefined,
       devices:
         deviceFilter.size && deviceFilter.size !== data.devices.length
           ? [...deviceFilter]
@@ -273,7 +201,7 @@ export default function App() {
       kinds: kindFilter.size ? [...kindFilter] : undefined,
     };
     writeUrlState(state);
-  }, [data, mode, query, selectedId, run, diffId, focusRouteId, deviceFilter, kindFilter]);
+  }, [data, query, selectedId, run, routeId, deviceFilter, kindFilter]);
 
   const onScaleChange = useCallback((s: number) => setScale(s), []);
 
@@ -290,11 +218,6 @@ export default function App() {
 
   const stepShot = useCallback(
     (dir: -1 | 1) => {
-      if (comparing) {
-        const next = shots[shotIndex + dir];
-        if (next) setSelectedId(next.key);
-        return;
-      }
       if (!layout?.placed.length) return;
       const i = layout.placed.findIndex((p) => p.tile.id === selectedId);
       const next = layout.placed[(i + dir + layout.placed.length) % layout.placed.length];
@@ -306,7 +229,7 @@ export default function App() {
         maxY: next.y + next.h,
       });
     },
-    [comparing, shots, shotIndex, layout, selectedId],
+    [layout, selectedId],
   );
 
   // Shortcuts that work anywhere on the page. The canvas handles its own keys
@@ -330,12 +253,11 @@ export default function App() {
         e.preventDefault();
         setSearchOpen(true);
         requestAnimationFrame(() => searchRef.current?.focus());
-      } else if (comparing && (e.key === "ArrowLeft" || e.key === "k")) stepShot(-1);
-      else if (comparing && (e.key === "ArrowRight" || e.key === "j")) stepShot(1);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [comparing, stepShot, toggleMinimap]);
+  }, [toggleMinimap]);
 
   if (error) {
     return (
@@ -380,39 +302,11 @@ export default function App() {
   const groupsWithTiles = data.groups.filter((g) => withTiles.has(g.routeId));
   const failedCount = data.tiles.filter((t) => t.error).length;
   const shown = layout.placed.length + layout.truncated;
-  // In device-compare mode the sidebar picks which route is on the canvas, so it
-  // has to show which one that currently is; elsewhere it follows the selection.
-  const activeRouteId =
-    mode === "devices"
-      ? (focusRouteId ?? groupsWithTiles[0]?.routeId)
-      : (selected?.routeId ?? lastRouteId);
-  const shot = comparing ? (shots[shotIndex] ?? null) : null;
-  const diffRef = diffs.find((d) => d.id === diffId);
-
-  const openCompare = () => {
-    if (comparing || !diffs.length) return;
-    setSelectedId(null);
-    setDiffId(diffs[0].id);
-  };
-  const openExplore = () => {
-    if (!comparing) return;
-    setSelectedId(null);
-    setDiffId(null);
-  };
-  const chooseLayout = (m: LayoutMode) => {
-    setMode(m);
-    // Open on whatever is selected, so switching modes keeps your place.
-    if (m === "devices" && selected) setFocusRouteId(selected.routeId);
-  };
-  const focusRoute = (routeId: string) => {
-    setLastRouteId(routeId);
-    // In device compare the sidebar chooses the subject; in the other modes
-    // everything is already placed, so it navigates.
-    if (mode === "devices") setFocusRouteId(routeId);
-    else {
-      const b = layout.byRoute.get(routeId);
-      if (b) canvas.current?.focusRect(b);
-    }
+  const activeRouteId = routeId;
+  /** Put one route on the canvas, or all of them with `null`. The canvas refits itself. */
+  const focusRoute = (id: string | null) => {
+    setRouteId(id);
+    if (selected && id && selected.routeId !== id) setSelectedId(null);
     if (isPhone) setSheetOpen(false);
   };
 
@@ -456,90 +350,13 @@ export default function App() {
     </>
   );
 
-  const statusPills = (big?: boolean) =>
-    diff && (
-      <>
-        {(["changed", "added", "removed", "unchanged", "uncomparable"] as const)
-          .filter((s) => s !== "uncomparable" || diff.summary.uncomparable > 0)
-          .map((s) => (
-            <Pill
-              key={s}
-              big={big}
-              tone="amber"
-              dot={STATUS_COLOR[s]}
-              on={statuses.has(s)}
-              count={diff.summary[s]}
-              onClick={() => setStatuses((prev) => toggle(prev, s, true))}
-            >
-              {s[0].toUpperCase() + s.slice(1)}
-            </Pill>
-          ))}
-      </>
-    );
-
-  const compareBadge = diff ? (
-    <span className="rounded-full bg-amber px-1.5 text-[10.5px] leading-4 font-semibold text-on-amber">
-      {diff.summary.changed}
-    </span>
-  ) : null;
-
   // A native select laid invisibly over a styled face: keyboard and screen readers
   // get the real control. On a phone it's just a line of text under the domain.
   const picker = isPhone
     ? "relative flex items-center gap-1 text-[11.5px] whitespace-nowrap text-dim"
     : "relative flex h-8 items-center gap-2 rounded-lg border border-line bg-panel px-2.5 text-[12.5px] whitespace-nowrap text-fg focus-within:border-accent hover:border-line-strong";
   const pickerSelect = "absolute inset-0 w-full cursor-pointer opacity-0";
-  const modeSwitch = (
-    <Segmented<"explore" | "compare">
-      label="View"
-      fill={isPhone}
-      value={comparing ? "compare" : "explore"}
-      onChange={(v) => (v === "compare" ? openCompare() : openExplore())}
-      items={[
-        { value: "explore", label: "Explore" },
-        {
-          value: "compare",
-          label: "Compare",
-          extra: compareBadge,
-          disabled: !diffs.length,
-          title: diffs.length
-            ? "Review what changed between two runs"
-            : "No comparisons yet — run `visualice diff`",
-        },
-      ]}
-    />
-  );
-
-  const runPicker = comparing ? (
-    <label className={picker} title={diffRef ? `${diffRef.from} → ${diffRef.to}` : undefined}>
-      <Icon name="clock" size={14} className="text-dim" />
-      <span>
-        {diffRef ? (
-          <>
-            {runLabel(diffRef.from)} <span className="text-dim">→</span> {runLabel(diffRef.to)}
-          </>
-        ) : (
-          "Comparison"
-        )}
-      </span>
-      <Icon name="chev" size={14} className="text-dim" />
-      <select
-        className={pickerSelect}
-        aria-label="Comparison"
-        value={diffId ?? ""}
-        onChange={(e) => {
-          setSelectedId(null);
-          setDiffId(e.target.value);
-        }}
-      >
-        {diffs.map((d) => (
-          <option key={d.id} value={d.id}>
-            {runLabel(d.from)} → {runLabel(d.to)}
-          </option>
-        ))}
-      </select>
-    </label>
-  ) : (
+  const runPicker = (
     <label className={picker} title={run ?? runs?.current ?? data.site.runId}>
       <Icon name="clock" size={14} className="text-dim" />
       <span>{runLabel(run ?? runs?.current ?? data.site.runId)}</span>
@@ -643,8 +460,6 @@ export default function App() {
       </div>
       {runPicker}
       <span className="flex-auto" />
-      {modeSwitch}
-      <span className="flex-auto" />
       {search}
       <IconButton
         icon="kbd"
@@ -658,38 +473,8 @@ export default function App() {
 
   const TOOLBAR =
     "flex min-h-12 shrink-0 flex-wrap items-center gap-x-[18px] gap-y-2 border-b border-line bg-app px-4 py-2";
-  const toolbar = isPhone ? null : comparing ? (
+  const toolbar = isPhone ? null : (
     <div className={TOOLBAR}>
-      <div className={TOOLBAR_GROUP} role="group" aria-label="Show">
-        <Caption className="mr-0.5">Show</Caption>
-        {statusPills()}
-      </div>
-      <span className={DIVIDER} />
-      <div className={TOOLBAR_GROUP} role="group" aria-label="Devices">
-        <Caption className="mr-0.5">Devices</Caption>
-        {deviceToggles(false)}
-      </div>
-      <span className="flex-auto" />
-      {diff && (
-        <span className="text-[12px] text-dim">
-          Threshold{" "}
-          <span className="font-mono text-[11.5px] text-fg">{percent(diff.minRatio)}</span>
-        </span>
-      )}
-    </div>
-  ) : (
-    <div className={TOOLBAR}>
-      <div className={TOOLBAR_GROUP} role="group" aria-label="Layout">
-        <Caption className="mr-0.5">Layout</Caption>
-        <Segmented<LayoutMode>
-          small
-          label="Layout"
-          value={mode}
-          onChange={chooseLayout}
-          items={LAYOUTS}
-        />
-      </div>
-      <span className={DIVIDER} />
       <div className={TOOLBAR_GROUP} role="group" aria-label="Devices">
         <Caption className="mr-0.5">Devices</Caption>
         {deviceToggles(false)}
@@ -718,6 +503,26 @@ export default function App() {
         <Caption>Routes</Caption>
         <Count>{groupsWithTiles.length}</Count>
       </div>
+      {groupsWithTiles.length > 1 && (
+        <div className="px-2 pb-1">
+          <button
+            type="button"
+            className={cx(row(routeId === null), "h-10")}
+            aria-current={routeId === null}
+            onClick={() => focusRoute(null)}
+          >
+            <span className="flex-1 text-[13px] font-medium">All routes</span>
+            <span
+              className={cx(
+                "rounded-md px-1.5 py-px font-mono text-[11px] text-dim",
+                routeId === null ? "bg-panel" : "bg-canvas",
+              )}
+            >
+              {[...routeCounts.values()].reduce((a, b) => a + b, 0)}
+            </span>
+          </button>
+        </div>
+      )}
       {groupsWithTiles.length === 0 ? (
         <p className={SIDE_EMPTY}>No route has shots matching these filters.</p>
       ) : (
@@ -892,35 +697,7 @@ export default function App() {
     </>
   );
 
-  const body = comparing ? (
-    <div className={cx("flex min-h-0 flex-auto", isPhone && "flex-col-reverse")}>
-      {diff ? (
-        <>
-          <ChangeList
-            shots={shots}
-            selectedKey={shot?.key ?? null}
-            onSelect={setSelectedId}
-            devices={data.devices}
-            phone={isPhone}
-          />
-          <Review
-            diff={diff}
-            diffId={diffId!}
-            shot={shot}
-            index={shotIndex}
-            total={shots.length}
-            onStep={stepShot}
-            mode={reviewMode}
-            onMode={setReviewMode}
-            device={data.devices.find((d) => d.name === shot?.device)}
-            phone={isPhone}
-          />
-        </>
-      ) : (
-        <ReviewEmpty>Loading comparison…</ReviewEmpty>
-      )}
-    </div>
-  ) : (
+  const body = (
     <div className="flex min-h-0 flex-auto">
       {!isPhone && sidebar}
       <main className="relative min-w-0 flex-auto">
@@ -943,10 +720,6 @@ export default function App() {
           onSelect={setSelectedId}
           onStep={stepShot}
           phone={isPhone}
-          onCompareDevices={() => {
-            setMode("devices");
-            setFocusRouteId(selected.routeId);
-          }}
         />
       )}
     </div>
@@ -972,7 +745,6 @@ export default function App() {
             onClick={() => {
               setDeviceFilter(new Set(data.devices.map((d) => d.name)));
               setKindFilter(new Set());
-              setStatuses(new Set(DEFAULT_STATUSES));
               setFailedOnly(false);
             }}
           >
@@ -980,39 +752,32 @@ export default function App() {
           </button>
         </div>
         <div className="flex flex-col gap-[18px] overflow-y-auto px-4">
-          {comparing ? (
-            <div className={SHEET_GROUP} role="group" aria-label="Show">
-              <Caption>Show</Caption>
-              <div className={WRAP}>{statusPills(true)}</div>
+          {kinds.length > 1 && (
+            <div className={SHEET_GROUP} role="group" aria-label="States">
+              <Caption>States</Caption>
+              <div className={WRAP}>{statePills(true)}</div>
             </div>
-          ) : (
-            <>
-              <div className={SHEET_GROUP}>
-                <Caption>Layout</Caption>
-                <Segmented<LayoutMode>
-                  fill
-                  label="Layout"
-                  value={mode}
-                  onChange={chooseLayout}
-                  items={LAYOUTS}
-                />
-              </div>
-              {kinds.length > 1 && (
-                <div className={SHEET_GROUP} role="group" aria-label="States">
-                  <Caption>States</Caption>
-                  <div className={WRAP}>{statePills(true)}</div>
-                </div>
-              )}
-            </>
           )}
           <div className={SHEET_GROUP} role="group" aria-label="Devices">
             <Caption>Devices</Caption>
             <div className="grid grid-cols-2 gap-2">{deviceToggles(true)}</div>
           </div>
-          {!comparing && groupsWithTiles.length > 0 && (
+          {groupsWithTiles.length > 0 && (
             <div className={SHEET_GROUP}>
-              <Caption>Jump to route</Caption>
+              <Caption>Route</Caption>
               <div className={WRAP}>
+                <button
+                  type="button"
+                  className={cx(
+                    "flex min-h-[34px] items-center rounded-md border px-2 text-[13px]",
+                    routeId === null
+                      ? "border-accent-line bg-accent-soft text-accent-ink"
+                      : "border-line-strong bg-panel",
+                  )}
+                  onClick={() => focusRoute(null)}
+                >
+                  All routes
+                </button>
                 {groupsWithTiles.map((g) => (
                   <button
                     key={g.routeId}
@@ -1033,7 +798,7 @@ export default function App() {
             className="h-[46px] w-full rounded-[10px] border-0 bg-accent text-[14px] font-semibold text-on-accent"
             onClick={() => setSheetOpen(false)}
           >
-            Show {comparing ? shots.length : shown} shots
+            Show {shown} shots
           </button>
         </div>
       </div>
@@ -1084,10 +849,6 @@ export default function App() {
         </dt>
         <dd>Step between shots</dd>
         <dt>
-          <Kbd>←</Kbd> <Kbd>→</Kbd>
-        </dt>
-        <dd>Previous / next change (Compare)</dd>
-        <dt>
           <Kbd>Esc</Kbd>
         </dt>
         <dd>Clear the selection</dd>
@@ -1113,10 +874,9 @@ export default function App() {
       )}
       <div className={cx("flex h-full flex-col", !loaderGone && cx("animate-app-in", REDUCED))}>
         {header}
-        {isPhone && (
+        {isPhone && searchOpen && (
           <div className="flex shrink-0 flex-col gap-2 border-b border-line px-3 py-2.5">
-            {modeSwitch}
-            {searchOpen && search}
+            {search}
           </div>
         )}
         {toolbar}

@@ -18,7 +18,6 @@ Steps:
 3. Run the crawl (`visualice crawl $ARGUMENTS --json --quiet`, escalating to Explore
    mode per the skill when discovery needs help), then summarize the result: routes,
    states, and shots captured, and any failures or `wanted` states.
-4. Mention `/visualice-view` to browse the results, and `/visualice-diff` once a
-   second run exists to compare against it.
+4. Mention `/visualice-view` to browse the results.
 
 Only crawl sites the user owns or is authorized to test.

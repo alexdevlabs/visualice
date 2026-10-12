@@ -70,8 +70,13 @@ export interface ShotRef {
   meta?: string; // path of sidecar json
   width?: number; // intrinsic px dims of the full shot
   height?: number;
-  /** The page exceeded `screenshot.maxHeight` and was cropped to it. */
+  /** The page exceeded `screenshot.maxHeight` (or `maxScreens`) and was cropped to it. */
   clamped?: boolean;
+  /**
+   * How many screens the full image stacks, top to bottom, each one viewport tall.
+   * Absent for a single render (a viewport shot, an element, or `screens: false`).
+   */
+  screens?: number;
   /** Accessibility rules this state broke, when `checks.accessibility` is on. */
   a11y?: number;
   error?: string; // capture was attempted but failed (after retries); no image written
@@ -204,6 +209,8 @@ export interface ViewerTile {
   height?: number;
   /** The page was taller than `screenshot.maxHeight` and the shot was cropped. */
   clamped?: boolean;
+  /** Screens stacked in the image, each one viewport tall; see `ShotRef.screens`. */
+  screens?: number;
   /** Sidecar JSON with the shot's metadata (and its accessibility findings). */
   meta?: string;
   /** Accessibility rules this state broke. */

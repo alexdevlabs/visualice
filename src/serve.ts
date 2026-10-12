@@ -1,6 +1,6 @@
 import path from "node:path";
 import { startServer, serveFileFromRoot, type StaticServer } from "./shared/file-serve";
-import { isRunComplete, listDiffs, listRuns } from "./crawl/runs";
+import { isRunComplete, listRuns } from "./crawl/runs";
 
 /**
  * Serve the built viewer at `/` and run data underneath it.
@@ -8,15 +8,9 @@ import { isRunComplete, listDiffs, listRuns } from "./crawl/runs";
  * - `/data/…`        the run that was asked for (what the viewer loads by default)
  * - `/runs/<id>/…`   any other run in the same output directory
  * - `/runs.json`     the run list, so the viewer can offer a switcher
- * - `/diffs/<id>/…`  a comparison written by `visualice diff`
- * - `/diffs.json`    the diff list, so the viewer can offer to show one
- * - `/baseline/…`    the approved baseline, the "before" of a baseline comparison
  *
  * Exposing the sibling runs is what lets the viewer change runs without restarting
- * the server, and exposing the diffs beside them is what lets it show a comparison
- * at all: a diff's before and after pictures live in two *different* run
- * directories, so nothing under a single run is enough to render one. `outRoot`
- * stays optional so a bare run directory still serves.
+ * the server. `outRoot` stays optional so a bare run directory still serves.
  */
 export async function serveViewer(opts: {
   runDir: string;
@@ -25,8 +19,6 @@ export async function serveViewer(opts: {
   outRoot?: string;
   /** Run id shown as current in `/runs.json`. */
   runId?: string;
-  /** The approved baseline, served at `/baseline/…` for comparisons made against it. */
-  baselineDir?: string;
   port?: number;
 }): Promise<StaticServer> {
   const runDir = path.resolve(opts.runDir);
@@ -34,7 +26,6 @@ export async function serveViewer(opts: {
   const outRoot = opts.outRoot ? path.resolve(opts.outRoot) : undefined;
   // Run directories live under `<outRoot>/runs`, which is what `/runs/<id>/…` maps to.
   const runsDir = outRoot ? path.join(outRoot, "runs") : undefined;
-  const diffsDir = outRoot ? path.join(outRoot, "diffs") : undefined;
 
   return startServer(async (req, res) => {
     try {
@@ -52,31 +43,6 @@ export async function serveViewer(opts: {
             runs: [...runs].reverse(), // newest first, which is how they're offered
           }),
         );
-        return;
-      }
-
-      if (pathname === "/diffs.json") {
-        const diffs = outRoot ? await listDiffs(outRoot) : [];
-        res.setHeader("content-type", "application/json; charset=utf-8");
-        res.setHeader("cache-control", "no-store");
-        res.end(JSON.stringify({ diffs }));
-        return;
-      }
-
-      if (diffsDir && pathname.startsWith("/diffs/")) {
-        const rel = pathname.slice("/diffs/".length);
-        if (rel && (await serveFileFromRoot(res, diffsDir, rel, req))) return;
-        res.statusCode = 404;
-        res.end("not found");
-        return;
-      }
-
-      if (opts.baselineDir && pathname.startsWith("/baseline/")) {
-        // Never immutable: `approve` rewrites these files in place.
-        const rel = pathname.slice("/baseline/".length);
-        if (rel && (await serveFileFromRoot(res, path.resolve(opts.baselineDir), rel, req))) return;
-        res.statusCode = 404;
-        res.end("not found");
         return;
       }
 

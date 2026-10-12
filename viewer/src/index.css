@@ -8,7 +8,7 @@
 /* The header toggle sets data-theme on <html>; `dark:` follows it, not the OS. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* `static`: emit every token, including the status colours only JS references (Compare.tsx). */
+/* `static`: emit every token, including ones only JS references. */
 @theme static {
   /* Only these colours exist, so a stray `bg-gray-100` can't sneak in. */
   --color-*: initial;
@@ -45,11 +45,6 @@
   --color-hatch-b: #f4e8cf;
   --color-mini-tile: #c3c9d3;
   --color-scrim: rgba(15, 23, 42, 0.25);
-  --color-st-changed: #b26b00;
-  --color-st-added: #0f8a6a;
-  --color-st-removed: #c2410c;
-  --color-st-unchanged: #8a93a3;
-  --color-st-uncomparable: #5b6472;
 
   --font-sans: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -121,11 +116,6 @@
   --color-hatch-b: #1d1912;
   --color-mini-tile: #3a4254;
   --color-scrim: rgba(5, 6, 8, 0.45);
-  --color-st-changed: #f5b94a;
-  --color-st-added: #7fe0c2;
-  --color-st-removed: #f0826a;
-  --color-st-unchanged: #5b6475;
-  --color-st-uncomparable: #a3abb9;
   --color-seg-ring: transparent;
   --color-seg-highlight: rgba(255, 255, 255, 0.04);
   --color-seg-drop: rgba(0, 0, 0, 0.4);

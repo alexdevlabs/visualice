@@ -630,6 +630,11 @@
                       "clamped": {
                         "type": "boolean"
                       },
+                      "screens": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
                       "a11y": {
                         "type": "number"
                       },

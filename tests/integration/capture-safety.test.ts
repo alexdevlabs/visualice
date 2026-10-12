@@ -39,7 +39,7 @@ describe("screenshot safety", () => {
     const out = await tempDir("safety");
     try {
       const clamped = await capturePipeline({
-        config: config(out, { screenshot: { maxHeight: 1000 } }),
+        config: config(out, { screenshot: { screens: false, maxHeight: 1000 } }),
         inputManifest: single(),
         baseUrl: server.url,
         log: silent,
@@ -50,7 +50,7 @@ describe("screenshot safety", () => {
 
       // Without the clamp the same page produces the full 9000px shot.
       const full = await capturePipeline({
-        config: config(out, { screenshot: { maxHeight: 0 } }),
+        config: config(out, { screenshot: { screens: false, maxHeight: 0 } }),
         inputManifest: single(),
         baseUrl: server.url,
         log: silent,
@@ -58,6 +58,50 @@ describe("screenshot safety", () => {
       const tall = full.manifest.routes[0].states[0].shots.small;
       expect(tall.clamped).toBeUndefined();
       expect(tall.height).toBeGreaterThan(8000);
+    } finally {
+      await server.close();
+      await fs.rm(siteDir, { recursive: true, force: true });
+      await fs.rm(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("stops an unbounded page at maxScreens and flags the shot", async () => {
+    const { server, dir: siteDir } = await serveFiles({ "index.html": TALL });
+    const out = await tempDir("safety");
+    try {
+      const result = await capturePipeline({
+        config: config(out, { screenshot: { maxScreens: 3 } }),
+        inputManifest: single(),
+        baseUrl: server.url,
+        log: silent,
+      });
+      const shot = result.manifest.routes[0].states[0].shots.small;
+      expect(shot.clamped).toBe(true);
+      expect(shot.screens).toBe(3);
+      // Three whole screens of the 300px-tall device, stacked.
+      expect(shot.height).toBe(900);
+    } finally {
+      await server.close();
+      await fs.rm(siteDir, { recursive: true, force: true });
+      await fs.rm(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("takes one screen of a page whose scrolling is locked", async () => {
+    // How an open modal usually locks the page: scripts can still move it, users can't.
+    const locked = TALL.replace("<html>", '<html style="overflow:hidden">');
+    const { server, dir: siteDir } = await serveFiles({ "index.html": locked });
+    const out = await tempDir("safety");
+    try {
+      const result = await capturePipeline({
+        config: config(out),
+        inputManifest: single(),
+        baseUrl: server.url,
+        log: silent,
+      });
+      const shot = result.manifest.routes[0].states[0].shots.small;
+      expect(shot.screens).toBeUndefined();
+      expect(shot.height).toBe(300);
     } finally {
       await server.close();
       await fs.rm(siteDir, { recursive: true, force: true });

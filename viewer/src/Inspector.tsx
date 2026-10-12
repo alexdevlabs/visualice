@@ -11,7 +11,6 @@ import {
   Icon,
   IconButton,
   KindTag,
-  LINK,
   RouteBadge,
   Segmented,
 } from "./ui";
@@ -24,7 +23,6 @@ interface Props {
   onSelect: (id: string | null) => void;
   /** Step through the shots in canvas order. */
   onStep: (dir: -1 | 1) => void;
-  onCompareDevices: () => void;
   /** Phone layout: a sheet over the canvas instead of a side panel. */
   phone?: boolean;
 }
@@ -44,7 +42,7 @@ const SECTION = "flex flex-col gap-2.5 border-t border-line px-[18px] py-4";
  * route and state this is, what it looks like on the other device, where the
  * full-size image lives, and what the route's other states look like.
  */
-export function Inspector({ data, tile, base, onSelect, onStep, onCompareDevices, phone }: Props) {
+export function Inspector({ data, tile, base, onSelect, onStep, phone }: Props) {
   const [copied, setCopied] = useState(false);
   const device: Device | undefined = data.devices.find((d) => d.name === tile.device);
 
@@ -233,7 +231,9 @@ export function Inspector({ data, tile, base, onSelect, onStep, onCompareDevices
             <>
               <dt>Image</dt>
               <dd className="font-mono text-[11.5px]">
-                {tile.width} × {tile.height} px{tile.clamped ? " (cropped)" : ""}
+                {tile.width} × {tile.height} px
+                {tile.screens ? ` · ${tile.screens} screens` : ""}
+                {tile.clamped ? " (cropped)" : ""}
               </dd>
             </>
           )}
@@ -253,11 +253,6 @@ export function Inspector({ data, tile, base, onSelect, onStep, onCompareDevices
             <a href={base + tile.viewport} target="_blank" rel="noreferrer">
               Viewport crop ↗
             </a>
-          )}
-          {data.devices.length > 1 && (
-            <button type="button" className={LINK} onClick={onCompareDevices}>
-              Compare devices side by side →
-            </button>
           )}
         </div>
       </section>
