@@ -8,7 +8,7 @@ import { applyRecipe, gotoRoute } from "./recipe";
 import { discoverFormStates } from "./discover-forms";
 import { addedRegions, markDocument, sameRegions, takeSnapshot, type Snapshot } from "./snapshot";
 
-interface RawCandidate {
+export interface RawCandidate {
   target: Target;
   label: string;
   hint?: StateKind;
@@ -24,7 +24,7 @@ type Interactions = Config["discovery"]["interactions"];
  * `root` limits the search to one container — used when probing *inside* an
  * already-open state so nested discovery doesn't re-find the whole page chrome.
  */
-async function collectCandidates(
+export async function collectCandidates(
   page: Page,
   interactions: Interactions,
   root?: string,
@@ -201,7 +201,7 @@ async function collectCandidates(
   return raw as RawCandidate[];
 }
 
-function classifyChange(
+export function classifyChange(
   before: Snapshot,
   after: Snapshot,
   cand: RawCandidate,

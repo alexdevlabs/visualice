@@ -20,8 +20,14 @@ import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
 import { formatDoctor, runDoctor } from "./doctor";
 import { latestRunId, runDir } from "./crawl/runs";
-import type { Manifest } from "./shared/types";
+import type { Manifest, RecipeStep } from "./shared/types";
 import { exportRun } from "./export";
+import { probePage } from "./crawl/probe";
+import { listAuthoredFiles, mergeAuthored, readAuthoredFile } from "./crawl/author";
+import { acquireLock } from "./shared/lock";
+import { saveJson } from "./crawl/manifest";
+import { RecipeStepSchema } from "./shared/manifest-schema";
+import { canonicalPath } from "./shared/url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, "..");
@@ -68,6 +74,8 @@ Usage:
   visualice fixture [opts]    Serve the bundled fixture blog so you can browse it
   visualice doctor [--no-fix] Check Node/Playwright/viewer deps and self-heal
   visualice export <dir>      Write the viewer + a run as a static folder to share
+  visualice probe <path>      Report a page's inventory, or what a recipe does on it (JSON)
+  visualice author [dir|file] Merge explorer state files (.visualice/explore/) into the cache
   visualice serve [opts]      Launch the zoomable results viewer
   visualice --version         Print the version
 
@@ -97,6 +105,12 @@ Options (flags accept --name=value or --name value):
   --open               for 'serve'/'fixture': open in your browser
   --shoot=<file>       for 'serve': headless-screenshot the viewer to a file, then exit
   --no-fix             for 'doctor': report problems without repairing them
+  --recipe=<json|@file> for 'probe': steps to run on the page (a JSON array)
+  --state=<id>         for 'probe': run the cached recipe of this page's state
+  --device=<name>      for 'probe': probe as this configured device (default: first)
+  --shot=<file>        for 'probe': write a viewport screenshot (CSS px) after the recipe
+  --inventory          for 'probe': with a recipe, also inventory the page it leaves
+  --all-devices        for 'probe': also run the recipe on every configured device
 
 Exit codes: 0 ok · 1 error · 2 usage · 3 capture failures (with --fail-on-error)
 
@@ -459,6 +473,183 @@ async function cmdDiscover(flags: Flags): Promise<void> {
   }
 }
 
+async function cmdAuthor(flags: Flags): Promise<void> {
+  const log = makeLog(flags);
+  const config = await loadConfigWithOverrides(flags);
+  const outRoot = path.resolve(config.output.dir);
+  const cachePath = modelCachePath(outRoot);
+  if (!(await pathExists(cachePath))) {
+    throw new UsageError(`no cached site model at ${cachePath} — run 'visualice crawl' first`);
+  }
+  const files = await listAuthoredFiles(str(flags, "from") ?? path.join(outRoot, "explore"));
+  const authored = await Promise.all(files.map(readAuthoredFile));
+  const baseUrl = str(flags, "base") ?? config.target ?? "http://localhost";
+  const canonical = (p: string) => {
+    try {
+      return canonicalPath(new URL(p, baseUrl), config.scope.hashRoutes);
+    } catch {
+      return p;
+    }
+  };
+
+  const lock = await acquireLock(outRoot, { log });
+  try {
+    const result = mergeAuthored(await loadInputManifest(cachePath), authored, canonical);
+    await saveJson(cachePath, result.model);
+    // Proposed pages become seed lines, so the next --replay discovers them.
+    const intent = await loadRoutesIntent(config);
+    for (const page of result.proposedPages) {
+      if (!intent.routes.some((r) => r.path === page))
+        intent.routes.push({ path: page, states: [] });
+    }
+    if (routesFilePath(config)) {
+      await writeRoutesFile(
+        config,
+        result.model,
+        intent,
+        config.target ?? intent.target ?? "unknown",
+        log,
+      );
+    }
+    const summary = {
+      cachePath,
+      files: files.length,
+      added: result.added,
+      replaced: result.replaced,
+      unknownPages: result.unknownPages,
+      proposedPages: result.proposedPages,
+    };
+    if (flags.json === true) {
+      console.log(JSON.stringify(summary));
+    } else {
+      log(
+        `${result.added.length} state(s) added, ${result.replaced.length} replaced from ${files.length} file(s)`,
+      );
+      if (result.proposedPages.length) {
+        log(
+          `${result.proposedPages.length} new page(s) seeded in the routes file: ${result.proposedPages.join(", ")}`,
+        );
+      }
+      if (result.unknownPages.length) {
+        log(
+          `skipped states for page(s) the model doesn't have yet: ${result.unknownPages.join(", ")}` +
+            ` — run 'visualice crawl --replay' to discover them, then author again`,
+        );
+      }
+      console.log(cachePath);
+    }
+  } finally {
+    await lock.release();
+  }
+}
+
+/** `--recipe` as given: inline JSON, or `@file` for a JSON file. Validated as steps. */
+async function readRecipeFlag(value: string): Promise<RecipeStep[]> {
+  const text = value.startsWith("@")
+    ? await fs.readFile(path.resolve(value.slice(1)), "utf8")
+    : value;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    throw new UsageError(`--recipe is not valid JSON: ${(e as Error).message}`);
+  }
+  const parsed = RecipeStepSchema.array().safeParse(Array.isArray(raw) ? raw : [raw]);
+  if (!parsed.success) {
+    throw new UsageError(`--recipe: ${formatManifestIssues(parsed.error).join("; ")}`);
+  }
+  return parsed.data as RecipeStep[];
+}
+
+async function cmdProbe(flags: Flags): Promise<void> {
+  const log = makeLog(flags);
+  const config = await loadConfigWithOverrides(flags);
+  const baseUrl = str(flags, "base") ?? config.target;
+  if (!baseUrl) throw new UsageError("no base URL: pass --base=<url> or set target in config");
+  const page = str(flags, "page");
+  if (!page) throw new UsageError("which page? visualice probe <path> [--recipe=…]");
+  const recipeFlag = str(flags, "recipe");
+  const stateId = str(flags, "state");
+  if (recipeFlag && stateId) throw new UsageError("pass --recipe or --state, not both");
+
+  // The cached model says what this page already has, so an explorer doesn't author
+  // a state twice — and holds the recipe `--state` replays.
+  const cachePath = modelCachePath(path.resolve(config.output.dir));
+  const model = (await pathExists(cachePath)) ? await loadInputManifest(cachePath) : undefined;
+  const key = canonicalPath(new URL(page, baseUrl), config.scope.hashRoutes);
+  const route = model?.routes.find((r) => r.url === page || r.url === key);
+  let recipe = recipeFlag ? await readRecipeFlag(recipeFlag) : undefined;
+  if (stateId) {
+    const state = route?.states.find((s) => s.id === stateId);
+    if (!state) {
+      throw new UsageError(
+        `no state "${stateId}" on ${page} in the cached model` +
+          (route ? ` (has: ${route.states.map((s) => s.id).join(", ")})` : ""),
+      );
+    }
+    recipe = state.recipe;
+  }
+
+  const storageState = await ensureStorageState(config, log);
+  const shot = str(flags, "shot");
+  const allDevices = flags["all-devices"] === true;
+  if (allDevices && !recipe) {
+    throw new UsageError("--all-devices checks a recipe: pass --recipe or --state");
+  }
+  if (allDevices && str(flags, "device")) {
+    throw new UsageError("pass --device or --all-devices, not both");
+  }
+  const probeOn = (device: string | undefined, shotPath: string | undefined) =>
+    probePage({
+      config,
+      baseUrl,
+      url: route?.url ?? page,
+      recipe,
+      device,
+      storageState,
+      shotPath,
+      inventory: flags.inventory === true,
+    });
+  const result = await probeOn(str(flags, "device"), shot ? path.resolve(shot) : undefined);
+
+  // A recipe verified on one device can still fail on another: a label hidden at
+  // phone width, a control that moves into a menu. Capture replays it on all of them.
+  let devices: Record<string, { ok: boolean; error?: unknown; shot?: string }> | undefined;
+  if (allDevices) {
+    devices = {};
+    for (const [i, device] of config.devices.entries()) {
+      const ext = shot ? path.extname(shot) : "";
+      const own = shot
+        ? path.resolve(`${shot.slice(0, shot.length - ext.length)}.${device.name}${ext}`)
+        : undefined;
+      const outcome = (i === 0 ? result : await probeOn(device.name, own)) as {
+        ok?: boolean;
+        error?: unknown;
+      };
+      devices[device.name] = {
+        ok: outcome.ok ?? true,
+        ...(outcome.error ? { error: outcome.error } : {}),
+        ...(i > 0 && own ? { shot: own } : {}),
+      };
+    }
+  }
+
+  const cached = route?.states.map((s) => ({ id: s.id, kind: s.kind, label: s.label }));
+  console.log(
+    JSON.stringify(
+      {
+        page: route?.url ?? page,
+        known: !!route,
+        ...(cached ? { states: cached } : {}),
+        ...result,
+        ...(devices ? { devices } : {}),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 /**
  * Serve the bundled fixture for the length of a demo run and report its result.
  * Demos run inside this repo — never scaffold a routes file here.
@@ -569,6 +760,10 @@ async function main(): Promise<void> {
       return cmdDoctor(flags);
     case "export":
       return cmdExport(flags);
+    case "probe":
+      return cmdProbe(flags);
+    case "author":
+      return cmdAuthor(flags);
   }
 }
 

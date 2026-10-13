@@ -18,7 +18,7 @@ import { makeThumb, imageSize, stackScreens, writeFull, writeViewportCrop } from
 import { captureScreens } from "./screens";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
 import { takeSnapshot } from "./snapshot";
-import { httpContextOptions } from "./context-options";
+import { deviceContextOptions } from "./context-options";
 import { useTestIdAttribute } from "../shared/selectors";
 import { createProgress } from "../shared/progress";
 import { pathExists } from "../shared/fsx";
@@ -620,22 +620,9 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
       );
       const browser = await browserFor(engine);
       const newContext = async () => {
-        const context = await browser.newContext({
-          ...httpContextOptions(config),
-          viewport: { width: device.width, height: device.height },
-          deviceScaleFactor: device.dpr,
-          // Firefox has no mobile emulation and rejects the option outright.
-          ...(engine === "firefox" ? {} : { isMobile: device.mobile ?? false }),
-          hasTouch: device.touch ?? device.mobile ?? false,
-          userAgent: device.userAgent,
-          colorScheme: device.colorScheme ?? "light",
-          reducedMotion: device.reducedMotion ?? "reduce",
-          // Pinned locale + timezone: Date is frozen by the stabilizer, but
-          // Intl/toLocaleString would otherwise still render in the machine's TZ.
-          locale: device.locale ?? "en-US",
-          timezoneId: device.timezoneId ?? "UTC",
-          storageState: opts.storageState,
-        });
+        const context = await browser.newContext(
+          deviceContextOptions(config, device, opts.storageState),
+        );
         context.setDefaultTimeout(config.politeness.timeoutMs);
         await applyContextInit(context, config.stabilize);
         return context;

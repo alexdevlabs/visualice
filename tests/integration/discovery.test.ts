@@ -69,6 +69,41 @@ describe("robots.txt enforcement", () => {
   });
 });
 
+// A client-rendered feed: the shell is there at domcontentloaded, the links to the
+// articles arrive with a fetch after it (the RealWorld/Conduit shape).
+const FEED_SITE = {
+  "index.html": page(
+    "Feed",
+    `<h1>Feed</h1><ul id="feed"></ul>
+     <script>
+       // A real API answers in tens to hundreds of ms; a local file server, at once.
+       setTimeout(() => fetch('/feed.json').then((r) => r.json()).then((items) => {
+         document.getElementById('feed').innerHTML =
+           items.map((i) => '<li><a href="' + i.href + '">' + i.title + '</a></li>').join('');
+       }), 300);
+     </script>`,
+  ),
+  "feed.json": JSON.stringify([{ href: "/article", title: "An article" }]),
+  "article.html": page("Article", "<h1>Article</h1>"),
+};
+
+describe("links rendered from fetched data", () => {
+  it("follows links a page renders after its data arrives", async () => {
+    const { server, dir } = await serveFiles(FEED_SITE);
+    try {
+      const m = await discoverPipeline({
+        config: baseConfig({ stabilize: { waitStrategy: "networkidle" } }),
+        baseUrl: server.url,
+        log: silent,
+      });
+      expect(m.routes.map((r) => r.url)).toContain("/article");
+    } finally {
+      await server.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // A modal that itself contains a disclosure — the shape nestDepth > 1 exists for.
 const NESTED_SITE = {
   "index.html": page(

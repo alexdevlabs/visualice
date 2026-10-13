@@ -35,6 +35,14 @@ const FLAG_TYPES: Record<string, FlagType> = {
   "no-save": "boolean",
   "no-fix": "boolean",
   dest: "string",
+  page: "string",
+  recipe: "string",
+  state: "string",
+  device: "string",
+  shot: "string",
+  inventory: "boolean",
+  from: "string",
+  "all-devices": "boolean",
 };
 
 /** Commands that accept one bare positional, mapped onto a flag (crawl <url>). */
@@ -43,6 +51,8 @@ const POSITIONAL: Record<string, string> = {
   discover: "base",
   init: "base",
   export: "dest",
+  probe: "page",
+  author: "from",
 };
 
 const OVERRIDE_FLAGS = [
@@ -80,6 +90,20 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   "demo-crawl": ["config", "replay", "json", "quiet", "fail-on-error"],
   doctor: ["json", "quiet", "no-fix"],
   export: ["config", "run", "dest", "json", "quiet", "out"],
+  author: ["config", "base", "from", "json", "quiet", "out"],
+  probe: [
+    "config",
+    "base",
+    "page",
+    "recipe",
+    "state",
+    "device",
+    "shot",
+    "inventory",
+    "all-devices",
+    "quiet",
+    "out",
+  ],
 };
 
 /**

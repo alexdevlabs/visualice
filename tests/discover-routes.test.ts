@@ -26,6 +26,8 @@ function fakeContext(site: Site) {
       return { status: () => 200 };
     },
     title: async () => `Page ${new URL(current).pathname}`,
+    // A fake page has nothing still loading.
+    waitForLoadState: async () => {},
     $$eval: async () => (site[new URL(current).pathname] ?? []).map((h) => new URL(h, ORIGIN).href),
     url: () => current,
     close: async () => {},

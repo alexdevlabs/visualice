@@ -52,6 +52,15 @@ describe("parseFlags", () => {
     expect(parseFlags("export", ["site", "--run=r1"])).toEqual({ dest: "site", run: "r1" });
   });
 
+  it("takes the page to probe as a bare argument", () => {
+    expect(parseFlags("probe", ["/cart", "--state=menu", "--shot=x.png", "--inventory"])).toEqual({
+      page: "/cart",
+      state: "menu",
+      shot: "x.png",
+      inventory: true,
+    });
+  });
+
   it("no longer knows the retired comparison commands' flags", () => {
     expect(() => parseFlags("export", ["site", "--diff=none"])).toThrow(/unknown flag --diff/);
   });

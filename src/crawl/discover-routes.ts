@@ -15,6 +15,9 @@ import { politeFetch } from "../shared/http";
 import { sleep } from "../shared/pool";
 import { gotoRoute } from "./recipe";
 
+/** How long a page may take to finish loading its data before its links are read. */
+const LINK_SETTLE_MS = 5000;
+
 /** Sanity bound on how many sitemap files one crawl will fetch (index recursion). */
 const MAX_SITEMAP_FETCHES = 20;
 
@@ -150,6 +153,15 @@ export async function discoverRoutes(
           );
           navigated = true;
           status = resp?.status();
+          // A client-rendered page has its shell at domcontentloaded but not its
+          // data: the article and profile links of a feed arrive with an API call
+          // after it. Let the page settle the way capture would — bounded, so a site
+          // that never goes quiet (polling, a socket) only costs the wait once.
+          if (item.depth < maxDepth && config.stabilize.waitStrategy !== "domcontentloaded") {
+            await page
+              .waitForLoadState(config.stabilize.waitStrategy, { timeout: LINK_SETTLE_MS })
+              .catch(() => {});
+          }
           title = await page.title().catch(() => undefined);
           if (item.depth < maxDepth) {
             // Playwright's $$eval (DOM query in the page context), not JS eval().

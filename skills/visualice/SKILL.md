@@ -77,8 +77,11 @@ rediscovery and loses any Explore-mode states authored into it.
 2. **Auto** — first crawl of a public site built from standard components:
    `visualice crawl <url>` (heuristic discovery + capture)
 3. **Explore (agentic)** — the site needs login, or has states the heuristics miss
-   (custom/hover dropdowns, multi-step flows, canvas widgets). Read
-   [`references/explore-mode.md`](references/explore-mode.md) before starting.
+   (inline errors, data-dependent views like a cart with items, dropdown choices,
+   multi-step flows). `visualice probe` shows you a page's inventory and verifies a
+   recipe before you keep it; `/visualice-explore` runs explorer agents over the whole
+   site in parallel. Read [`references/explore-mode.md`](references/explore-mode.md)
+   before starting.
 
 Prefer Replay once a site has been mapped. Use Auto for the first pass, then escalate
 to Explore only for the gaps.

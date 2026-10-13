@@ -1,5 +1,6 @@
 import type { BrowserContextOptions } from "playwright";
 import type { Config } from "../shared/config";
+import type { Device } from "../shared/types";
 import { resolveEnvRecord } from "../shared/env";
 
 /**
@@ -37,4 +38,33 @@ export function httpContextOptions(config: Config): BrowserContextOptions {
     };
   }
   return opts;
+}
+
+/**
+ * Everything a device's browser context is created with. Capture and `probe` share
+ * it, so a recipe an agent verifies with `probe` meets the same viewport, user
+ * agent, locale and session the capture will replay it in.
+ */
+export function deviceContextOptions(
+  config: Config,
+  device: Device,
+  storageState?: string,
+): BrowserContextOptions {
+  const engine = device.browser ?? "chromium";
+  return {
+    ...httpContextOptions(config),
+    viewport: { width: device.width, height: device.height },
+    deviceScaleFactor: device.dpr,
+    // Firefox has no mobile emulation and rejects the option outright.
+    ...(engine === "firefox" ? {} : { isMobile: device.mobile ?? false }),
+    hasTouch: device.touch ?? device.mobile ?? false,
+    userAgent: device.userAgent,
+    colorScheme: device.colorScheme ?? "light",
+    reducedMotion: device.reducedMotion ?? "reduce",
+    // Pinned locale + timezone: Date is frozen by the stabilizer, but
+    // Intl/toLocaleString would otherwise still render in the machine's TZ.
+    locale: device.locale ?? "en-US",
+    timezoneId: device.timezoneId ?? "UTC",
+    storageState,
+  };
 }

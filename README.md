@@ -46,6 +46,9 @@ visualice discover https://your.site   # discovery only, no screenshots
 visualice init https://your.site       # scaffold the config without crawling
 visualice routes                       # regenerate visualice.routes.md from the cache
 visualice validate                     # check a hand-edited site model
+visualice probe /cart                  # a page's inventory (triggers, forms, selects) as JSON
+visualice probe /cart --recipe='[…]' --shot=cart.png   # what a recipe does there
+visualice author                       # merge explorer state files into the cache
 
 # one-off scope tweaks without touching the config file:
 visualice crawl --max-pages=20 --exclude=/admin/** --devices=mobile
@@ -283,10 +286,36 @@ installs from a checkout or a git URL:
 ```
 
 That brings in the `visualice` skill (`skills/visualice/`, with references for the CLI,
-auth recipes and Explore mode) and two commands: `/visualice [url]` to crawl and
-`/visualice-view` to open the viewer. Or just ask
+auth recipes and Explore mode), the `visualice-explorer` agent, and three commands:
+`/visualice [url]` to crawl, `/visualice-explore` to have explorer agents find the states
+discovery missed, and `/visualice-view` to open the viewer. Or just ask
 Claude to "visually crawl https://your.site" — the skill picks the right mode
 (replay / auto / agentic explore for auth + tricky states), captures, and opens the viewer.
+
+### Agentic exploration
+
+Discovery's heuristics find what _opens_ — dialogs, menus, drawers, tabs. What a catalog
+also needs is judgment: which errors matter, that a cart needs items in it first, which
+of a dropdown's options to show. `/visualice-explore` hands that to agents, the way
+Understand-Anything pairs tree-sitter with LLM analysis — the engine supplies the
+mechanics and the evidence, agents the decisions:
+
+1. Pages are grouped into kinds (`/tag/*` is one), and one `visualice-explorer` agent per
+   kind runs in parallel.
+2. Each reads its page with `visualice probe <page>`: the triggers discovery would
+   click, every form with the submit button discovery never presses, every select
+   with its options, the links out.
+3. It tries each candidate state with `visualice probe <page> --recipe=…`, which runs
+   the recipe through the same code capture uses, in a browser of its own, and
+   reports what opened, which text appeared (inline errors), whether it navigated or
+   hit the login page, and whether it wrote to storage (→ `isolate: true`). It looks
+   at the probe's screenshot before keeping a state.
+4. It writes what it verified to `.visualice/explore/<kind>.json`; `visualice author`
+   merges every file into the cache under the lock, seeding pages the explorers found
+   into the routes file; `visualice crawl --replay` captures it all.
+
+Agents never take the catalog's screenshots: they author recipes, the engine replays
+them, so a run stays deterministic.
 
 Output lands under the configured output directory (default `.visualice/`):
 
@@ -331,7 +360,7 @@ Both the viewer and the fixture site are styled with Tailwind v4, configured in 
 than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
 fixture's in `tests/fixture-src/tailwind.input.css`.
 
-The 433 unit tests are pure and fast. The 63 browser-driven tests in `tests/integration/`
+The 445 unit tests are pure and fast. The 66 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`
