@@ -5,12 +5,10 @@ import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import { loadConfig, type Config } from "./shared/config";
 import { isCommand, UsageError, applyOverrides, parseFlags, str, type Flags } from "./cli-args";
-import { countStates, loadInputManifest, modelCachePath, saveJson } from "./crawl/manifest";
+import { countStates, loadInputManifest, modelCachePath } from "./crawl/manifest";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
-import { capturePipeline, crawlPipeline } from "./crawl/orchestrator";
-import { discoverPipeline } from "./crawl/discover";
+import { capturePipeline, crawlPipeline, discoverOnlyPipeline } from "./crawl/orchestrator";
 import {
-  applyRoutesIntent,
   computeWanted,
   loadRoutesIntent,
   routesFilePath,
@@ -450,15 +448,7 @@ async function cmdDiscover(flags: Flags): Promise<void> {
   const config = await loadConfigWithOverrides(flags);
   const baseUrl = str(flags, "base") ?? config.target;
   if (!baseUrl) throw new UsageError("no base URL: pass --base=<url> or set target in config");
-  const intent = await loadRoutesIntent(config);
-  const inputManifest = await discoverPipeline({
-    config: applyRoutesIntent(config, intent),
-    baseUrl,
-    log,
-  });
-  const cachePath = modelCachePath(path.resolve(config.output.dir));
-  await saveJson(cachePath, inputManifest);
-  await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
+  const { inputManifest, cachePath } = await discoverOnlyPipeline({ config, baseUrl, log });
   const states = countStates(inputManifest.routes);
   if (flags.json === true) {
     console.log(JSON.stringify({ cachePath, routes: inputManifest.routes.length, states }));

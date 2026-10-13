@@ -9,7 +9,12 @@ export const TargetSchema = z
   .object({
     role: z.string().optional().describe("ARIA role, resolved via getByRole."),
     name: z.string().optional().describe("Accessible name to match alongside `role`."),
-    testId: z.string().optional().describe("data-testid value (highest priority)."),
+    testId: z
+      .string()
+      .optional()
+      .describe(
+        "Test id value — `data-testid`, or the config's `testIdAttribute` (highest priority).",
+      ),
     label: z.string().optional().describe("Form-control label text."),
     text: z.string().optional().describe("Visible text content."),
     selector: z.string().optional().describe("CSS selector (last resort)."),
@@ -28,6 +33,13 @@ export const RecipeStepSchema = z
     z.object({ action: z.literal("focus"), target: TargetSchema }),
     z.object({ action: z.literal("blur") }),
     z.object({ action: z.literal("fill"), target: TargetSchema, value: z.string() }),
+    z.object({
+      action: z.literal("select"),
+      target: TargetSchema,
+      value: z
+        .union([z.string(), z.array(z.string())])
+        .describe("Option value or visible label; an array for a multi-select."),
+    }),
     z.object({ action: z.literal("press"), key: z.string(), target: TargetSchema.optional() }),
     z.object({
       action: z.literal("waitFor"),
@@ -99,6 +111,12 @@ export const StateNodeSchema = z.object({
     .string()
     .optional()
     .describe("Screenshot only this element (a component) instead of the whole page."),
+  isolate: z
+    .boolean()
+    .optional()
+    .describe(
+      "Capture in a fresh browser context (signed-in storage state only), so what the recipe stores — a cart, a preference — doesn't leak into other states or theirs into it.",
+    ),
   shots: z.record(z.string(), ShotRefSchema).default({}),
 });
 

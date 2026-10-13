@@ -4,6 +4,7 @@ import type { Config } from "../shared/config";
 import type { Device, InputManifest, RouteNode, StateNode } from "../shared/types";
 import { applyContextInit } from "./stabilize";
 import { httpContextOptions } from "./context-options";
+import { useTestIdAttribute } from "../shared/selectors";
 import { discoverRoutes, type RouteDiscoveryLimit } from "./discover-routes";
 import { discoverStates } from "./discover-states";
 import { resolveUrl } from "./recipe";
@@ -56,6 +57,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
   const { config, baseUrl } = opts;
   const log = opts.log ?? (() => {});
   const interactions = config.discovery.interactions;
+  useTestIdAttribute(config.testIdAttribute);
   const browser = await chromium.launch();
 
   const newDiscoveryContext = async (device?: Device): Promise<BrowserContext> => {

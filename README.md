@@ -179,6 +179,7 @@ Options worth knowing:
 | `discovery.interactions.maxPerPage`         | `12`                  | Hard cap on states per route, whatever the nesting depth                                                            |
 | `discovery.interactions.hover`              | `true`                | Also probe hover-revealed states (dropdown navs)                                                                    |
 | `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)                                      |
+| `testIdAttribute`                           | `"data-testid"`       | The attribute the site's test ids live in (`data-test`, `data-cy`, …); `testId` targets and discovery use it        |
 | `devices[].colorScheme`                     | `"light"`             | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog                                     |
 | `devices[].locale` / `timezoneId`           | `en-US` / `UTC`       | Pinned so `Intl`/date rendering is machine-independent                                                              |
 | `devices[].browser`                         | `"chromium"`          | `firefox` or `webkit` captures that device in another engine (`npx playwright install <name>` first)                |
@@ -250,7 +251,11 @@ Target the form's own fields (test ids, or a selector scoped to the form): a lab
 target fails the login.
 
 `visualice auth` runs the login once and saves the session; `crawl` reuses it and
-re-authenticates when it goes stale (`visualice auth --force` redoes it now). Credentials come
+re-authenticates when it goes stale (`visualice auth --force` redoes it now). Staleness is read
+from `login.sessionCookies` when you name the session cookie, else from `login.maxAgeHours`
+(12h); name it for any site whose session is shorter. A protected page that lands on the login
+page mid-run fails with "landed on the login page" rather than being filed as a screenshot of
+the login form. Credentials come
 from the environment — export them, or copy [`.env.example`](./.env.example) to `.env`
 (gitignored; real env vars win over it). Secrets never reach the manifest or a sidecar: the
 config snapshot written into `crawl-map.json` keeps `${ENV_VAR}` placeholders readable and
@@ -326,7 +331,7 @@ Both the viewer and the fixture site are styled with Tailwind v4, configured in 
 than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
 fixture's in `tests/fixture-src/tailwind.input.css`.
 
-The 429 unit tests are pure and fast. The 60 browser-driven tests in `tests/integration/`
+The 433 unit tests are pure and fast. The 63 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`

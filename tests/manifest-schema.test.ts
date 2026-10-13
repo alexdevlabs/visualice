@@ -52,6 +52,19 @@ describe("InputManifestSchema", () => {
     expect(parsed.routes[0].states[1].devices).toEqual(["mobile"]);
   });
 
+  it("accepts isolate and select steps on an authored state", () => {
+    const m = minimalManifest();
+    m.routes[0].states.push(
+      minimalState("sorted", {
+        isolate: true,
+        recipe: [{ action: "select", target: { testId: "sort" }, value: "lohi" }],
+      }),
+    );
+    const parsed = parseInputManifest(m, "test");
+    expect(parsed.routes[0].states[1].isolate).toBe(true);
+    expect(parsed.routes[0].states[1].recipe[0]).toMatchObject({ action: "select", value: "lohi" });
+  });
+
   it("rejects an unknown recipe action with a pointed path", () => {
     const m = minimalManifest();
     m.routes[0].states[0].recipe = [{ action: "clik", target: {} } as never];

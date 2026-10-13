@@ -79,6 +79,12 @@
         "type": "string"
       }
     },
+    "testIdAttribute": {
+      "default": "data-testid",
+      "description": "Attribute holding the site's test ids (e.g. data-test, data-cy, data-qa). Recipe `testId` targets and discovered triggers use it.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][\\w.:-]*$"
+    },
     "discovery": {
       "default": {
         "useSitemap": true,

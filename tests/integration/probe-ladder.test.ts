@@ -18,8 +18,9 @@ const page = (title: string, body: string) =>
   <style>[role=dialog]{position:fixed;top:40px;left:40px;width:240px;height:120px;background:#fff;border:1px solid}</style>
   </head><body>${body}</body></html>`;
 
-const config = (interactions: Record<string, unknown> = {}) =>
+const config = (interactions: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
   ConfigSchema.parse({
+    ...extra,
     routesFile: false,
     scope: { maxPages: 1 },
     politeness: { minDelayMs: 0 },
@@ -30,12 +31,13 @@ const config = (interactions: Record<string, unknown> = {}) =>
 async function discover(
   files: Record<string, string>,
   interactions?: Record<string, unknown>,
+  extra?: Record<string, unknown>,
 ): Promise<{ states: StateNode[]; logs: string[] }> {
   const { server, dir } = await serveFiles(files);
   const logs: string[] = [];
   try {
     const m = await discoverPipeline({
-      config: config(interactions),
+      config: config(interactions, extra),
       baseUrl: server.url,
       log: (msg) => logs.push(msg),
     });
@@ -164,5 +166,39 @@ describe("the probe ladder", () => {
     const nested = states.find((s) => s.label.startsWith("Details →"));
     expect(nested, states.map((s) => s.id).join(", ")).toBeDefined();
     expect(nested!.recipe.slice(0, details!.recipe.length)).toEqual(details!.recipe);
+  }, 60_000);
+
+  it("finds an off-canvas drawer that slides in, under the site's own test-id attribute", async () => {
+    // react-burger-menu's shape: a fixed panel parked off-screen by a transform, no
+    // dialog role, no aria-expanded — opening it only moves it into view. The site
+    // marks its controls with data-test, not data-testid.
+    const { states } = await discover(
+      {
+        "index.html": page(
+          "Drawer",
+          `<style>#wrap{position:fixed;top:0;left:0;width:240px;height:100%;background:#eee;transform:translateX(-240px)}
+                  #wrap.open{transform:none}</style>
+           <button data-test="open-menu">Open Menu</button>
+           <div id="wrap" aria-hidden="true"><nav><a href="#">All Items</a><a href="#">About</a></nav></div>
+           <script>
+             const w = document.getElementById("wrap");
+             document.querySelector("[data-test=open-menu]").addEventListener("click", () => {
+               w.classList.add("open"); w.setAttribute("aria-hidden", "false");
+             });
+             document.addEventListener("keydown", (e) => {
+               if (e.key === "Escape") { w.classList.remove("open"); w.setAttribute("aria-hidden", "true"); }
+             });
+           </script>`,
+        ),
+      },
+      {},
+      { testIdAttribute: "data-test" },
+    );
+    const menu = states.find((s) => s.kind === "menu");
+    expect(menu, JSON.stringify(states)).toBeDefined();
+    expect(menu!.trigger).toEqual({ testId: "open-menu" });
+    expect(menu!.signature).toBe("f:wrap");
+    // No dialog opened, so the recipe doesn't wait for one (it would never appear).
+    expect(waitSelectors(menu!.recipe)).toEqual([]);
   }, 60_000);
 });

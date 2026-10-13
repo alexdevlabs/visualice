@@ -19,6 +19,7 @@ import { captureScreens } from "./screens";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
 import { takeSnapshot } from "./snapshot";
 import { httpContextOptions } from "./context-options";
+import { useTestIdAttribute } from "../shared/selectors";
 import { createProgress } from "../shared/progress";
 import { pathExists } from "../shared/fsx";
 import { mapPoolWithResource, sleep } from "../shared/pool";
@@ -275,6 +276,28 @@ interface Captured {
   reuseDeclined: boolean;
 }
 
+/**
+ * Did loading `route` end on the login page, when it normally ends somewhere else?
+ *
+ * That is what a lapsed session looks like from the outside: no error, a 200, and
+ * a perfectly good screenshot — of the login form, filed under the protected page.
+ * Only a route whose known destination is *not* the login page can tell, so a
+ * route seen for the first time, and the login page itself, are never flagged.
+ */
+export function sentToLogin(
+  config: Config,
+  baseUrl: string,
+  route: Pick<RouteNode, "url" | "finalUrl">,
+  landed: string,
+): boolean {
+  const login = config.auth.login?.url;
+  if (!login || !config.auth.storageStatePath || !route.finalUrl) return false;
+  const pathOf = (u: string) => new URL(u, baseUrl).pathname.replace(/\/+$/, "") || "/";
+  const loginPath = pathOf(login);
+  if (pathOf(route.finalUrl) === loginPath || pathOf(route.url) === loginPath) return false;
+  return pathOf(landed) === loginPath;
+}
+
 async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promise<Captured> {
   const { route, state, device, baseUrl, shotsDir, runDir, config } = ctx;
   const rel = (p: string) => path.relative(runDir, p).split(path.sep).join("/");
@@ -302,6 +325,13 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // state being extended, and parking it would close a hover-opened menu.
   const load = async () => {
     const resp = await gotoRoute(page, url, config.stabilize.waitStrategy);
+    if (sentToLogin(config, baseUrl, route, page.url())) {
+      throw new Error(
+        `landed on the login page instead of ${route.url} — the saved session has expired or ` +
+          "was signed out (name the session cookie in auth.login.sessionCookies so an expired " +
+          "one is renewed, or run 'visualice auth')",
+      );
+    }
     if (resp && route.status === undefined) route.status = resp.status();
     if (!route.finalUrl) route.finalUrl = page.url();
     if (!route.title) route.title = await page.title().catch(() => undefined);
@@ -528,6 +558,7 @@ export function launchError(engine: string, error: Error): Error {
 export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
   const { config, manifest, baseUrl, runDir } = opts;
   const log = opts.log ?? (() => {});
+  useTestIdAttribute(config.testIdAttribute);
   const started = Date.now();
   const shotsDir = path.join(runDir, "screenshots");
   await fs.mkdir(shotsDir, { recursive: true });
@@ -588,24 +619,28 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
         `▸ ${device.name} (${device.width}×${device.height} @${device.dpr}${engine === "chromium" ? "" : `, ${engine}`})`,
       );
       const browser = await browserFor(engine);
-      const context = await browser.newContext({
-        ...httpContextOptions(config),
-        viewport: { width: device.width, height: device.height },
-        deviceScaleFactor: device.dpr,
-        // Firefox has no mobile emulation and rejects the option outright.
-        ...(engine === "firefox" ? {} : { isMobile: device.mobile ?? false }),
-        hasTouch: device.touch ?? device.mobile ?? false,
-        userAgent: device.userAgent,
-        colorScheme: device.colorScheme ?? "light",
-        reducedMotion: device.reducedMotion ?? "reduce",
-        // Pinned locale + timezone: Date is frozen by the stabilizer, but
-        // Intl/toLocaleString would otherwise still render in the machine's TZ.
-        locale: device.locale ?? "en-US",
-        timezoneId: device.timezoneId ?? "UTC",
-        storageState: opts.storageState,
-      });
-      context.setDefaultTimeout(config.politeness.timeoutMs);
-      await applyContextInit(context, config.stabilize);
+      const newContext = async () => {
+        const context = await browser.newContext({
+          ...httpContextOptions(config),
+          viewport: { width: device.width, height: device.height },
+          deviceScaleFactor: device.dpr,
+          // Firefox has no mobile emulation and rejects the option outright.
+          ...(engine === "firefox" ? {} : { isMobile: device.mobile ?? false }),
+          hasTouch: device.touch ?? device.mobile ?? false,
+          userAgent: device.userAgent,
+          colorScheme: device.colorScheme ?? "light",
+          reducedMotion: device.reducedMotion ?? "reduce",
+          // Pinned locale + timezone: Date is frozen by the stabilizer, but
+          // Intl/toLocaleString would otherwise still render in the machine's TZ.
+          locale: device.locale ?? "en-US",
+          timezoneId: device.timezoneId ?? "UTC",
+          storageState: opts.storageState,
+        });
+        context.setDefaultTimeout(config.politeness.timeoutMs);
+        await applyContextInit(context, config.stabilize);
+        return context;
+      };
+      const context = await newContext();
 
       // One page per worker rather than one per shot: every state re-navigates
       // anyway (that's what resets the DOM), so the page lifecycle is pure overhead.
@@ -632,11 +667,15 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
               }
             }
             for (let attempt = 0; ; attempt++) {
+              // An isolated state gets a context of its own, thrown away after the
+              // shot: whatever its recipe stores dies with it, and the shared page
+              // (and what it is showing) is left exactly as it was.
+              const own = state.isolate ? await newContext() : undefined;
               try {
                 const { ref, violations, reusedNavigation, reuseDeclined } = await captureState(
-                  current,
+                  own ? await own.newPage() : current,
                   { route, state, device, baseUrl, shotsDir, runDir, config, log },
-                  shown,
+                  own ? {} : shown,
                 );
                 if (!ref) {
                   // The component isn't on this route: not a shot, and not a failure.
@@ -653,8 +692,10 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
                 break;
               } catch (e) {
                 const error = (e as Error).message.split("\n")[0];
-                current = await recycle();
-                forget(shown);
+                if (!own) {
+                  current = await recycle();
+                  forget(shown);
+                }
                 if (attempt < config.politeness.retries) {
                   log(
                     `  ↻ ${pathSlug(route.url)} / ${state.id} [${device.name}]: retrying — ${error}`,
@@ -667,6 +708,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
                   break;
                 }
               } finally {
+                await own?.close().catch(() => {});
                 await sleep(config.politeness.minDelayMs);
               }
             }

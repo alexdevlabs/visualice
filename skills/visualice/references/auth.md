@@ -36,6 +36,8 @@ auth: {
   `sessionCookies: ["sessionid"]` (a trailing `*` matches a prefix) — and staleness is
   read from that cookie's own expiry instead. Other cookies the login set (CSRF,
   consent, analytics) are never consulted. Use `visualice auth --force` to re-run the
-  login even if the saved session looks fresh.
+  login even if the saved session looks fresh. Name the cookie whenever the site's
+  session is shorter than 12h (Sauce Demo's lasts 10 minutes): otherwise a lapsed
+  session is reused, and every protected page fails with "landed on the login page".
 - Password-protected staging: set `http.httpCredentials` / `http.extraHTTPHeaders`
   (values may use `${ENV_VAR}`) and `http.ignoreHTTPSErrors` for self-signed TLS.

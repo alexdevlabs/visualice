@@ -1,5 +1,20 @@
-import type { Page, Locator } from "playwright";
+import { selectors, type Page, type Locator } from "playwright";
 import type { Target } from "./types";
+
+let testIdAttr = "data-testid";
+
+/**
+ * The attribute a `testId` target reads — `data-testid` unless the site uses another
+ * (`data-test`, `data-cy`, `data-qa`). Playwright keeps it per process, as do we:
+ * one run, one site, one attribute.
+ */
+export function useTestIdAttribute(name: string): void {
+  if (name === testIdAttr) return;
+  testIdAttr = name;
+  selectors.setTestIdAttribute(name);
+}
+
+export const testIdAttribute = (): string => testIdAttr;
 
 /**
  * Resolve a Target to a Playwright Locator, preferring robust strategies

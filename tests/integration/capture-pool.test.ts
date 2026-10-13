@@ -153,6 +153,76 @@ describe("page reuse", () => {
 });
 
 /**
+ * A page whose look depends on what's in localStorage — a cart, in miniature. A
+ * recipe that adds to it changes every page the shared context loads afterwards.
+ */
+const CART_PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Cart</title><style>
+  body{margin:0;font:16px system-ui}#badge{width:300px;height:200px;background:#eee}
+  .full #badge{background:#c00}
+</style></head><body><div id="badge"></div><button id="add">Add</button><script>
+  const paint = () => document.body.classList.toggle("full", !!localStorage.getItem("cart"));
+  document.getElementById("add").addEventListener("click", () => {
+    localStorage.setItem("cart", "1");
+    paint();
+  });
+  paint();
+</script></body></html>`;
+
+describe("isolated states", () => {
+  const run = async (isolate: boolean) => {
+    const { server, dir: siteDir } = await serveFiles({
+      "index.html": CART_PAGE,
+      "second.html": CART_PAGE,
+    });
+    const out = await tempDir("pool");
+    try {
+      const result = await capturePipeline({
+        config: config(out),
+        inputManifest: {
+          routes: [
+            {
+              id: "home",
+              url: "/",
+              depth: 0,
+              states: [
+                {
+                  ...state("added", [{ action: "click", target: { selector: "#add" } }]),
+                  isolate,
+                },
+              ],
+            },
+            { id: "second", url: "/second.html", depth: 0, states: [state("default")] },
+          ],
+        },
+        baseUrl: server.url,
+        log: silent,
+      });
+      const shot = (route: number) =>
+        sharp(path.join(result.runDir, result.manifest.routes[route].states[0].shots.small.full!))
+          .extract({ left: 10, top: 10, width: 1, height: 1 })
+          .raw()
+          .toBuffer();
+      return { added: [...(await shot(0))], second: [...(await shot(1))] };
+    } finally {
+      await server.close();
+      await fs.rm(siteDir, { recursive: true, force: true });
+      await fs.rm(out, { recursive: true, force: true });
+    }
+  };
+
+  it("keeps what an isolated recipe stores out of the shots after it", async () => {
+    const shared = await run(false);
+    // Without isolation the cart leaks: the second page is painted full too…
+    expect(shared.added).toEqual([204, 0, 0]);
+    expect(shared.second).toEqual([204, 0, 0]);
+    const isolated = await run(true);
+    // …with it, the state still shows its cart and the next page doesn't.
+    expect(isolated.added).toEqual([204, 0, 0]);
+    expect(isolated.second).toEqual([238, 238, 238]);
+  }, 120_000);
+});
+
+/**
  * A menu that closes when the page scrolls — Floating-UI's `hide`, Bootstrap's
  * dropdowns. Stabilization scrolls the page to trigger lazy loading, so between one
  * state's recipe and the next state's reuse of it, the menu has quietly closed —

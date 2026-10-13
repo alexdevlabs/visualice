@@ -330,18 +330,12 @@ async function crawlRun(
     else log("nothing to resume — starting a new run");
   }
 
-  // Routes-file intent: listed routes seed discovery, skip: globs exclude.
-  const intent = await loadRoutesIntent(config);
-  const intentOrigin = intent.target ? safeOrigin(intent.target) : undefined;
-  if (intentOrigin && intentOrigin !== safeOrigin(baseUrl)) {
-    log(`⚠ routes file targets ${intent.target} but crawling ${baseUrl} — regenerating for it`);
-  }
-  for (const w of intent.warnings) log(`⚠ routes file: ${w}`);
-  const effectiveConfig = applyRoutesIntent(config, intent);
-
-  const storageState = await ensureStorageState(config, log);
-
-  const cached = (await pathExists(cachePath)) ? await loadInputManifest(cachePath) : undefined;
+  const { intent, effectiveConfig, storageState, cached } = await prepareModel(
+    config,
+    baseUrl,
+    cachePath,
+    log,
+  );
   let inputManifest: InputManifest;
   if (replay && cached) {
     log(`replay: reusing cached site model → ${cachePath}`);
@@ -362,31 +356,14 @@ async function crawlRun(
       await saveJson(cachePath, inputManifest);
     }
   } else {
-    // Hints cached from earlier runs steer discovery too (skipTriggers), so read
-    // them before probing rather than only on the way into capture.
-    const discovered = await discoverPipeline({
-      config: applyHints(effectiveConfig, cached?.hints),
+    inputManifest = await rediscover(
+      effectiveConfig,
       baseUrl,
       storageState,
+      cached,
+      cachePath,
       log,
-    });
-    // Default crawl re-discovers from scratch, but MERGES into any existing cache
-    // rather than overwriting it — auto states are refreshed, authored (hand-written /
-    // Explore-mode) states are always preserved.
-    if (cached) {
-      inputManifest = mergeManifests(cached, discovered);
-      const authored = inputManifest.routes.reduce(
-        (n, r) => n + r.states.filter(isAuthored).length,
-        0,
-      );
-      log(
-        `merged discovery into existing cache → ${cachePath} (${authored} authored state(s) preserved)`,
-      );
-    } else {
-      inputManifest = discovered;
-      log(`cached site model → ${cachePath}`);
-    }
-    await saveJson(cachePath, inputManifest); // shots-free model, cached for reuse
+    );
   }
 
   await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
@@ -400,6 +377,89 @@ async function crawlRun(
     lock: false,
     resume,
     log,
+  });
+}
+
+/** What every model-building run starts from: routes-file intent, session, cache. */
+async function prepareModel(config: Config, baseUrl: string, cachePath: string, log: Log) {
+  // Routes-file intent: listed routes seed discovery, skip: globs exclude.
+  const intent = await loadRoutesIntent(config);
+  const intentOrigin = intent.target ? safeOrigin(intent.target) : undefined;
+  if (intentOrigin && intentOrigin !== safeOrigin(baseUrl)) {
+    log(`⚠ routes file targets ${intent.target} but crawling ${baseUrl} — regenerating for it`);
+  }
+  for (const w of intent.warnings) log(`⚠ routes file: ${w}`);
+  const effectiveConfig = applyRoutesIntent(config, intent);
+  const storageState = await ensureStorageState(config, log);
+  const cached = (await pathExists(cachePath)) ? await loadInputManifest(cachePath) : undefined;
+  return { intent, effectiveConfig, storageState, cached };
+}
+
+/** Discover the site from scratch and fold it into the cache, which it then saves. */
+async function rediscover(
+  config: Config,
+  baseUrl: string,
+  storageState: string | undefined,
+  cached: InputManifest | undefined,
+  cachePath: string,
+  log: Log,
+): Promise<InputManifest> {
+  // Hints cached from earlier runs steer discovery too (skipTriggers), so read
+  // them before probing rather than only on the way into capture.
+  const discovered = await discoverPipeline({
+    config: applyHints(config, cached?.hints),
+    baseUrl,
+    storageState,
+    log,
+  });
+  let model: InputManifest;
+  // Discovery MERGES into any existing cache rather than overwriting it — auto
+  // states are refreshed, authored (hand-written / Explore-mode) states and hints
+  // are always preserved.
+  if (cached) {
+    model = mergeManifests(cached, discovered);
+    const authored = model.routes.reduce((n, r) => n + r.states.filter(isAuthored).length, 0);
+    log(
+      `merged discovery into existing cache → ${cachePath} (${authored} authored state(s) preserved)`,
+    );
+  } else {
+    model = discovered;
+    log(`cached site model → ${cachePath}`);
+  }
+  await saveJson(cachePath, model); // shots-free model, cached for reuse
+  return model;
+}
+
+/**
+ * Discovery only (`visualice discover`): the same login, hints and cache merge as a
+ * crawl's discovery, without capturing anything.
+ */
+export async function discoverOnlyPipeline(opts: {
+  config: Config;
+  baseUrl: string;
+  log?: Log;
+}): Promise<{ inputManifest: InputManifest; cachePath: string }> {
+  const { config, baseUrl } = opts;
+  const log = opts.log ?? (() => {});
+  const outRoot = path.resolve(config.output.dir);
+  const cachePath = modelCachePath(outRoot);
+  return withLock(outRoot, log, true, async () => {
+    const { intent, effectiveConfig, storageState, cached } = await prepareModel(
+      config,
+      baseUrl,
+      cachePath,
+      log,
+    );
+    const inputManifest = await rediscover(
+      effectiveConfig,
+      baseUrl,
+      storageState,
+      cached,
+      cachePath,
+      log,
+    );
+    await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
+    return { inputManifest, cachePath };
   });
 }
 

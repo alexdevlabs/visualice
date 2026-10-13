@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { closingPromises, orderForReuse, reusePlan, type PageState } from "../src/crawl/capture";
+import {
+  closingPromises,
+  orderForReuse,
+  reusePlan,
+  sentToLogin,
+  type PageState,
+} from "../src/crawl/capture";
+import { ConfigSchema } from "../src/shared/config";
 import type { RecipeStep, StateNode } from "../src/shared/types";
 
 const click = (id: string): RecipeStep => ({ action: "click", target: { selector: `#${id}` } });
@@ -160,5 +167,27 @@ describe("closingPromises", () => {
     expect(closingPromises([])).toEqual([]);
     expect(closingPromises([open, wait])).toEqual([]);
     expect(closingPromises([open, { action: "waitFor", url: "**/done" }])).toEqual([]);
+  });
+});
+
+describe("sentToLogin", () => {
+  const base = "https://shop.test";
+  const config = ConfigSchema.parse({
+    auth: { storageStatePath: ".visualice/auth.json", login: { url: "/", steps: [] } },
+  });
+  const inventory = { url: "/inventory.html", finalUrl: "/inventory.html" };
+
+  it("flags a protected page that came back as the login page", () => {
+    expect(sentToLogin(config, base, inventory, `${base}/`)).toBe(true);
+    expect(sentToLogin(config, base, inventory, `${base}/inventory.html`)).toBe(false);
+  });
+
+  it("never flags the login page itself, or a route with no known destination", () => {
+    expect(sentToLogin(config, base, { url: "/", finalUrl: "/" }, `${base}/`)).toBe(false);
+    expect(sentToLogin(config, base, { url: "/inventory.html" }, `${base}/`)).toBe(false);
+  });
+
+  it("is off without a login recipe", () => {
+    expect(sentToLogin(ConfigSchema.parse({}), base, inventory, `${base}/`)).toBe(false);
   });
 });

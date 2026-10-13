@@ -31,6 +31,17 @@ checkbox to a realized bullet automatically.
     "shots": {}
   }
   ```
+- Steps are `navigate`, `click`, `hover`, `focus`, `blur`, `fill`, `select` (a
+  `<select>` option by value or label: `{ "action": "select", "target": { "testId":
+"sort" }, "value": "lohi" }`), `press`, `waitFor`, `scroll` and `wait`.
+- A state whose recipe **changes data** — adds to a cart, saves a preference, submits a
+  login — gets `"isolate": true`: it is captured in a fresh browser context of its own,
+  so what it stores can't show up in the states captured after it. A state that needs
+  data first (a cart with items) builds it in its own recipe: `navigate` to where the
+  data is made, act, `navigate` back, `waitFor` the result — and is isolated too.
+- Inline messages (a form error under a field, a toast that isn't a dialog) aren't
+  detected automatically: discovery looks for things that open. Author them, ending
+  the recipe on a `waitFor` of the message.
 - A missing **page** (reachable only after login, or never linked) is not authored into
   the cache by hand: add `- /path` to `visualice.routes.md`. The next run — `--replay`
   included — discovers that page alone (its auto states too) and merges it into the

@@ -1,6 +1,6 @@
 import type { Page } from "playwright";
 import type { RecipeStep, StateNode, Target } from "../shared/types";
-import { describeTarget, locatorFor } from "../shared/selectors";
+import { describeTarget, locatorFor, testIdAttribute } from "../shared/selectors";
 
 /**
  * Form states: focus rings and validation errors.
@@ -120,7 +120,7 @@ interface FormScan {
 async function scanFields(page: Page): Promise<FormScan | null> {
   return page
     .evaluate(
-      ({ fieldSelector, minFields }) => {
+      ({ fieldSelector, minFields, testIdAttr }) => {
         // Group by owning form: the first field and the required fields have to
         // belong to the same one, or the recipe touches two unrelated forms.
         const byForm = new Map<
@@ -135,7 +135,7 @@ async function scanFields(page: Page): Promise<FormScan | null> {
           const form = el.form ?? el.closest("form");
           if (!form) continue;
           const entry = {
-            testId: el.getAttribute("data-testid") || undefined,
+            testId: el.getAttribute(testIdAttr) || undefined,
             id: el.id || undefined,
             name: el.name || undefined,
             index,
@@ -161,7 +161,7 @@ async function scanFields(page: Page): Promise<FormScan | null> {
         }
         return null;
       },
-      { fieldSelector: FIELD_SELECTOR, minFields: MIN_FORM_FIELDS },
+      { fieldSelector: FIELD_SELECTOR, minFields: MIN_FORM_FIELDS, testIdAttr: testIdAttribute() },
     )
     .catch(() => null);
 }

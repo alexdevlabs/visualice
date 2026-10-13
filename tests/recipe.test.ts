@@ -17,6 +17,8 @@ function fakePage() {
       click: async () => void calls.push(`click(${desc})`),
       hover: async () => void calls.push(`hover(${desc})`),
       fill: async (v: string) => void calls.push(`fill(${desc},${v})`),
+      selectOption: async (v: string | string[]) =>
+        void calls.push(`select(${desc},${[v].flat().join("+")})`),
       press: async (k: string) => void calls.push(`press(${desc},${k})`),
       first: () => l,
       nth: (n: number) => locator(`${desc}#${n}`),
@@ -91,6 +93,8 @@ describe("applyRecipe", () => {
     const recipe: RecipeStep[] = [
       { action: "navigate", url: "/login" },
       { action: "fill", target: { label: "Email" }, value: "a@b.c" },
+      { action: "select", target: { testId: "sort" }, value: "lohi" },
+      { action: "select", target: { label: "Tags" }, value: ["a", "b"] },
       { action: "click", target: { role: "button", name: "Sign in" } },
       { action: "hover", target: { testId: "menu" } },
       { action: "press", key: "Escape" },
@@ -104,6 +108,8 @@ describe("applyRecipe", () => {
     expect(p.calls).toEqual([
       "goto(https://site.test/login)",
       "fill(label=Email,a@b.c)",
+      "select(testid=sort,lohi)",
+      "select(label=Tags,a+b)",
       "click(role=button[Sign in])",
       "hover(testid=menu)",
       "kbd(Escape)",

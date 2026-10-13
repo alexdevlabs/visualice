@@ -4,7 +4,7 @@ import path from "node:path";
 import { serveDirectory } from "../../src/shared/static-server";
 import type { StaticServer } from "../../src/shared/file-serve";
 import { ConfigSchema, type Config } from "../../src/shared/config";
-import { crawlPipeline } from "../../src/crawl/orchestrator";
+import { crawlPipeline, discoverOnlyPipeline } from "../../src/crawl/orchestrator";
 import { parseRoutesFile } from "../../src/crawl/routes-file";
 import { FIXTURE_DIR, silent, tempDir } from "./helpers";
 
@@ -101,5 +101,26 @@ describe("routes file loop", () => {
     const cachedAfter = JSON.parse(await fs.readFile(cachePath, "utf8"));
     expect(cachedAfter.routes.at(-1).url).toBe("/dashboard");
     expect(await fs.readFile(routesFile, "utf8")).toMatch(/^- \/dashboard — /m);
+  }, 60000);
+
+  it("discover alone merges into the cache instead of overwriting it", async () => {
+    const cachePath = path.join(out, "crawl-map.cache.json");
+    const cached = JSON.parse(await fs.readFile(cachePath, "utf8"));
+    cached.hints = { skipTriggers: [".js-logout"] };
+    cached.routes[0].states.push({
+      id: "authored-panel",
+      kind: "other",
+      label: "Authored",
+      recipe: [{ action: "wait", ms: 10 }],
+      source: "authored",
+      shots: {},
+    });
+    await fs.writeFile(cachePath, JSON.stringify(cached));
+
+    await discoverOnlyPipeline({ config, baseUrl: server.url, log: silent });
+
+    const after = JSON.parse(await fs.readFile(cachePath, "utf8"));
+    expect(after.hints).toEqual({ skipTriggers: [".js-logout"] });
+    expect(after.routes[0].states.map((s: { id: string }) => s.id)).toContain("authored-panel");
   }, 60000);
 });

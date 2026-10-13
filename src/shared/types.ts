@@ -36,6 +36,8 @@ export type RecipeStep =
   /** Move focus off whatever holds it — what makes a "touched" field show its error. */
   | { action: "blur" }
   | { action: "fill"; target: Target; value: string }
+  /** Choose `<select>` option(s) by value or visible label. */
+  | { action: "select"; target: Target; value: string | string[] }
   | { action: "press"; key: string; target?: Target }
   | {
       action: "waitFor";
@@ -137,6 +139,13 @@ export interface StateNode {
    * own. A route that doesn't have it is skipped, not failed.
    */
   element?: string;
+  /**
+   * Capture in a browser context of its own, started from the signed-in storage
+   * state: what the recipe stores (a cart, a dismissed banner, a preference) can't
+   * leak into the shots taken after it, and what earlier states stored can't leak
+   * into this one. For recipes that change the site's data, not just what's open.
+   */
+  isolate?: boolean;
   shots: Record<string, ShotRef>; // keyed by device name
 }
 

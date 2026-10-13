@@ -8,6 +8,8 @@ export interface Snapshot {
   modals: number;
   expanded: number;
   details: number;
+  /** On-screen fixed overlays that aren't one of the regions above (off-canvas drawers). */
+  overlays: number;
   /** One entry per currently-open region, sorted; the raw material for `sig`. */
   ids: string[];
   sig: string;
@@ -111,8 +113,47 @@ export function takeSnapshot(page: Page): Promise<Snapshot> {
     ).filter(vis);
     const expanded = Array.from(document.querySelectorAll('[aria-expanded="true"]'));
     const details = Array.from(document.querySelectorAll("details[open]")).filter(vis);
+    // A fixed panel slid into view — an off-canvas drawer moved by a transform, with
+    // no dialog role or aria-expanded to say so. Parked off-screen it doesn't count;
+    // on screen it does. One that is always there (a cookie bar, a fixed header) is
+    // in every snapshot, so it never reads as newly opened. Empty layers (backdrops)
+    // and the regions already counted above are left out.
+    const counted = [...modals, ...details];
+    for (const e of expanded) {
+      for (const id of (e.getAttribute("aria-controls") || "").split(/\s+/)) {
+        const el = id && document.getElementById(id);
+        if (el) counted.push(el);
+      }
+    }
+    const overlays: Element[] = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    for (let n = walker.nextNode() as Element | null; n; ) {
+      if (getComputedStyle(n).position !== "fixed") {
+        n = walker.nextNode() as Element | null;
+        continue;
+      }
+      const r = n.getBoundingClientRect();
+      const w = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+      const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
+      const onScreen = w >= 40 && h >= 40 && w * h >= 0.5 * r.width * r.height;
+      const hasContent = (n.textContent || "").trim() !== "" || !!n.querySelector("img,svg,video");
+      if (
+        onScreen &&
+        hasContent &&
+        vis(n) &&
+        n.getAttribute("aria-hidden") !== "true" &&
+        !counted.some((c) => c.contains(n!) || n!.contains(c))
+      ) {
+        overlays.push(n);
+      }
+      // Nothing inside a fixed element is a separate overlay: skip its subtree.
+      let next: Node | null = walker.nextSibling();
+      while (!next && walker.parentNode()) next = walker.nextSibling();
+      n = next as Element | null;
+    }
     const ids = [
       ...modals.map((e) => `m:${regionKey(e)}`),
+      ...overlays.map((e) => `f:${regionKey(e)}`),
       ...details.map((e) => `d:${regionKey(e)}`),
       // An `aria-expanded` element is the *trigger*; the region it opened is what
       // `aria-controls` names, so that stays the preferred key here.
@@ -138,6 +179,7 @@ export function takeSnapshot(page: Page): Promise<Snapshot> {
       modals: modals.length,
       expanded: expanded.length,
       details: details.length,
+      overlays: overlays.length,
       ids,
       sig: ids.join("|"),
       openModalIds,
@@ -151,7 +193,11 @@ export function takeSnapshot(page: Page): Promise<Snapshot> {
 /** Same open regions — the comparison that says "this is that state again". */
 export function sameRegions(a: Snapshot, b: Snapshot): boolean {
   return (
-    a.sig === b.sig && a.modals === b.modals && a.expanded === b.expanded && a.details === b.details
+    a.sig === b.sig &&
+    a.modals === b.modals &&
+    a.expanded === b.expanded &&
+    a.details === b.details &&
+    a.overlays === b.overlays
   );
 }
 

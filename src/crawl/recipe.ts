@@ -57,6 +57,9 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
       case "fill":
         await locatorFor(page, step.target).fill(step.value);
         break;
+      case "select":
+        await locatorFor(page, step.target).selectOption(step.value);
+        break;
       case "press":
         if (step.target) await locatorFor(page, step.target).press(step.key);
         else await page.keyboard.press(step.key);

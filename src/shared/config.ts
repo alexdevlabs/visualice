@@ -380,6 +380,13 @@ export const ConfigSchema = z.object({
     .array(z.string())
     .default([])
     .describe("Extra entry points to crawl beyond the homepage."),
+  testIdAttribute: z
+    .string()
+    .regex(/^[A-Za-z_][\w.:-]*$/)
+    .default("data-testid")
+    .describe(
+      "Attribute holding the site's test ids (e.g. data-test, data-cy, data-qa). Recipe `testId` targets and discovered triggers use it.",
+    ),
   discovery: DiscoverySchema.default(DiscoverySchema.parse({})),
   devices: z
     .array(DeviceSchema)

@@ -6,6 +6,7 @@ import type { RecipeStep } from "../shared/types";
 import { applyRecipe, resolveUrl } from "./recipe";
 import { httpContextOptions } from "./context-options";
 import { resolveEnvString } from "../shared/env";
+import { useTestIdAttribute } from "../shared/selectors";
 
 /**
  * Substitute ${ENV_VAR} placeholders in fill values so secrets stay out of config
@@ -109,6 +110,7 @@ export async function ensureStorageState(
   }
 
   log("authenticating (running login recipe)…");
+  useTestIdAttribute(config.testIdAttribute);
   const browser = await chromium.launch();
   try {
     const context = await browser.newContext(httpContextOptions(config));

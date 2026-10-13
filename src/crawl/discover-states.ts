@@ -1,7 +1,7 @@
 import type { BrowserContext, Page } from "playwright";
 import type { Config } from "../shared/config";
 import type { RouteNode, StateNode, StateKind, RecipeStep, Target } from "../shared/types";
-import { locatorFor } from "../shared/selectors";
+import { locatorFor, testIdAttribute } from "../shared/selectors";
 import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe, gotoRoute } from "./recipe";
@@ -36,6 +36,7 @@ async function collectCandidates(
     hover: interactions.hover,
     maxCandidates: interactions.maxCandidates,
     root: root ?? null,
+    testIdAttribute: testIdAttribute(),
   };
   const raw = await page.evaluate((cfg) => {
     const base = [
@@ -85,7 +86,7 @@ async function collectCandidates(
       return parts.join(" > ");
     };
     const targetFor = (el: Element): Record<string, unknown> => {
-      const tid = el.getAttribute("data-testid");
+      const tid = el.getAttribute(cfg.testIdAttribute);
       if (tid) return { testId: tid };
       if (el.id) return { selector: `#${CSS.escape(el.id)}` };
       const role = el.getAttribute("role");
@@ -212,6 +213,7 @@ function classifyChange(
 
   const opened = after.modals > before.modals;
   const detailsMore = after.details > before.details;
+  const slidIn = after.overlays > before.overlays;
   const lbl = (cand.label || "").toLowerCase();
   const menuish = cand.hint === "menu" || /menu|nav/.test(lbl);
 
@@ -222,6 +224,7 @@ function classifyChange(
     return "hover";
   }
   if (opened) return menuish ? "menu" : "modal";
+  if (slidIn) return menuish ? "menu" : "drawer";
   if (detailsMore) return "accordion";
   if (cand.hint === "tab") return "tab";
   return "accordion";
@@ -242,6 +245,7 @@ function buildSteps(
   kind: StateKind,
   action: "click" | "hover",
   openId?: string,
+  dialogOpened = true,
 ): RecipeStep[] {
   const steps: RecipeStep[] = [{ action, target: cand.target }];
   // Prefer waiting for the exact element that opened — a generic [role=dialog] can
@@ -249,7 +253,7 @@ function buildSteps(
   const id = cand.controls ?? openId;
   if (id) {
     steps.push({ action: "waitFor", selector: idSelector(id), state: "visible" });
-  } else if (kind === "modal" || kind === "menu" || kind === "drawer") {
+  } else if (dialogOpened && (kind === "modal" || kind === "menu" || kind === "drawer")) {
     steps.push({
       action: "waitFor",
       selector: 'dialog[open]:visible,[role="dialog"]:visible',
@@ -433,7 +437,11 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
           kind,
           label: nested ? `${parent.label} → ${cand.label || kind}` : cand.label || kind,
           trigger: cand.target,
-          recipe: [...parent.recipe, ...buildSteps(cand, kind, action, openId)],
+          recipe: [
+            ...parent.recipe,
+            // A panel that slid in without being a dialog has none to wait for.
+            ...buildSteps(cand, kind, action, openId, after.modals > before.modals),
+          ],
           signature: after.sig,
           source: "auto",
           shots: {},
