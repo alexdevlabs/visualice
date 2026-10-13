@@ -82,4 +82,24 @@ describe("routes file loop", () => {
     const after = await fs.readFile(routesFile, "utf8");
     expect(after).toBe(before);
   }, 60000);
+
+  it("a page added to the file is discovered on replay, the rest replayed as is", async () => {
+    const cachePath = path.join(out, "crawl-map.cache.json");
+    const cachedBefore = JSON.parse(await fs.readFile(cachePath, "utf8"));
+    expect(cachedBefore.routes.map((r: { url: string }) => r.url)).not.toContain("/dashboard");
+    await fs.appendFile(routesFile, "- /dashboard\n");
+
+    const { manifest } = await crawlPipeline({
+      config,
+      baseUrl: server.url,
+      replay: true,
+      log: silent,
+    });
+
+    const urls = manifest.routes.map((r) => r.url);
+    expect(urls).toEqual([...cachedBefore.routes.map((r: { url: string }) => r.url), "/dashboard"]);
+    const cachedAfter = JSON.parse(await fs.readFile(cachePath, "utf8"));
+    expect(cachedAfter.routes.at(-1).url).toBe("/dashboard");
+    expect(await fs.readFile(routesFile, "utf8")).toMatch(/^- \/dashboard — /m);
+  }, 60000);
 });

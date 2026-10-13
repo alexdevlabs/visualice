@@ -54,15 +54,25 @@ async function fetchSitemapUrls(
   return out;
 }
 
+/** Narrows a route discovery to known pages. */
+export interface RouteDiscoveryLimit {
+  /** Visit exactly these pages: no start page, no sitemap, no link following. */
+  only?: string[];
+  /** Route ids already in use (by a cached model the result is merged into). */
+  takenIds?: string[];
+}
+
 /** BFS link crawl (+ sitemap) confined to the target origin, scope rules and robots.txt. */
 export async function discoverRoutes(
   context: BrowserContext,
   config: Config,
   baseUrl: string,
   log: (msg: string) => void,
+  limit: RouteDiscoveryLimit = {},
 ): Promise<RouteNode[]> {
   const origin = new URL(baseUrl).origin;
-  const { include, exclude, maxDepth, maxPages, sameOriginOnly, hashRoutes } = config.scope;
+  const { include, exclude, maxPages, sameOriginOnly, hashRoutes } = config.scope;
+  const maxDepth = limit.only ? 0 : config.scope.maxDepth;
   const { respectRobots } = config.politeness;
 
   // One fetch serves both consumers: the crawl rules and the declared sitemaps.
@@ -87,15 +97,15 @@ export async function discoverRoutes(
   const enqueue = (url: string, depth: number, from: string | null) =>
     queue.push({ url, depth, from });
 
-  enqueue(baseUrl, 0, null);
-  for (const s of config.seeds) {
+  if (!limit.only) enqueue(baseUrl, 0, null);
+  for (const s of limit.only ?? config.seeds) {
     try {
       enqueue(new URL(s, baseUrl).href, 0, null);
     } catch {
       /* skip bad seed */
     }
   }
-  if (config.discovery.useSitemap) {
+  if (config.discovery.useSitemap && !limit.only) {
     const fromSitemap = await fetchSitemapUrls(baseUrl, origin, robots.sitemaps, maxPages);
     for (const u of fromSitemap) enqueue(u, 0, null);
   }
@@ -157,10 +167,7 @@ export async function discoverRoutes(
         }
       }
 
-      const id = uniqueId(
-        routeId(canon),
-        routes.map((r) => r.id),
-      );
+      const id = uniqueId(routeId(canon), [...(limit.takenIds ?? []), ...routes.map((r) => r.id)]);
       routes.push({
         id,
         url: canon,

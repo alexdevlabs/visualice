@@ -24,6 +24,14 @@ export interface ScreensOptions {
 
 export interface Screens {
   frames: Buffer[];
+  /**
+   * Where each frame sat on the page, in CSS px: the page position at its first
+   * row, and the rows pinned bars covered at its top and bottom. Absent for a
+   * single screen, which has nothing to join.
+   */
+  stops?: { y: number; top: number; bottom: number }[];
+  /** The window's height in CSS px, which `stops` are measured against. */
+  viewportHeight?: number;
   /** The page went on past `maxScreens`. */
   clamped: boolean;
 }
@@ -42,6 +50,9 @@ interface Stop {
   top: number;
   bottom: number;
   height: number;
+  /** Where the scroller's box starts in the window, and the window's height. */
+  boxTop: number;
+  vh: number;
 }
 
 /**
@@ -77,8 +88,23 @@ async function measure(page: Page): Promise<Stop> {
       top,
       bottom,
       height,
+      boxTop: box.top,
+      vh,
     };
   });
+}
+
+/**
+ * A stop as the window saw it. Chrome outside an inner scroller (an app shell's
+ * header and footer) covers the screen exactly like a pinned bar, and a window row
+ * `v` shows the page at `y + v`.
+ */
+function frameOf(stop: Stop): { y: number; top: number; bottom: number } {
+  const above = Math.max(0, stop.boxTop);
+  const below = Math.max(0, stop.vh - stop.height - above);
+  const top = Math.min(stop.vh, above + stop.top);
+  const bottom = Math.min(stop.vh - top, below + stop.bottom);
+  return { y: stop.pos - stop.boxTop, top, bottom };
 }
 
 /**
@@ -164,11 +190,13 @@ export async function captureScreens(page: Page, opts: ScreensOptions): Promise<
   await scrollTo(page, 0);
   await settle(page, opts.settleMs);
   const frames: Buffer[] = [];
+  const stops: Stop[] = [];
   let clamped = false;
   try {
     for (;;) {
       frames.push(await shoot());
       const stop = await measure(page);
+      stops.push(stop);
       if (stop.pos >= stop.max - 1) break;
       if (frames.length >= opts.maxScreens) {
         clamped = true;
@@ -186,5 +214,6 @@ export async function captureScreens(page: Page, opts: ScreensOptions): Promise<
     // The next state may reuse this page; leave it where a fresh load would be.
     await scrollTo(page, 0).catch(() => {});
   }
-  return { frames, clamped };
+  if (frames.length < 2) return { frames, clamped };
+  return { frames, stops: stops.map(frameOf), viewportHeight: stops[0].vh, clamped };
 }

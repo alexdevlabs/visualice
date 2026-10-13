@@ -44,9 +44,10 @@
   html {
     scroll-behavior: smooth;
   }
-  /* A modal <dialog> doesn't lock the page behind it on its own; without this the
-     page scrolls under the backdrop. */
-  html:has(dialog:modal) {
+  /* Neither a modal <dialog> nor the open mobile menu locks the page behind it on
+     its own; without this the page scrolls under the backdrop. */
+  html:has(dialog:modal),
+  html:has(#mobile-drawer:not([hidden])) {
     overflow: hidden;
   }
   /* The `hidden` attribute must win over Tailwind display utilities (e.g. `flex` on

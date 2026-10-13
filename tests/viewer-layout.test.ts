@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { columnCount, computeLayout } from "../viewer/src/layout";
+import { columnCount, computeLayout, tileHeight } from "../viewer/src/layout";
 import type { ViewerData, ViewerTile } from "../viewer/src/types";
 
 const DEVICES = [
@@ -220,8 +220,21 @@ describe("computeLayout — one route", () => {
   it("places only that route, while still listing the others for the sidebar", () => {
     const l = computeLayout(data, { devices: allDevices, routeId: "about" });
     expect(new Set(l.placed.map((p) => p.tile.routeId))).toEqual(new Set(["about"]));
-    expect(l.labels.map((x) => x.routeId)).toEqual(["about"]);
     expect(l.routesWithTiles).toEqual(["home", "about"]);
+  });
+
+  it("titles the route in a heading for the header instead of on the canvas", () => {
+    const l = computeLayout(data, { devices: allDevices, routeId: "about" });
+    expect(l.labels).toEqual([]);
+    expect(l.heading).toMatchObject({ routeId: "about", path: "/about", subtitle: "1 state" });
+    // Only the tile captions need room above the shots.
+    expect(Math.min(...l.placed.map((p) => p.y))).toBe(44);
+  });
+
+  it("keeps the canvas label when a search leaves one route in the all-routes view", () => {
+    const l = computeLayout(data, { devices: allDevices, query: "about" });
+    expect(l.heading).toBeUndefined();
+    expect(l.labels.map((x) => x.routeId)).toEqual(["about"]);
   });
 
   it("places nothing when the filters leave that route empty", () => {
@@ -237,5 +250,61 @@ describe("computeLayout — routesWithTiles", () => {
     expect(l.routesWithTiles).toEqual(["home", "about"]);
     const filtered = computeLayout(data, { devices: allDevices, query: "modal" });
     expect(filtered.routesWithTiles).toEqual(["home"]);
+  });
+});
+
+describe("tileHeight — modes", () => {
+  const stacked = tile("home", "default", "desktop", {
+    width: 1000,
+    height: 3000,
+    screens: 3,
+    frames: [
+      { y: 0, top: 100, bottom: 0 },
+      { y: 800, top: 100, bottom: 0 },
+      { y: 1600, top: 100, bottom: 0 },
+    ],
+  });
+
+  it("draws each screen with a gap between them in Screen mode", () => {
+    const s = tileHeight(stacked, 100);
+    expect(s.screensShown).toBe(3);
+    expect(s.h).toBeCloseTo(300 + 2 * 20);
+    expect(s.page).toBeUndefined();
+  });
+
+  it("joins the screens into one shorter page in Continuous mode", () => {
+    const s = tileHeight(stacked, 100, "continuous");
+    // 1000 + 800 + 800 image rows: each later screen loses its overlap with the one before.
+    expect(s.page?.height).toBe(2600);
+    expect(s.h).toBeCloseTo(260);
+    expect(s.k).toBeCloseTo(0.1);
+  });
+
+  it("is one screen tall in Scroll mode", () => {
+    expect(tileHeight(stacked, 100, "scroll").h).toBeCloseTo(100);
+  });
+
+  it("scrolls a single image one device window at a time", () => {
+    const single = tile("home", "default", "desktop", { width: 1000, height: 4000 });
+    expect(tileHeight(single, 100, "scroll", 625).h).toBeCloseTo(62.5);
+  });
+
+  it("keeps a failed capture's placeholder in every mode", () => {
+    const failed = tile("home", "default", "desktop", { error: "boom", screens: 3 });
+    expect(tileHeight(failed, 100, "scroll").page).toBeUndefined();
+  });
+});
+
+describe("computeLayout — modes", () => {
+  it("sizes a single shot's scroll window from its device", () => {
+    const layout = computeLayout(data, {
+      devices: new Set(["desktop"]),
+      mode: "scroll",
+      routeId: "about",
+    });
+    const p = layout.placed[0];
+    // A 1440×900 window on a 1000px-wide image is 625 image rows.
+    expect(p.page?.viewH).toBeCloseTo(625);
+    expect(p.h).toBeCloseTo(p.w * 0.625);
   });
 });

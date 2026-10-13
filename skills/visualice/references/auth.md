@@ -11,15 +11,22 @@ auth: {
   login: {
     url: "/login",
     steps: [
-      { action: "fill", target: { label: "Email" }, value: "${VC_USER}" },
-      { action: "fill", target: { label: "Password" }, value: "${VC_PASS}" },
-      { action: "click", target: { role: "button", name: "Sign in" } },
+      { action: "fill", target: { testId: "email" }, value: "${VC_USER}" },
+      { action: "fill", target: { testId: "password" }, value: "${VC_PASS}" },
+      { action: "click", target: { testId: "login-submit" } },
       { action: "waitFor", url: "**/dashboard" }
     ]
   }
 }
 ```
 
+- Target the login form's own fields: a test id first, then a CSS selector scoped to
+  the form (`#login-form [type=email]`). A label or role name is usually not unique —
+  a footer or modal newsletter signup is another "Email" field — and an ambiguous
+  target fails the login (Playwright strict mode). Check in the MCP browser that each
+  target matches one element.
+- Put the sign-out control in `hints.skipTriggers` (see
+  [`explore-mode.md`](explore-mode.md)), or discovery may click it and log the crawl out.
 - Secrets come from env (`${VC_USER}`, `${VC_PASS}`) — never hardcode or commit them.
 - Add `verify: { url: "**/dashboard" }` (and/or a `selector`) to the login block — the
   engine then refuses to save a logged-out session when the login silently fails.

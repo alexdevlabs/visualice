@@ -62,6 +62,20 @@ export type StateKind =
   | "component"
   | "other";
 
+/**
+ * Where one screen of a stacked shot sat on the page, in image px, so the viewer
+ * can join the screens into one page without the bars pinned to the window
+ * repeating on each.
+ */
+export interface ScreenFrame {
+  /** The page position at the screen's first row (scroll offset less any chrome above the scroller). */
+  y: number;
+  /** Rows at the top of the screen covered by something pinned: a sticky header, an app bar. */
+  top: number;
+  /** Rows at the bottom covered the same way: a cookie bar, a bottom tab bar. */
+  bottom: number;
+}
+
 export interface ShotRef {
   full?: string; // path (relative to run dir) of full-page screenshot
   viewport?: string; // path of viewport-only screenshot
@@ -77,6 +91,8 @@ export interface ShotRef {
    * Absent for a single render (a viewport shot, an element, or `screens: false`).
    */
   screens?: number;
+  /** One entry per screen in `screens`, top to bottom. */
+  frames?: ScreenFrame[];
   /** Accessibility rules this state broke, when `checks.accessibility` is on. */
   a11y?: number;
   error?: string; // capture was attempted but failed (after retries); no image written
@@ -211,6 +227,8 @@ export interface ViewerTile {
   clamped?: boolean;
   /** Screens stacked in the image, each one viewport tall; see `ShotRef.screens`. */
   screens?: number;
+  /** Where each of those screens sat on the page; see `ShotRef.frames`. */
+  frames?: ScreenFrame[];
   /** Sidecar JSON with the shot's metadata (and its accessibility findings). */
   meta?: string;
   /** Accessibility rules this state broke. */

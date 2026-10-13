@@ -10,6 +10,7 @@ describe("url state", () => {
       route: "about",
       devices: ["mobile"],
       kinds: ["modal", "menu"],
+      mode: "scroll" as const,
     };
     expect(readUrlState("?" + serializeUrlState(state))).toEqual(state);
   });
@@ -24,8 +25,10 @@ describe("url state", () => {
     expect(query).toBe("q=x&tile=t1");
   });
 
-  it("ignores the retired layout parameters", () => {
-    expect(readUrlState("?mode=all&route=home")).not.toHaveProperty("mode");
+  it("ignores modes it doesn't know, including the retired layout values", () => {
+    expect(readUrlState("?mode=all&route=home").mode).toBeUndefined();
+    expect(readUrlState("?mode=screen").mode).toBeUndefined();
+    expect(readUrlState("?mode=continuous").mode).toBe("continuous");
   });
 
   it("treats empty parameters as absent", () => {

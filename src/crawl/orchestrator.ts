@@ -19,6 +19,7 @@ import {
   applyStateSkips,
   computeWanted,
   loadRoutesIntent,
+  unmappedRoutes,
   writeRoutesFile,
   type RoutesIntent,
 } from "./routes-file";
@@ -103,6 +104,7 @@ export function toViewerData(m: Manifest): ViewerData {
           height: ref.height ?? (profile ? profile.height * profile.dpr : undefined),
           clamped: ref.clamped,
           screens: ref.screens,
+          frames: ref.frames,
           meta: ref.meta,
           a11y: ref.a11y,
           error: ref.error,
@@ -344,6 +346,21 @@ async function crawlRun(
   if (replay && cached) {
     log(`replay: reusing cached site model → ${cachePath}`);
     inputManifest = cached;
+    // Pages added to the routes file since the last discovery: map just those, so
+    // a replay doesn't silently skip them.
+    const added = unmappedRoutes(cached, intent);
+    if (added.length) {
+      log(`replay: discovering ${added.length} page(s) new in the routes file`);
+      const found = await discoverPipeline({
+        config: applyHints(effectiveConfig, cached.hints),
+        baseUrl,
+        storageState,
+        log,
+        limit: { only: added, takenIds: cached.routes.map((r) => r.id) },
+      });
+      inputManifest = { ...mergeManifests(cached, found), site: cached.site ?? found.site };
+      await saveJson(cachePath, inputManifest);
+    }
   } else {
     // Hints cached from earlier runs steer discovery too (skipTriggers), so read
     // them before probing rather than only on the way into capture.

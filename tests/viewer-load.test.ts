@@ -81,6 +81,19 @@ describe("parseViewerData", () => {
       clamped: true,
     });
   });
+
+  it("keeps where each screen sat, or none of it when an entry is broken", () => {
+    const frames = [
+      { y: 0, top: 10, bottom: 5 },
+      { y: 80, top: 10, bottom: 5 },
+    ];
+    const ok = parseViewerData(data({ tiles: [tile({ screens: 2, frames })] }));
+    expect(ok.tiles[0].frames).toEqual(frames);
+    const broken = parseViewerData(
+      data({ tiles: [tile({ screens: 2, frames: [frames[0], { y: "80" }] })] }),
+    );
+    expect(broken.tiles[0].frames).toBeUndefined();
+  });
 });
 
 describe("resolveDataUrl", () => {

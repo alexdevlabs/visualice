@@ -15,6 +15,8 @@ export interface UrlState {
   route?: string;
   devices?: string[];
   kinds?: string[];
+  /** How shots are drawn; absent is Screen mode. */
+  mode?: "continuous" | "scroll";
 }
 
 const LIST_SEPARATOR = ",";
@@ -37,7 +39,12 @@ export function readUrlState(search: string): UrlState {
     route: value("route"),
     devices: list("devices"),
     kinds: list("kinds"),
+    mode: modeOf(value("mode")),
   };
+}
+
+function modeOf(v: string | undefined): UrlState["mode"] {
+  return v === "continuous" || v === "scroll" ? v : undefined;
 }
 
 /** The query string for a state, with defaults left out so links stay short. */
@@ -48,6 +55,7 @@ export function serializeUrlState(state: UrlState): string {
   if (state.route) p.set("route", state.route);
   if (state.devices?.length) p.set("devices", state.devices.join(LIST_SEPARATOR));
   if (state.kinds?.length) p.set("kinds", state.kinds.join(LIST_SEPARATOR));
+  if (state.mode) p.set("mode", state.mode);
   if (state.tile) p.set("tile", state.tile);
   return p.toString();
 }

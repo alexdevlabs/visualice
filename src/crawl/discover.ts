@@ -4,7 +4,7 @@ import type { Config } from "../shared/config";
 import type { Device, InputManifest, RouteNode, StateNode } from "../shared/types";
 import { applyContextInit } from "./stabilize";
 import { httpContextOptions } from "./context-options";
-import { discoverRoutes } from "./discover-routes";
+import { discoverRoutes, type RouteDiscoveryLimit } from "./discover-routes";
 import { discoverStates } from "./discover-states";
 import { resolveUrl } from "./recipe";
 import { mapPool } from "../shared/pool";
@@ -16,6 +16,8 @@ export interface DiscoverOptions {
   baseUrl: string;
   storageState?: string;
   log?: (msg: string) => void;
+  /** Discover only these pages (see `RouteDiscoveryLimit`). */
+  limit?: RouteDiscoveryLimit;
 }
 
 /**
@@ -75,7 +77,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
     const context = await newDiscoveryContext();
 
     log("discovering routes…");
-    const routes = await discoverRoutes(context, config, baseUrl, log);
+    const routes = await discoverRoutes(context, config, baseUrl, log, opts.limit);
     log(`found ${routes.length} route(s); discovering UI states…`);
 
     // State discovery is per-route independent — run it under the politeness pool

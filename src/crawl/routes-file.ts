@@ -156,6 +156,17 @@ export function computeWanted(model: InputManifest, intent: RoutesIntent): Wante
 }
 
 /**
+ * Pages the file lists that the model has no route for — added by hand since the
+ * last discovery. A replay discovers just these rather than dropping them.
+ */
+export function unmappedRoutes(model: InputManifest, intent: RoutesIntent): string[] {
+  const known = new Set(model.routes.map((r) => r.url));
+  return intent.routes
+    .map((r) => r.path)
+    .filter((p) => !known.has(p) && !matchesAny(p, intent.skipRoutes));
+}
+
+/**
  * Fold the file's intent into the config for a discovery run: every listed route
  * seeds the crawl (user-added pages get discovered), `skip:` globs exclude.
  */

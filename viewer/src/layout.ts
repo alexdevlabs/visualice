@@ -1,4 +1,13 @@
 import type { ViewerData, ViewerTile, Device } from "./types";
+import { pageOf, type PageModel } from "./page";
+
+/**
+ * How a shot is drawn. Screen shows the screens it was taken in, one card each;
+ * Continuous joins them into one page; Scroll shows one screen of that page at a
+ * time, to scroll through.
+ */
+export type ViewMode = "screen" | "continuous" | "scroll";
+export const VIEW_MODES: ViewMode[] = ["screen", "continuous", "scroll"];
 
 export interface Placed {
   tile: ViewerTile;
@@ -11,6 +20,10 @@ export interface Placed {
   screenH?: number;
   /** Screens that fit in `h` — all of them unless the tile was cut short. */
   screensShown?: number;
+  /** The shot as one page, in Continuous and Scroll mode. */
+  page?: PageModel;
+  /** World px per image px, for drawing `page`. */
+  k?: number;
 }
 
 export interface GroupLabel {
@@ -40,6 +53,11 @@ export interface Layout {
   routesWithTiles: string[];
   /** Tiles matching the filters but left unplaced by `limit`. */
   truncated: number;
+  /**
+   * The route the canvas is scoped to, for the header above it. It isn't drawn on
+   * the canvas: a title there would pan and zoom away with the shots.
+   */
+  heading?: GroupLabel;
 }
 
 export interface LayoutFilters {
@@ -53,6 +71,8 @@ export interface LayoutFilters {
   limit?: number;
   /** Lay out only this route; the others still count toward `routesWithTiles`. */
   routeId?: string;
+  /** Screen when absent. */
+  mode?: ViewMode;
 }
 
 const CARD = 360; // world px for the widest device
@@ -74,18 +94,32 @@ const MAX_H = 1120; // cap very tall full-page shots so the overview stays tidy
 /** Roughly the shape of a screen — what "fit to window" has to fill. */
 const TARGET_ASPECT = 1.6;
 
+type TileSize = Pick<Placed, "h" | "cropped" | "screenH" | "screensShown" | "page" | "k">;
+
 /**
  * How tall a tile of width `w` is drawn, and where it's cut.
  *
- * A shot of stacked screens is cut at a screen's edge rather than through the
- * middle of one, so the canvas only ever shows whole screens: a half screen reads
- * as a broken capture.
+ * In Screen mode a shot of stacked screens is cut at a screen's edge rather than
+ * through the middle of one, so the canvas only ever shows whole screens: a half
+ * screen reads as a broken capture. A continuous page is one document and is cut
+ * wherever the cap falls; a scrolled one is always one screen tall.
+ * `viewportH` is the device's window height in image px.
  */
 export function tileHeight(
   tile: ViewerTile,
   w: number,
-): { h: number; cropped: boolean; screenH?: number; screensShown?: number } {
+  mode: ViewMode = "screen",
+  viewportH?: number,
+): TileSize {
   const full = w * aspect(tile);
+  if (mode !== "screen" && !tile.error) {
+    const page = pageOf(tile, viewportH);
+    if (page && tile.width) {
+      const k = w / tile.width;
+      const h = (mode === "scroll" ? page.viewH : page.height) * k;
+      return { h: Math.min(h, MAX_H), cropped: h > MAX_H, page, k };
+    }
+  }
   const n = tile.screens;
   if (!n || n < 2) return { h: Math.min(full, MAX_H), cropped: full > MAX_H };
   const screenH = full / n;
@@ -158,10 +192,25 @@ interface GroupBlock {
 }
 
 export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout {
-  const { devices: deviceFilter, kinds, query = "", failedOnly, limit, routeId } = filters;
+  const {
+    devices: deviceFilter,
+    kinds,
+    query = "",
+    failedOnly,
+    limit,
+    routeId,
+    mode = "screen",
+  } = filters;
   const devices = data.devices.filter((d) => deviceFilter.has(d.name));
   const maxW = Math.max(1, ...devices.map((d) => d.width));
   const colW = (d: Device) => Math.max(60, Math.round((CARD * d.width) / maxW));
+  const byName = new Map(data.devices.map((d) => [d.name, d]));
+  /** A tile's size in the current mode; a single image scrolls a window-tall view. */
+  const size = (t: ViewerTile, w: number) => {
+    const d = byName.get(t.device);
+    const viewportH = d && t.width ? (d.height * t.width) / d.width : undefined;
+    return tileHeight(t, w, mode, viewportH);
+  };
   /** The room a tile takes in its row: its own width, or its caption's if wider. */
   const slotW = (w: number) => Math.max(w, CAPTION_MIN_W);
 
@@ -186,8 +235,9 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   const byRoute = new Map<string, Bounds>();
 
   const place = (tile: ViewerTile, x: number, y: number, w: number): number => {
-    const { h, cropped, screenH, screensShown } = tileHeight(tile, w);
-    placed.push({ tile, x, y, w, h, cropped, screenH, screensShown });
+    const sz = size(tile, w);
+    const h = sz.h;
+    placed.push({ tile, x, y, w, ...sz });
     growBounds(bounds, x, y, w, h);
     const rb = byRoute.get(tile.routeId) ?? emptyBounds();
     growBounds(rb, x, y, w, h);
@@ -224,7 +274,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       rows.reduce((sum, row) => {
         const rowH = row.tiles.reduce((h, t, i) => {
           if (!t) return h;
-          return Math.max(h, tileHeight(t, colW(devices[i])).h);
+          return Math.max(h, size(t, colW(devices[i])).h);
         }, 0);
         return sum + rowH + ROW_GAP;
       }, 0);
@@ -239,7 +289,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   }
 
   const rowHeight = (row: GroupBlock["rows"][number]) =>
-    row.tiles.reduce((h, t, i) => (t ? Math.max(h, tileHeight(t, colW(devices[i])).h) : h), 0);
+    row.tiles.reduce((h, t, i) => (t ? Math.max(h, size(t, colW(devices[i])).h) : h), 0);
 
   // One route on its own would be a single tall column of states, which Fit can
   // only show as a sliver; its states flow across columns instead, under one header.
@@ -248,7 +298,10 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
     const heights = block.rows.map(rowHeight);
     const total = heights.reduce((sum, h) => sum + h + ROW_GAP, 0);
     const columns = columnCount(total, rowWidth, block.rows.length);
-    const columnY = new Array<number>(columns).fill(HEADER_H);
+    // Scoped to this route, its title is in the header above the canvas; only the
+    // tile captions need room at the top.
+    const top = routeId ? CAPTION_H : HEADER_H;
+    const columnY = new Array<number>(columns).fill(top);
     block.rows.forEach((row, r) => {
       let col = 0;
       for (let i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
@@ -261,11 +314,11 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       columnY[col] += heights[r] + ROW_GAP;
     });
     const width = columns * rowWidth + (columns - 1) * SECTION_GAP;
-    growBounds(bounds, 0, 0, width, HEADER_H);
+    growBounds(bounds, 0, 0, width, top);
     const rb = byRoute.get(block.routeId) ?? emptyBounds();
-    growBounds(rb, 0, 0, width, HEADER_H);
+    growBounds(rb, 0, 0, width, top);
     byRoute.set(block.routeId, rb);
-    labels.push({
+    const label: GroupLabel = {
       routeId: block.routeId,
       title: block.title,
       subtitle: `${block.stateIds.length} state${block.stateIds.length === 1 ? "" : "s"}`,
@@ -273,7 +326,10 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       x: 0,
       y: 0,
       w: width,
-    });
+    };
+    if (routeId)
+      return { placed, labels, bounds, byRoute, routesWithTiles, truncated, heading: label };
+    labels.push(label);
     return { placed, labels, bounds, byRoute, routesWithTiles, truncated };
   }
 

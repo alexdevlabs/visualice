@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { CAPTION_MIN_W, SCREEN_GAP } from "./layout";
-import type { Layout, Bounds } from "./layout";
+import type { Layout, Bounds, Placed, ViewMode } from "./layout";
+import { chromeAt, maxScroll, type Strip } from "./page";
 import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
 import type { Transform } from "./lod";
 import { Minimap } from "./Minimap";
@@ -22,6 +23,18 @@ const WHEEL_ZOOM_MAX = 30;
 /** How long the view has to sit still before it is redrawn sharp. */
 const SETTLE_MS = 160;
 
+/**
+ * The selected tile's ring. Sized in canvas units it would scale with the zoom —
+ * a hairline zoomed out, a thick bar zoomed in — so it is sized to the screen.
+ */
+const RING = "outline-solid outline-accent";
+const RING_PX = 2;
+/** Scroll mode's scrollbar track, on screen; the thumb is half of it, edge included. */
+const SCROLLBAR_PX = 8;
+function ring(scale: number): React.CSSProperties {
+  return { outlineWidth: RING_PX / scale, outlineOffset: RING_PX / scale };
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -34,10 +47,11 @@ interface Props {
   /** URL prefix for shot paths — the run being viewed. */
   base: string;
   showMinimap?: boolean;
+  mode?: ViewMode;
 }
 
 export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
-  { layout, selectedId, onSelect, onScaleChange, base, showMinimap = true },
+  { layout, selectedId, onSelect, onScaleChange, base, showMinimap = true, mode = "screen" },
   ref,
 ) {
   const elRef = useRef<HTMLDivElement>(null);
@@ -163,6 +177,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       if (raf != null) cancelAnimationFrame(raf);
     };
   }, []);
+
+  // Where each tile in Scroll mode was scrolled to, so panning it out of view and
+  // back (which unmounts it) doesn't send it back to the top.
+  const scrolled = useRef(new Map<string, number>());
 
   // pointer pan + click-to-select
   const drag = useRef<{ x: number; y: number; t0: Transform; moved: boolean } | null>(null);
@@ -318,7 +336,9 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
                   <div className="flex items-center gap-1 overflow-hidden">
                     <TileBadge>{p.tile.stateKind}</TileBadge>
                     <TileBadge>{p.tile.device}</TileBadge>
-                    {p.tile.screens ? (
+                    {p.page ? (
+                      p.cropped && <TileBadge warn>tall</TileBadge>
+                    ) : p.tile.screens ? (
                       <TileBadge warn={p.cropped}>
                         {p.cropped
                           ? `${p.screensShown} of ${p.tile.screens} screens`
@@ -332,14 +352,39 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
                   </div>
                 </div>
               )}
-              {!failed && src && p.screenH ? (
+              {!failed && src && p.page && mode === "scroll" ? (
+                <ScrollTile
+                  p={p}
+                  src={base + src}
+                  active={selected}
+                  scale={t.scale}
+                  saved={scrolled.current}
+                />
+              ) : !failed && src && p.page ? (
+                <div
+                  className={cx(
+                    "relative size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
+                    selected && RING,
+                  )}
+                  style={selected ? ring(t.scale) : undefined}
+                >
+                  {p.page.strips.map((strip, i) => (
+                    <StripImg
+                      key={i}
+                      strip={strip}
+                      k={p.k!}
+                      imgH={p.tile.height!}
+                      src={base + src}
+                      alt={i === 0 ? p.tile.stateLabel : ""}
+                    />
+                  ))}
+                </div>
+              ) : !failed && src && p.screenH ? (
                 // Each screen is its own frame with canvas between them: a fixed bar
                 // repeating on every screen then reads as what it is, not a glitch.
                 <div
-                  className={cx(
-                    "relative size-full rounded-[4px]",
-                    selected && "outline-3 outline-offset-3 outline-accent",
-                  )}
+                  className={cx("relative size-full rounded-[4px]", selected && RING)}
+                  style={selected ? ring(t.scale) : undefined}
                 >
                   {Array.from({ length: p.screensShown ?? 1 }, (_, i) => (
                     <div
@@ -368,8 +413,9 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
                     "size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
                     failed
                       ? "outline-1 -outline-offset-1 outline-amber outline-dashed"
-                      : selected && "outline-3 outline-offset-3 outline-accent",
+                      : selected && RING,
                   )}
+                  style={selected && !failed ? ring(t.scale) : undefined}
                 >
                   {failed || !src ? (
                     // A failed capture still occupies its place in the catalog: dropping
@@ -420,5 +466,200 @@ function TileBadge({ children, warn }: { children: string; warn?: boolean }) {
     >
       {children}
     </span>
+  );
+}
+
+/** Rows of the stacked image, cut out by clipping and drawn where they sit on the page. */
+function StripImg({
+  strip,
+  k,
+  imgH,
+  src,
+  alt,
+}: {
+  strip: Strip;
+  k: number;
+  imgH: number;
+  src: string;
+  alt: string;
+}) {
+  return (
+    // Half a pixel taller than the strip, under the next one: fractional positions
+    // would otherwise leave hairline seams between strips at some zoom levels.
+    <div
+      className="absolute inset-x-0 overflow-hidden"
+      style={{ top: strip.at * k, height: strip.len * k + 0.5 }}
+    >
+      <ImgRows src={src} from={strip.src} k={k} imgH={imgH} alt={alt} />
+    </div>
+  );
+}
+
+/** The stacked image, shifted so row `from` is at the top of its clipping box. */
+function ImgRows({
+  src,
+  from,
+  k,
+  imgH,
+  alt = "",
+}: {
+  src: string;
+  from: number;
+  k: number;
+  imgH: number;
+  alt?: string;
+}) {
+  return (
+    <img
+      className="absolute inset-x-0 block w-full max-w-none"
+      style={{ top: -from * k, height: imgH * k }}
+      src={src}
+      draggable={false}
+      loading="lazy"
+      decoding="async"
+      alt={alt}
+    />
+  );
+}
+
+/**
+ * One screen of the page, scrolled with the wheel once the tile is selected — the
+ * canvas keeps the wheel everywhere else. The page scrolls under the bars pinned
+ * to the window, which are drawn from the screen captured nearest that position.
+ */
+function ScrollTile({
+  p,
+  src,
+  active,
+  scale,
+  saved,
+}: {
+  p: Placed;
+  src: string;
+  active: boolean;
+  scale: number;
+  saved: Map<string, number>;
+}) {
+  const page = p.page!;
+  const k = p.k!;
+  const imgH = p.tile.height!;
+  const id = p.tile.id;
+  // What the window shows, in image px: one screen, unless the tile was capped.
+  const viewH = p.h / k;
+  const max = Math.max(0, maxScroll(page) + page.viewH - viewH);
+  const [s, setS] = useState(() => clamp(saved.get(id) ?? 0, 0, max));
+  const pos = clamp(s, 0, max);
+  useEffect(() => {
+    saved.set(id, pos);
+  }, [saved, id, pos]);
+
+  const el = useRef<HTMLDivElement>(null);
+  const live = useRef({ active, scale, k, max });
+  live.current = { active, scale, k, max };
+  useEffect(() => {
+    const node = el.current;
+    if (!node) return;
+    const onWheel = (e: WheelEvent) => {
+      const { active, scale, k, max } = live.current;
+      if (!active || e.ctrlKey || e.metaKey || max <= 0) return;
+      // Taken here, so the canvas underneath doesn't pan as well.
+      e.preventDefault();
+      e.stopPropagation();
+      const unit = e.deltaMode === 1 ? 16 : 1;
+      // One screen pixel of wheel moves the page one screen pixel, at any zoom.
+      setS((cur) => clamp(clamp(cur, 0, max) + (e.deltaY * unit) / (scale * k), 0, max));
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const chrome = chromeAt(page, pos);
+  const trackH = p.h;
+  const thumbH = max > 0 ? Math.max(trackH * 0.08, (trackH * viewH) / (viewH + max)) : trackH;
+  const thumbTop = max > 0 ? (pos / max) * (trackH - thumbH) : 0;
+  const barW = Math.min(SCROLLBAR_PX / scale, p.w / 16);
+
+  // Dragging the thumb: pointer movement on screen → scroll position on the page.
+  const drag = useRef<{ y: number; s0: number } | null>(null);
+  const onThumbDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    drag.current = { y: e.clientY, s0: pos };
+  };
+  const onThumbMove = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const d = drag.current;
+    if (!d || trackH <= thumbH) return;
+    const dy = (e.clientY - d.y) / scale;
+    setS(clamp(d.s0 + (dy / (trackH - thumbH)) * max, 0, max));
+  };
+  const onThumbUp = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    drag.current = null;
+  };
+
+  return (
+    <div
+      ref={el}
+      className={cx(
+        "relative size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
+        active && RING,
+      )}
+      style={active ? ring(scale) : undefined}
+      title={active ? undefined : "Select to scroll"}
+    >
+      <div className="absolute inset-x-0 top-0" style={{ transform: `translateY(${-pos * k}px)` }}>
+        {page.strips.map((strip, i) => (
+          <StripImg
+            key={i}
+            strip={strip}
+            k={k}
+            imgH={imgH}
+            src={src}
+            alt={i === 0 ? p.tile.stateLabel : ""}
+          />
+        ))}
+      </div>
+      {chrome && chrome.top > 0 && (
+        <div
+          className="absolute inset-x-0 top-0 overflow-hidden"
+          style={{ height: chrome.top * k }}
+        >
+          <ImgRows src={src} from={chrome.src} k={k} imgH={imgH} />
+        </div>
+      )}
+      {chrome && chrome.bottom > 0 && (
+        <div
+          className="absolute inset-x-0 bottom-0 overflow-hidden"
+          style={{ height: chrome.bottom * k }}
+        >
+          <ImgRows src={src} from={chrome.src + page.viewH - chrome.bottom} k={k} imgH={imgH} />
+        </div>
+      )}
+      {max > 0 && (
+        // Sized to the screen, like the selection ring: in canvas units it would grow
+        // into a thick bar when zoomed in. Never wider than a sliver of a tiny tile.
+        <div className="absolute inset-y-0 right-0" style={{ width: barW }}>
+          <div
+            // Gray with a light edge, as the OS draws overlay scrollbars: the gray
+            // shows on a light page and the edge on a dark one, whatever is behind.
+            className={cx(
+              "absolute box-border cursor-grab rounded-full border-solid border-white/70 active:cursor-grabbing",
+              active ? "bg-[rgb(128_128_128/0.9)]" : "bg-[rgb(128_128_128/0.6)]",
+            )}
+            style={{
+              top: thumbTop,
+              height: thumbH,
+              left: barW / 4,
+              right: barW / 4,
+              borderWidth: Math.min(1 / scale, barW / 8),
+            }}
+            onPointerDown={onThumbDown}
+            onPointerMove={onThumbMove}
+            onPointerUp={onThumbUp}
+          />
+        </div>
+      )}
+    </div>
   );
 }

@@ -423,6 +423,15 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
     ...(clip || taken?.clamped ? { clamped: true } : {}),
     ...(taken && taken.frames.length > 1 ? { screens: taken.frames.length } : {}),
   };
+  if (taken?.stops && taken.viewportHeight && dims.height) {
+    // Stops are measured in CSS px; the image is in device px.
+    const k = dims.height / taken.frames.length / taken.viewportHeight;
+    ref.frames = taken.stops.map((f) => ({
+      y: Math.round(f.y * k),
+      top: Math.round(f.top * k),
+      bottom: Math.round(f.bottom * k),
+    }));
+  }
 
   if (config.screenshot.alsoViewport && !element) {
     const viewportPath = path.join(dir, `${device.name}.viewport.${ext}`);

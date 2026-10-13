@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ViewerData } from "./types";
-import { computeLayout, routePath } from "./layout";
+import { computeLayout, routePath, type ViewMode } from "./layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
 import { DL, Inspector } from "./Inspector";
 import { VirtualList } from "./VirtualList";
@@ -23,6 +23,7 @@ import {
   LINK,
   Pill,
   ROW_MAIN,
+  Segmented,
   RouteBadge,
   row,
   SIDE_EMPTY,
@@ -100,6 +101,7 @@ export default function App() {
   const [failedOnly, setFailedOnly] = useState(false);
   const [limit, setLimit] = useState<number | undefined>(DEFAULT_LIMIT);
   const [routeId, setRouteId] = useState<string | null>(initial.route ?? null);
+  const [mode, setMode] = useState<ViewMode>(initial.mode ?? "screen");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -164,9 +166,10 @@ export default function App() {
             failedOnly,
             limit,
             routeId: routeId ?? undefined,
+            mode,
           })
         : null,
-    [data, deviceFilter, kindFilter, deferredQuery, failedOnly, limit, routeId],
+    [data, deviceFilter, kindFilter, deferredQuery, failedOnly, limit, routeId, mode],
   );
 
   const selected = useMemo(
@@ -199,9 +202,10 @@ export default function App() {
           ? [...deviceFilter]
           : undefined,
       kinds: kindFilter.size ? [...kindFilter] : undefined,
+      mode: mode === "screen" ? undefined : mode,
     };
     writeUrlState(state);
-  }, [data, query, selectedId, run, routeId, deviceFilter, kindFilter]);
+  }, [data, query, selectedId, run, routeId, deviceFilter, kindFilter, mode]);
 
   const onScaleChange = useCallback((s: number) => setScale(s), []);
 
@@ -324,6 +328,29 @@ export default function App() {
         onToggle={() => setDeviceFilter((prev) => toggle(prev, d.name, true))}
       />
     ));
+
+  const modeSwitch = (fill?: boolean) => (
+    <Segmented<ViewMode>
+      label="Mode"
+      small={!fill}
+      fill={fill}
+      value={mode}
+      onChange={setMode}
+      items={[
+        { value: "screen", label: "Screen", title: "Each screen as it was captured" },
+        {
+          value: "continuous",
+          label: "Continuous",
+          title: "The screens joined into one page, pinned bars shown once",
+        },
+        {
+          value: "scroll",
+          label: "Scroll",
+          title: "One screen at a time — select a shot, then scroll it",
+        },
+      ]}
+    />
+  );
 
   const statePills = (big?: boolean) => (
     <>
@@ -475,6 +502,11 @@ export default function App() {
     "flex min-h-12 shrink-0 flex-wrap items-center gap-x-[18px] gap-y-2 border-b border-line bg-app px-4 py-2";
   const toolbar = isPhone ? null : (
     <div className={TOOLBAR}>
+      <div className={TOOLBAR_GROUP}>
+        <Caption className="mr-0.5">Mode</Caption>
+        {modeSwitch()}
+      </div>
+      <span className={DIVIDER} />
       <div className={TOOLBAR_GROUP} role="group" aria-label="Devices">
         <Caption className="mr-0.5">Devices</Caption>
         {deviceToggles(false)}
@@ -697,20 +729,56 @@ export default function App() {
     </>
   );
 
+  // What's on the canvas, above it rather than on it: a title drawn on the canvas
+  // pans and zooms away with the shots.
+  const heading = layout.heading;
+  const canvasHeader = (
+    <div
+      className={cx(
+        "flex min-h-11 shrink-0 items-center gap-2.5 overflow-hidden border-b border-line bg-app whitespace-nowrap",
+        isPhone ? "px-3" : "px-4",
+      )}
+    >
+      {heading ? (
+        <>
+          {heading.path && (
+            // The badge aligns itself to the top of a row; this keeps it centred.
+            <span className="flex min-w-0 shrink">
+              <RouteBadge path={heading.path} />
+            </span>
+          )}
+          <span className="truncate text-[14px] font-semibold text-fg">{heading.title}</span>
+          <span className="text-[12.5px] text-dim">{heading.subtitle}</span>
+        </>
+      ) : (
+        <>
+          <span className="text-[14px] font-semibold text-fg">All routes</span>
+          <span className="text-[12.5px] text-dim">
+            {groupsWithTiles.length} route{groupsWithTiles.length === 1 ? "" : "s"}
+          </span>
+        </>
+      )}
+    </div>
+  );
+
   const body = (
     <div className="flex min-h-0 flex-auto">
       {!isPhone && sidebar}
-      <main className="relative min-w-0 flex-auto">
-        <Canvas
-          ref={canvas}
-          layout={layout}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onScaleChange={onScaleChange}
-          base={base}
-          showMinimap={!isPhone && minimapOn}
-        />
-        {canvasOverlays}
+      <main className="flex min-w-0 flex-auto flex-col">
+        {canvasHeader}
+        <div className="relative min-h-0 flex-auto">
+          <Canvas
+            ref={canvas}
+            layout={layout}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onScaleChange={onScaleChange}
+            base={base}
+            showMinimap={!isPhone && minimapOn}
+            mode={mode}
+          />
+          {canvasOverlays}
+        </div>
       </main>
       {selected && (
         <Inspector
@@ -752,6 +820,10 @@ export default function App() {
           </button>
         </div>
         <div className="flex flex-col gap-[18px] overflow-y-auto px-4">
+          <div className={SHEET_GROUP}>
+            <Caption>Mode</Caption>
+            {modeSwitch(true)}
+          </div>
           {kinds.length > 1 && (
             <div className={SHEET_GROUP} role="group" aria-label="States">
               <Caption>States</Caption>

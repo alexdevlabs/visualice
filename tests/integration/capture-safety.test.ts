@@ -80,6 +80,40 @@ describe("screenshot safety", () => {
       expect(shot.screens).toBe(3);
       // Three whole screens of the 300px-tall device, stacked.
       expect(shot.height).toBe(900);
+      // Where each screen sat, so the viewer can join them: a step of the screen
+      // less the overlap, and nothing pinned to cut.
+      expect(shot.frames).toEqual([
+        { y: 0, top: 0, bottom: 0 },
+        { y: 260, top: 0, bottom: 0 },
+        { y: 520, top: 0, bottom: 0 },
+      ]);
+    } finally {
+      await server.close();
+      await fs.rm(siteDir, { recursive: true, force: true });
+      await fs.rm(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("records the bars pinned to the window on every screen", async () => {
+    const pinned = TALL.replace(
+      '<body style="margin:0">',
+      '<body style="margin:0"><header style="position:sticky;top:0;height:50px;background:red"></header>' +
+        '<div style="position:fixed;bottom:0;left:0;right:0;height:30px;background:blue"></div>',
+    );
+    const { server, dir: siteDir } = await serveFiles({ "index.html": pinned });
+    const out = await tempDir("safety");
+    try {
+      const result = await capturePipeline({
+        config: config(out, { screenshot: { maxScreens: 3 } }),
+        inputManifest: single(),
+        baseUrl: server.url,
+        log: silent,
+      });
+      const shot = result.manifest.routes[0].states[0].shots.small;
+      expect(shot.frames).toHaveLength(3);
+      for (const f of shot.frames!) expect(f).toMatchObject({ top: 50, bottom: 30 });
+      // Each step leaves out what the bars cover, less the overlap: 300 − 50 − 30 − 40.
+      expect(shot.frames!.map((f) => f.y)).toEqual([0, 180, 360]);
     } finally {
       await server.close();
       await fs.rm(siteDir, { recursive: true, force: true });
@@ -101,6 +135,7 @@ describe("screenshot safety", () => {
       });
       const shot = result.manifest.routes[0].states[0].shots.small;
       expect(shot.screens).toBeUndefined();
+      expect(shot.frames).toBeUndefined();
       expect(shot.height).toBe(300);
     } finally {
       await server.close();

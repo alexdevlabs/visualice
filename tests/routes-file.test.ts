@@ -6,6 +6,7 @@ import {
   applyRoutesIntent,
   applyStateSkips,
   emptyRoutesIntent,
+  unmappedRoutes,
 } from "../src/crawl/routes-file";
 import { ConfigSchema } from "../src/shared/config";
 import type { InputManifest, StateNode } from "../src/shared/types";
@@ -156,6 +157,11 @@ describe("intent application", () => {
     m.routes[0].states = m.routes[0].states.filter((s) => s.id !== "menu-open");
     const wanted = computeWanted(m, parseRoutesFile(FILE));
     expect(wanted.map((w) => w.state)).toContain("menu-open");
+  });
+
+  it("unmappedRoutes lists file pages the model has no route for, minus skips", () => {
+    const intent = parseRoutesFile(FILE + "- /legal/privacy\n");
+    expect(unmappedRoutes(model(), intent)).toEqual(["/app/reports"]);
   });
 
   it("applyRoutesIntent seeds file routes and excludes skip globs", () => {

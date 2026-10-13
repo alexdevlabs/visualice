@@ -31,6 +31,10 @@ checkbox to a realized bullet automatically.
     "shots": {}
   }
   ```
+- A missing **page** (reachable only after login, or never linked) is not authored into
+  the cache by hand: add `- /path` to `visualice.routes.md`. The next run — `--replay`
+  included — discovers that page alone (its auto states too) and merges it into the
+  cache; then add any states it still lacks as above.
 - After editing the cache, ALWAYS check it before capturing:
   `visualice validate --json` — it lists every problem with a JSON-path pointer
   (`manifest.schema.json` documents the shape). A state can carry

@@ -23,6 +23,19 @@ function requireString(obj: Record<string, unknown>, key: string, where: string)
   return v;
 }
 
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Per-screen positions, all or nothing: a partial list can't join the screens. */
+function parseFrames(raw: unknown): ViewerTile["frames"] {
+  if (!Array.isArray(raw) || !raw.length) return undefined;
+  const frames = raw.map((f) =>
+    isObject(f) && isNum(f.y) && isNum(f.top) && isNum(f.bottom)
+      ? { y: f.y, top: Math.max(0, f.top), bottom: Math.max(0, f.bottom) }
+      : undefined,
+  );
+  return frames.every((f) => f !== undefined) ? frames : undefined;
+}
+
 function parseTile(raw: unknown, i: number): ViewerTile {
   if (!isObject(raw)) throw new ViewerDataError(`tiles[${i}] must be an object`);
   const where = `tiles[${i}]`;
@@ -48,6 +61,7 @@ function parseTile(raw: unknown, i: number): ViewerTile {
     clamped: raw.clamped === true || undefined,
     screens:
       typeof raw.screens === "number" && raw.screens > 1 ? Math.floor(raw.screens) : undefined,
+    frames: parseFrames(raw.frames),
     meta: isString(raw.meta) ? raw.meta : undefined,
     a11y: typeof raw.a11y === "number" ? raw.a11y : undefined,
     error: isString(raw.error) ? raw.error : undefined,

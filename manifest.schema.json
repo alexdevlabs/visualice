@@ -635,6 +635,30 @@
                         "exclusiveMinimum": 0,
                         "maximum": 9007199254740991
                       },
+                      "frames": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "y": {
+                              "type": "number"
+                            },
+                            "top": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "bottom": {
+                              "type": "number",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "y",
+                            "top",
+                            "bottom"
+                          ]
+                        }
+                      },
                       "a11y": {
                         "type": "number"
                       },

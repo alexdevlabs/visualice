@@ -70,7 +70,7 @@ command are accepted by it.
   `visualice.config.*` in the cwd is picked up automatically.
 - **`visualice.routes.md`** — the editable site index. Pages as top-level bullets, UI
   states nested under them, regenerated after every crawl:
-  - `- /path` seeds a page discovery missed.
+  - `- /path` seeds a page discovery missed (`--replay` discovers just the new pages).
   - `- skip: <id>` (nested) or `- skip: /path/**` (top-level) excludes noise —
     deleting a line is not an exclusion, `skip:` is the tombstone.
   - `- [ ] id — desc` requests a state with no recipe yet; it surfaces as `wanted`

@@ -64,7 +64,8 @@ under gitignored `.visualice/`):
 - **`visualice.routes.md`** — the site index: pages as top-level bullets, captured UI
   states nested under them. Regenerated after every crawl, and **editable** — it's how
   you steer the crawler:
-  - add a `- /path` line to seed a page discovery missed;
+  - add a `- /path` line to seed a page discovery missed (`--replay` discovers just the
+    new pages, so it works without a full re-crawl);
   - `- skip: <state-id>` (or a top-level `- skip: /path/**`) excludes noise — deleting
     a line is not an exclusion, `skip:` is the visible tombstone;
   - `- [ ] state-id — description` requests a state that has no recipe yet; unmet
@@ -104,6 +105,21 @@ The viewer is a standalone static app (`viewer/`); it reads `viewer-data.json` +
 screenshots and needs no connection to the crawled site. Scroll to pan, ⌘/ctrl+scroll
 (or pinch) to zoom, click any shot for metadata (and to download the image), shift+arrow to step to the next one.
 Shots are grouped by route: one section per path, a row per state, a column per device.
+
+The mode switch in the toolbar picks how each shot is drawn. The images are never edited;
+every mode is a different way of cropping the same file.
+
+- **Screen** (default): the screens the page was captured in, one card each, exactly as
+  the browser showed them — a sticky header or cookie bar appears on every screen.
+- **Continuous**: the screens joined into one page. The capture records which rows of each
+  screen bars pinned to the window covered, so the header is shown once at the top and a
+  bottom bar once at the bottom.
+- **Scroll**: one screen of that page per tile. Click a shot, then scroll it with the
+  wheel or drag its scrollbar; the pinned bars stay put while the page moves under them.
+  Esc, or a click elsewhere, gives the wheel back to the canvas.
+
+Continuous and Scroll need runs captured with this version; an older run's screens are
+laid end to end instead, repeated bars included.
 Thumbnails load when zoomed out and step up through a
 mid-resolution image to full resolution as you zoom in. The minimap is hidden until you
 turn it on (the button in the zoom controls, or `M`); it shows where you are in the layout
@@ -119,7 +135,7 @@ Filter by device or by state kind, search by path, and flip between runs from th
 switcher — `serve` exposes the sibling runs in the same output directory, so comparing
 runs needs no restart. Failed captures are tiles too: a placeholder carrying its error,
 an **N failed** toggle and a **Failed** list in the sidebar, so a broken shot is visible
-rather than missing. The view lives in the URL (route, query, devices, kinds, selected
+rather than missing. The view lives in the URL (mode, route, query, devices, kinds, selected
 tile, run), so copying the address bar shares the exact shot you're looking
 at. `?data=`
 accepts same-origin paths only, and a `viewer-data.json` the viewer can't read gets an
@@ -220,14 +236,18 @@ auth: {
   login: {
     url: "/login",
     steps: [
-      { action: "fill", target: { label: "Email" }, value: "${VC_USER}" },
-      { action: "fill", target: { label: "Password" }, value: "${VC_PASS}" },
-      { action: "click", target: { role: "button", name: "Sign in" } },
+      { action: "fill", target: { testId: "email" }, value: "${VC_USER}" },
+      { action: "fill", target: { testId: "password" }, value: "${VC_PASS}" },
+      { action: "click", target: { testId: "login-submit" } },
       { action: "waitFor", url: "**/dashboard" },
     ],
   },
 }
 ```
+
+Target the form's own fields (test ids, or a selector scoped to the form): a label like
+"Email" often also matches a newsletter field elsewhere on the page, and an ambiguous
+target fails the login.
 
 `visualice auth` runs the login once and saves the session; `crawl` reuses it and
 re-authenticates when it goes stale (`visualice auth --force` redoes it now). Credentials come
@@ -306,7 +326,7 @@ Both the viewer and the fixture site are styled with Tailwind v4, configured in 
 than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
 fixture's in `tests/fixture-src/tailwind.input.css`.
 
-The 411 unit tests are pure and fast. The 58 browser-driven tests in `tests/integration/`
+The 429 unit tests are pure and fast. The 60 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`

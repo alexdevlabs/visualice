@@ -240,3 +240,17 @@ describe("navigation failures", () => {
     expect(logs.filter((l) => l.includes("↻ /gone"))).toHaveLength(2);
   });
 });
+
+describe("limit", () => {
+  it("only visits the listed pages: no start page, no link following", async () => {
+    const { context, visited } = fakeContext(CHAIN);
+    const routes = await discoverRoutes(context, config(), `${ORIGIN}/`, () => {}, {
+      only: ["/a"],
+      takenIds: ["a"],
+    });
+    expect(visited).toEqual(["/a"]);
+    expect(routes.map((r) => [r.url, r.links])).toEqual([["/a", []]]);
+    // An id the merged-into model already uses is not handed out again.
+    expect(routes[0].id).not.toBe("a");
+  });
+});

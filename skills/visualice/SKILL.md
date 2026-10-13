@@ -37,7 +37,8 @@ machine-owned under gitignored `.visualice/`:
 
 Steer the crawl by editing the routes file:
 
-- `- /path` — add a line to seed a page discovery missed.
+- `- /path` — add a line to seed a page discovery missed. A `--replay` run discovers
+  just the new pages and merges them into the cache, so no full re-crawl is needed.
 - `- skip: <state-id>` (nested) or `- skip: /path/**` (top-level) — exclude noise.
   Deleting a line is NOT an exclusion (it gets re-added); `skip:` is the tombstone.
 - `- [ ] state-id — description` — request a state that has no recipe yet. Unmet
