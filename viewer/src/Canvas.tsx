@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { CAPTION_MIN_W, SCREEN_GAP } from "./layout";
+import { CAPTION_MIN_W, ROW_GAP, SCREEN_GAP } from "./layout";
 import type { Layout, Bounds, Placed, ViewMode } from "./layout";
 import { chromeAt, maxScroll, type Strip } from "./page";
 import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
@@ -24,15 +24,39 @@ const WHEEL_ZOOM_MAX = 30;
 const SETTLE_MS = 160;
 
 /**
- * The selected tile's ring. Sized in canvas units it would scale with the zoom —
- * a hairline zoomed out, a thick bar zoomed in — so it is sized to the screen.
+ * The selected tile's ring, drawn in screen pixels over the canvas (see the
+ * overlay) rather than on the tile: a line sized in canvas units scales with the
+ * zoom, and one sized against it (2px ÷ zoom) is rounded up to a whole pixel by
+ * the browser once it drops under one — then magnified into a thick bar.
  */
-const RING = "outline-solid outline-accent";
 const RING_PX = 2;
+/** The ring's distance from the shot's edge. */
+const RING_OFFSET_PX = 2;
+/** A tile's corner radius on screen. */
+const TILE_RADIUS_PX = 4;
 /** Scroll mode's scrollbar track, on screen; the thumb is half of it, edge included. */
 const SCROLLBAR_PX = 8;
-function ring(scale: number): React.CSSProperties {
-  return { outlineWidth: RING_PX / scale, outlineOffset: RING_PX / scale };
+/**
+ * A tile's frame — corner radius, hairline edge, shadow — kept at its screen size
+ * whatever the zoom. In canvas units the corners would balloon and the hairline
+ * thicken into a band when zoomed in. (A box-shadow's spread isn't rounded up the
+ * way a border's width is, so it can go below a canvas pixel.)
+ */
+function frame(scale: number): React.CSSProperties {
+  return {
+    borderRadius: TILE_RADIUS_PX / scale,
+    boxShadow: `0 0 0 ${1 / scale}px var(--color-tile-ring), 0 ${6 / scale}px ${16 / scale}px var(--color-tile-shadow)`,
+  };
+}
+
+/**
+ * How much a caption is drawn smaller than canvas units, so it keeps its screen
+ * size as the view zooms in. Zoomed out it shrinks with the tiles after all: its
+ * room above a tile is canvas units, and a caption kept full size there would
+ * spill over the shot above.
+ */
+function labelShrink(scale: number): number {
+  return Math.max(scale, 1);
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -303,8 +327,13 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
         {labelsVisible.map((l) => (
           <div
             key={l.routeId}
-            className="absolute flex h-10 items-center gap-3 overflow-hidden whitespace-nowrap"
-            style={{ left: l.x, top: l.y, width: l.w }}
+            className="absolute flex h-10 origin-top-left items-center gap-3 overflow-hidden whitespace-nowrap"
+            style={{
+              left: l.x,
+              top: l.y,
+              width: l.w * labelShrink(t.scale),
+              transform: `scale(${1 / labelShrink(t.scale)})`,
+            }}
           >
             {l.path && <RouteBadge path={l.path} size="lg" />}
             <span className="truncate text-[20px] font-semibold text-fg">{l.title}</span>
@@ -322,36 +351,6 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
               className="absolute"
               style={{ left: p.x, top: p.y, width: p.w, height: p.h }}
             >
-              {showTileLabels && (
-                // Above the shot, in the row gap — never over the page it describes.
-                // The name gets a row to itself: beside the badges, a phone-width tile
-                // leaves it a letter or two.
-                <div
-                  className="absolute bottom-full left-0 flex flex-col gap-0.5 pb-1.5"
-                  style={{ width: Math.max(p.w, CAPTION_MIN_W) }}
-                >
-                  <span className="truncate text-[12px] leading-[16px] font-medium text-fg">
-                    {p.tile.stateLabel}
-                  </span>
-                  <div className="flex items-center gap-1 overflow-hidden">
-                    <TileBadge>{p.tile.stateKind}</TileBadge>
-                    <TileBadge>{p.tile.device}</TileBadge>
-                    {p.page ? (
-                      p.cropped && <TileBadge warn>tall</TileBadge>
-                    ) : p.tile.screens ? (
-                      <TileBadge warn={p.cropped}>
-                        {p.cropped
-                          ? `${p.screensShown} of ${p.tile.screens} screens`
-                          : `${p.tile.screens} screens`}
-                      </TileBadge>
-                    ) : (
-                      p.cropped && <TileBadge warn>tall</TileBadge>
-                    )}
-                    {p.tile.clamped && <TileBadge warn>cropped</TileBadge>}
-                    {p.tile.a11y ? <TileBadge warn>{`a11y ${p.tile.a11y}`}</TileBadge> : null}
-                  </div>
-                </div>
-              )}
               {!failed && src && p.page && mode === "scroll" ? (
                 <ScrollTile
                   p={p}
@@ -361,13 +360,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
                   saved={scrolled.current}
                 />
               ) : !failed && src && p.page ? (
-                <div
-                  className={cx(
-                    "relative size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
-                    selected && RING,
-                  )}
-                  style={selected ? ring(t.scale) : undefined}
-                >
+                <div className="relative size-full overflow-hidden bg-paper" style={frame(t.scale)}>
                   {p.page.strips.map((strip, i) => (
                     <StripImg
                       key={i}
@@ -382,15 +375,16 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
               ) : !failed && src && p.screenH ? (
                 // Each screen is its own frame with canvas between them: a fixed bar
                 // repeating on every screen then reads as what it is, not a glitch.
-                <div
-                  className={cx("relative size-full rounded-[4px]", selected && RING)}
-                  style={selected ? ring(t.scale) : undefined}
-                >
+                <div className="relative size-full">
                   {Array.from({ length: p.screensShown ?? 1 }, (_, i) => (
                     <div
                       key={i}
-                      className="absolute inset-x-0 overflow-hidden rounded-[4px] bg-paper shadow-tile"
-                      style={{ top: i * (p.screenH! + SCREEN_GAP), height: p.screenH }}
+                      className="absolute inset-x-0 overflow-hidden bg-paper"
+                      style={{
+                        ...frame(t.scale),
+                        top: i * (p.screenH! + SCREEN_GAP),
+                        height: p.screenH,
+                      }}
                     >
                       <img
                         className="absolute inset-x-0 block w-full max-w-none"
@@ -410,12 +404,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
               ) : (
                 <div
                   className={cx(
-                    "size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
-                    failed
-                      ? "outline-1 -outline-offset-1 outline-amber outline-dashed"
-                      : selected && RING,
+                    "size-full overflow-hidden bg-paper",
+                    failed && "outline-1 -outline-offset-1 outline-amber outline-dashed",
                   )}
-                  style={selected && !failed ? ring(t.scale) : undefined}
+                  style={frame(t.scale)}
                 >
                   {failed || !src ? (
                     // A failed capture still occupies its place in the catalog: dropping
@@ -442,6 +434,20 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
           );
         })}
       </div>
+      {/* Captions and the selection ring live outside the zoomed world, in screen
+          pixels: the same size at any zoom. Over the canvas, never catching the pointer. */}
+      <div className="pointer-events-none absolute inset-0">
+        {visible.map((p) =>
+          p.tile.id === selectedId && p.tile.error === undefined ? (
+            <SelectionRing key="ring" p={p} t={t} />
+          ) : null,
+        )}
+        {showTileLabels &&
+          visible.map((p) => {
+            const place = captionPlace(p, t, mode);
+            return place ? <TileCaption key={p.tile.id} p={p} place={place} /> : null;
+          })}
+      </div>
       {showMinimap && (
         <Minimap
           layout={layout}
@@ -454,6 +460,140 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     </div>
   );
 });
+
+/**
+ * Clear space between a caption and its shot, on screen. More than the selection
+ * ring takes (it sits outside the shot: offset plus width), so the ring never runs
+ * into the badges.
+ */
+const CAPTION_GAP_PX = RING_OFFSET_PX + RING_PX + 6;
+/** A caption's full height on screen: the name row, the badge row, the gap under them. */
+const CAPTION_FULL_PX = 35 + CAPTION_GAP_PX;
+/** The name row alone, for when the row gap has no room for the badges. */
+const CAPTION_NAME_PX = 16 + CAPTION_GAP_PX;
+/** How far a pinned caption sits from the canvas's top edge. */
+const PIN_INSET_PX = 8;
+/** A pinned caption may run wider than a phone-width shot: it has the canvas to itself. */
+const PIN_MIN_W_PX = 280;
+/** A pinned caption's height, so it can slide off with the bottom of its shot. */
+const PIN_H_PX = 26;
+
+interface CaptionPlace {
+  left: number;
+  top: number;
+  width: number;
+  /** Name only: the row gap is too short for the badges at this zoom. */
+  compact: boolean;
+  /** Pinned to the canvas's top edge while the shot's own top is scrolled away. */
+  pinned: boolean;
+  /** In a pinned caption, the screen of a stacked shot at the top of the canvas. */
+  screen?: { at: number; of: number };
+}
+
+/**
+ * Where a tile's caption goes on screen, or nothing. Above the shot, in the row
+ * gap — never over the page it describes — at a fixed pixel size. Zoomed out, the
+ * gap shrinks and the caption doesn't, so it drops to the name, then disappears
+ * rather than cover the shot above. Zoomed in on a tall shot whose top has left
+ * the screen, it pins to the canvas's top edge until the shot's bottom pushes it
+ * off — always saying which shot you are reading.
+ */
+function captionPlace(p: Placed, t: Transform, mode: ViewMode): CaptionPlace | null {
+  const gap = ROW_GAP * t.scale;
+  if (gap < CAPTION_NAME_PX) return null;
+  const compact = gap < CAPTION_FULL_PX;
+  const left = p.x * t.scale + t.x;
+  const top = p.y * t.scale + t.y;
+  const bottom = top + p.h * t.scale;
+  const width = Math.max(p.w * t.scale, CAPTION_MIN_W * Math.min(1, t.scale));
+  const height = compact ? CAPTION_NAME_PX : CAPTION_FULL_PX;
+  if (top - height >= 0 || bottom < PIN_INSET_PX + PIN_H_PX + 40) {
+    // `top` is where the caption's BOTTOM goes: it is lifted by its own height.
+    return { left, top: top - CAPTION_GAP_PX, width, compact, pinned: false };
+  }
+  const pinTop = Math.min(PIN_INSET_PX, bottom - PIN_H_PX - PIN_INSET_PX);
+  let screen: CaptionPlace["screen"];
+  if (mode === "screen" && p.screenH && p.tile.screens && p.tile.screens > 1) {
+    const pitch = (p.screenH + SCREEN_GAP) * t.scale;
+    const at = Math.min(p.screensShown ?? p.tile.screens, Math.floor(-top / pitch) + 1);
+    screen = { at: Math.max(1, at), of: p.tile.screens };
+  }
+  // Inset from the shot's left edge — or the canvas's, when that edge is panned
+  // away — and never past the shot's right side.
+  const right = left + p.w * t.scale;
+  const pinLeft = Math.min(Math.max(left, 0) + PIN_INSET_PX, right - PIN_INSET_PX - PIN_H_PX * 4);
+  return { left: Math.max(pinLeft, left), top: pinTop, width, compact, pinned: true, screen };
+}
+
+/** The selected tile's outline, on screen: a fixed 2px line just outside the shot. */
+function SelectionRing({ p, t }: { p: Placed; t: Transform }) {
+  const out = RING_OFFSET_PX + RING_PX;
+  return (
+    <div
+      className="absolute border-solid border-accent"
+      style={{
+        left: p.x * t.scale + t.x - out,
+        top: p.y * t.scale + t.y - out,
+        width: p.w * t.scale + out * 2,
+        height: p.h * t.scale + out * 2,
+        borderWidth: RING_PX,
+        borderRadius: TILE_RADIUS_PX + out,
+      }}
+    />
+  );
+}
+
+/** A tile's caption: the state name, then its kind / device / warning badges. */
+function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
+  const tile = p.tile;
+  if (place.pinned) {
+    return (
+      <div
+        className="absolute flex items-center gap-1.5 overflow-hidden rounded-md border border-line-strong bg-chip px-2 py-1 whitespace-nowrap shadow-tile backdrop-blur-sm"
+        style={{ left: place.left, top: place.top, maxWidth: Math.max(place.width, PIN_MIN_W_PX) }}
+      >
+        <span className="truncate text-[12px] leading-[16px] font-medium text-fg">
+          {tile.stateLabel}
+        </span>
+        <TileBadge>{tile.device}</TileBadge>
+        {place.screen && (
+          <span className="font-mono text-[10px] leading-[15px] text-dim">
+            {`${place.screen.at} / ${place.screen.of}`}
+          </span>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div
+      className="absolute flex -translate-y-full flex-col gap-0.5"
+      style={{ left: place.left, top: place.top, width: place.width }}
+    >
+      <span className="truncate text-[12px] leading-[16px] font-medium text-fg">
+        {tile.stateLabel}
+      </span>
+      {!place.compact && (
+        <div className="flex items-center gap-1 overflow-hidden">
+          <TileBadge>{tile.stateKind}</TileBadge>
+          <TileBadge>{tile.device}</TileBadge>
+          {p.page ? (
+            p.cropped && <TileBadge warn>tall</TileBadge>
+          ) : tile.screens ? (
+            <TileBadge warn={p.cropped}>
+              {p.cropped
+                ? `${p.screensShown} of ${tile.screens} screens`
+                : `${tile.screens} screens`}
+            </TileBadge>
+          ) : (
+            p.cropped && <TileBadge warn>tall</TileBadge>
+          )}
+          {tile.clamped && <TileBadge warn>cropped</TileBadge>}
+          {tile.a11y ? <TileBadge warn>{`a11y ${tile.a11y}`}</TileBadge> : null}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** A tile's kind / device / warning tag, in the caption above it. */
 function TileBadge({ children, warn }: { children: string; warn?: boolean }) {
@@ -601,11 +741,8 @@ function ScrollTile({
   return (
     <div
       ref={el}
-      className={cx(
-        "relative size-full overflow-hidden rounded-[4px] bg-paper shadow-tile",
-        active && RING,
-      )}
-      style={active ? ring(scale) : undefined}
+      className="relative size-full overflow-hidden bg-paper"
+      style={frame(scale)}
       title={active ? undefined : "Select to scroll"}
     >
       <div className="absolute inset-x-0 top-0" style={{ transform: `translateY(${-pos * k}px)` }}>

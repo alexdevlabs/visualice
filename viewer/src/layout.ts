@@ -84,7 +84,7 @@ const CAPTION_H = 44;
  * badges, so its slot in the row is this wide even though the tile isn't.
  */
 export const CAPTION_MIN_W = 180;
-const ROW_GAP = 12 + CAPTION_H;
+export const ROW_GAP = 12 + CAPTION_H;
 const SECTION_GAP = 90;
 const HEADER_H = 46 + CAPTION_H;
 /** Space between the screens of a stacked shot, so each reads as its own frame. */

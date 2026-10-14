@@ -46,16 +46,13 @@ export function Inspector({ data, tile, base, onSelect, onStep, phone }: Props) 
   const [copied, setCopied] = useState(false);
   const device: Device | undefined = data.devices.find((d) => d.name === tile.device);
 
-  // Same state on each device, and the route's other states on this device.
-  const { byDevice, siblings } = useMemo(() => {
+  // The same state on each device.
+  const byDevice = useMemo(() => {
     const byDevice = new Map<string, ViewerTile>();
-    const siblings: ViewerTile[] = [];
     for (const t of data.tiles) {
-      if (t.routeId !== tile.routeId) continue;
-      if (t.stateId === tile.stateId) byDevice.set(t.device, t);
-      if (t.device === tile.device) siblings.push(t);
+      if (t.routeId === tile.routeId && t.stateId === tile.stateId) byDevice.set(t.device, t);
     }
-    return { byDevice, siblings };
+    return byDevice;
   }, [data, tile]);
 
   const copyLink = () => {
@@ -300,49 +297,6 @@ export function Inspector({ data, tile, base, onSelect, onStep, phone }: Props) 
           )}
         </section>
       ) : null}
-
-      {siblings.length > 1 && (
-        <section className={SECTION}>
-          <Caption>Other states of {routePath(tile.routePath)}</Caption>
-          <div className="flex gap-2.5 overflow-x-auto px-0.5 pt-0.5 pb-1">
-            {siblings.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className={cx(
-                  "flex w-[98px] shrink-0 flex-col gap-[5px] border-0 bg-transparent p-0 text-left text-[11.5px] hover:text-fg",
-                  s.id === tile.id ? "text-fg" : "text-dim",
-                )}
-                aria-current={s.id === tile.id}
-                onClick={() => onSelect(s.id)}
-              >
-                <span
-                  className={cx(
-                    "h-[62px] overflow-hidden rounded-[5px] bg-paper",
-                    s.id === tile.id
-                      ? "shadow-[0_0_0_2px_var(--color-accent)]"
-                      : "shadow-[0_0_0_1px_var(--color-line-strong)]",
-                  )}
-                >
-                  {s.thumb || s.full ? (
-                    <img
-                      className="block w-full"
-                      src={base + (s.thumb ?? s.full)}
-                      alt=""
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span className="flex h-full items-center justify-center bg-hatch-b font-bold text-amber">
-                      !
-                    </span>
-                  )}
-                </span>
-                <span className="truncate">{s.stateLabel}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
     </aside>
   );
 }
