@@ -161,13 +161,14 @@ export function takeSnapshot(page: Page): Promise<Snapshot> {
     ].sort();
     const openModalIds = modals.map((e) => e.id).filter(Boolean);
     // ARIA allows `aria-controls` to list several ids, and this becomes a selector
-    // that needs exactly one: the first that is actually showing, else the first.
+    // that needs exactly one: the first that is actually showing, else the first
+    // that exists. A reference to an id the page doesn't have (markup that renamed
+    // its panel and not the button) names nothing to wait for.
     const controlledId = (e: Element): string => {
-      const ids = (e.getAttribute("aria-controls") || "").split(/\s+/).filter(Boolean);
-      const showing = ids.find((id) => {
-        const el = document.getElementById(id);
-        return !!el && vis(el);
-      });
+      const ids = (e.getAttribute("aria-controls") || "")
+        .split(/\s+/)
+        .filter((id) => id && document.getElementById(id));
+      const showing = ids.find((id) => vis(document.getElementById(id)!));
       return showing ?? ids[0] ?? "";
     };
     const openPanelIds = [
@@ -219,3 +220,95 @@ export function addedRegions(
   }
   return added;
 }
+
+const MAX_LINES = 40;
+const LINE_CHARS = 140;
+
+/** Lines of `after` that `before` doesn't have, as a multiset difference. */
+export function addedLines(before: string[], after: string[]): string[] {
+  const remaining = new Map<string, number>();
+  for (const l of before) remaining.set(l, (remaining.get(l) ?? 0) + 1);
+  const out: string[] = [];
+  for (const l of after) {
+    const n = remaining.get(l) ?? 0;
+    if (n > 0) remaining.set(l, n - 1);
+    else if (!out.includes(l)) out.push(l);
+  }
+  return out.slice(0, MAX_LINES);
+}
+
+/** The page's visible text, one trimmed line each — what `addedLines` diffs. */
+export const readLines = (page: Page): Promise<string[]> =>
+  page
+    .evaluate(
+      (max) =>
+        (document.body?.innerText ?? "")
+          .split("\n")
+          .map((l) => l.replace(/\s+/g, " ").trim().slice(0, max))
+          .filter(Boolean),
+      LINE_CHARS,
+    )
+    .catch(() => []);
+
+/** What a page keeps in its origin's storage, key by key. */
+export interface StorageDump {
+  local: Record<string, string>;
+  session: Record<string, string>;
+}
+
+/** Keys whose value differs between two storage dumps, added and removed included. */
+export function changedKeys(
+  before: Record<string, string>,
+  after: Record<string, string>,
+): string[] {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...keys].filter((k) => before[k] !== after[k]).sort();
+}
+
+/** Did anything between two dumps write to local or session storage? */
+export const storageChanged = (before: StorageDump, after: StorageDump): boolean =>
+  changedKeys(before.local, after.local).length > 0 ||
+  changedKeys(before.session, after.session).length > 0;
+
+export const readStorage = (page: Page): Promise<StorageDump> =>
+  page
+    // Flat on purpose: no named helpers inside the page (esbuild's keepNames).
+    .evaluate(() => {
+      const out: { local: Record<string, string>; session: Record<string, string> } = {
+        local: {},
+        session: {},
+      };
+      try {
+        for (const [into, store] of [
+          [out.local, localStorage],
+          [out.session, sessionStorage],
+        ] as const) {
+          for (let i = 0; i < store.length; i++) {
+            const k = store.key(i);
+            if (k !== null) into[k] = store.getItem(k) ?? "";
+          }
+        }
+      } catch {
+        /* storage blocked (sandboxed frame, opaque origin): report nothing changed */
+      }
+      return out;
+    })
+    .catch(() => ({ local: {}, session: {} }));
+
+/** Put storage back the way a dump found it — undoing what a probe wrote. */
+export const restoreStorage = (page: Page, dump: StorageDump): Promise<void> =>
+  page
+    .evaluate((d) => {
+      try {
+        for (const [store, values] of [
+          [localStorage, d.local],
+          [sessionStorage, d.session],
+        ] as const) {
+          store.clear();
+          for (const [k, v] of Object.entries(values)) store.setItem(k, v);
+        }
+      } catch {
+        /* storage blocked: nothing was written there either */
+      }
+    }, dump)
+    .catch(() => {});

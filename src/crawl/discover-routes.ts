@@ -1,7 +1,7 @@
 import type { BrowserContext } from "playwright";
 import type { Config } from "../shared/config";
 import type { RouteNode } from "../shared/types";
-import { inScope } from "../shared/glob";
+import { globToRegExp, inScope } from "../shared/glob";
 import {
   canonicalPath,
   dedupeLinks,
@@ -96,14 +96,15 @@ export async function discoverRoutes(
 
   const visited = new Set<string>();
   const routes: RouteNode[] = [];
-  const queue: { url: string; depth: number; from: string | null }[] = [];
-  const enqueue = (url: string, depth: number, from: string | null) =>
-    queue.push({ url, depth, from });
+  /** `seeded`: asked for by name (a seed, a routes-file page), not found by following links. */
+  const queue: { url: string; depth: number; from: string | null; seeded?: boolean }[] = [];
+  const enqueue = (url: string, depth: number, from: string | null, seeded = false) =>
+    queue.push({ url, depth, from, seeded });
 
   if (!limit.only) enqueue(baseUrl, 0, null);
   for (const s of limit.only ?? config.seeds) {
     try {
-      enqueue(new URL(s, baseUrl).href, 0, null);
+      enqueue(new URL(s, baseUrl).href, 0, null, true);
     } catch {
       /* skip bad seed */
     }
@@ -112,6 +113,26 @@ export async function discoverRoutes(
     const fromSitemap = await fetchSitemapUrls(baseUrl, origin, robots.sitemaps, maxPages);
     for (const u of fromSitemap) enqueue(u, 0, null);
   }
+
+  // A template's pages, sampled: the first few links of each glob are kept and the
+  // rest skipped — a shop's forty product pages are one design, forty times.
+  const samples = Object.entries(config.scope.samples).map(([glob, max]) => ({
+    glob,
+    max,
+    re: globToRegExp(glob),
+    taken: 0,
+    skipped: 0,
+  }));
+  const sampled = (path: string, seeded: boolean): boolean => {
+    const sample = samples.find((x) => x.re.test(path));
+    if (!sample || seeded) return true; // a page asked for by name is always kept
+    if (sample.taken >= sample.max) {
+      sample.skipped++;
+      return false;
+    }
+    sample.taken++;
+    return true;
+  };
 
   let blocked = 0;
   const page = await context.newPage();
@@ -138,6 +159,7 @@ export async function discoverRoutes(
         log(`  ⊘ ${canon} — disallowed by robots.txt`);
         continue;
       }
+      if (!sampled(scope, !!item.seeded)) continue;
 
       let status: number | undefined;
       let title: string | undefined;
@@ -218,5 +240,8 @@ export async function discoverRoutes(
     await page.close().catch(() => {});
   }
   if (blocked) log(`  robots.txt blocked ${blocked} URL(s)`);
+  for (const x of samples.filter((x) => x.skipped)) {
+    log(`  sampled ${x.glob}: kept ${x.max}, skipped ${x.skipped}`);
+  }
   return routes;
 }

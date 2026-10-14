@@ -102,6 +102,10 @@ export const StateNodeSchema = z.object({
   trigger: TargetSchema.optional(),
   recipe: z.array(RecipeStepSchema).default([]),
   signature: z.string().optional(),
+  siteKey: z
+    .string()
+    .optional()
+    .describe("Page-independent identity of an auto-discovered state, for site-wide dedupe."),
   source: z.enum(["auto", "authored"]).optional(),
   devices: z
     .array(z.string())

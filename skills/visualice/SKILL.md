@@ -47,7 +47,11 @@ Steer the crawl by editing the routes file:
   [`references/explore-mode.md`](references/explore-mode.md)).
 
 For large sites, confirm scope with the user and set `scope.include`/`exclude` globs,
-`scope.maxPages`, and `devices` in the config; one-off tweaks don't need config
+`scope.maxPages`, and `devices` in the config. A shop's hundred product pages are one
+template: `scope.samples: { "/product/*": 3 }` keeps the first three and skips the rest,
+whatever their ids (sites that re-seed their data change ids — a sample survives
+that, an id list doesn't). Site-wide chrome (a header dropdown, a chat widget) is
+captured once, on the first page it was found on. One-off tweaks don't need config
 edits — flags like `--max-pages=<n> --include=<globs> --devices=<names>` override.
 Always add `--json` and `--quiet` when running non-interactively, and `--fail-on-error`
 when a failed capture should fail the command (exit 3).

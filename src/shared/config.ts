@@ -49,6 +49,12 @@ const ScopeSchema = z.object({
   exclude: z.array(z.string()).default([]).describe("Path globs to skip; wins over `include`."),
   maxDepth: z.number().int().nonnegative().default(4).describe("Max link hops from a seed."),
   maxPages: z.number().int().positive().default(200).describe("Hard cap on routes captured."),
+  samples: z
+    .record(z.string(), z.number().int().positive())
+    .default({})
+    .describe(
+      'At most this many pages per path glob, e.g. `{ "/product/*": 3 }`: a few pages of a template stand for the rest, whatever their ids. Pages listed in `seeds` or the routes file are kept on top of the sample.',
+    ),
   sameOriginOnly: z.boolean().default(true).describe("Never leave the target origin."),
   hashRoutes: z
     .enum(["auto", "never", "always"])
@@ -95,6 +101,12 @@ const InteractionsSchema = z.object({
     .default(1)
     .describe(
       "0 = default render only, 1 = single mutations, >1 = also probe inside opened states (expensive).",
+    ),
+  siteWideOnce: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Keep a state found identically on several pages (a header dropdown, a chat widget) only on the first page it was found on, instead of capturing it on every page.",
     ),
   denyLabels: z
     .array(z.string())

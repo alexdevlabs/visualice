@@ -647,6 +647,10 @@
                 "signature": {
                   "type": "string"
                 },
+                "siteKey": {
+                  "description": "Page-independent identity of an auto-discovered state, for site-wide dedupe.",
+                  "type": "string"
+                },
                 "source": {
                   "type": "string",
                   "enum": [

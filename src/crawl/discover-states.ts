@@ -6,7 +6,19 @@ import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe, gotoRoute } from "./recipe";
 import { discoverFormStates } from "./discover-forms";
-import { addedRegions, markDocument, sameRegions, takeSnapshot, type Snapshot } from "./snapshot";
+import { createHash } from "node:crypto";
+import {
+  addedLines,
+  addedRegions,
+  markDocument,
+  readLines,
+  readStorage,
+  restoreStorage,
+  sameRegions,
+  storageChanged,
+  takeSnapshot,
+  type Snapshot,
+} from "./snapshot";
 
 export interface RawCandidate {
   target: Target;
@@ -250,7 +262,7 @@ function buildSteps(
   const steps: RecipeStep[] = [{ action, target: cand.target }];
   // Prefer waiting for the exact element that opened — a generic [role=dialog] can
   // match an unrelated hidden element (e.g. a closed drawer) and never go visible.
-  const id = cand.controls ?? openId;
+  const id = openId;
   if (id) {
     steps.push({ action: "waitFor", selector: idSelector(id), state: "visible" });
   } else if (dialogOpened && (kind === "modal" || kind === "menu" || kind === "drawer")) {
@@ -277,6 +289,27 @@ function makeStateId(
     prefix ? `${prefix}-${own}` : own,
     existing.map((s) => s.id),
   );
+}
+
+/** The route as it loads, before anything is opened. */
+export const defaultState = (): StateNode => ({
+  id: "default",
+  kind: "default",
+  label: "Default",
+  recipe: [],
+  source: "auto",
+  shots: {},
+});
+
+/**
+ * A state's identity apart from the page it was found on: the same recipe
+ * bringing the same text on screen. A trigger that opens nothing readable has
+ * none — the same click elsewhere can't be shown to open the same thing.
+ */
+export function siteKeyFor(recipe: RecipeStep[], appeared: string[]): string | undefined {
+  if (!appeared.length) return undefined;
+  const basis = JSON.stringify(recipe) + "\n" + [...appeared].sort().join("\n");
+  return createHash("sha1").update(basis).digest("hex").slice(0, 16);
 }
 
 /** Counters for the one thing probing spends most of its time on. */
@@ -389,10 +422,16 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     before: Snapshot;
     after: Snapshot;
     kind: StateKind | null;
+    /** Text the probe brought on screen. */
+    appeared: string[];
+    /** The probe wrote to local or session storage. */
+    stored: boolean;
   }
 
   const attempt = async (cand: RawCandidate, action: "click" | "hover"): Promise<ProbeAttempt> => {
     const before = await takeSnapshot(page);
+    const linesBefore = await readLines(page);
+    const storeBefore = await readStorage(page);
     const loc = locatorFor(page, cand.target);
     if (action === "hover") await loc.hover({ timeout: interactions.clickTimeoutMs });
     else await loc.click({ timeout: interactions.clickTimeoutMs });
@@ -402,7 +441,13 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     // much the page it landed on happens to have open.
     const navigated = after.doc !== before.doc;
     const kind = navigated ? null : classifyChange(before, after, cand, action);
-    return { action, before, after, kind };
+    const appeared = kind ? addedLines(linesBefore, await readLines(page)) : [];
+    // What a trigger stores (a panel remembered open, an item added to a list)
+    // outlives the page: it would be showing in every later probe and every shot
+    // captured after it. Note it, then undo it.
+    const stored = !navigated && storageChanged(storeBefore, await readStorage(page));
+    if (stored) await restoreStorage(page, storeBefore);
+    return { action, before, after, kind, appeared, stored };
   };
 
   for (const cand of candidates) {
@@ -423,32 +468,43 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
         probe = await attempt(cand, "hover");
       }
 
-      const { kind, before, after, action } = probe;
+      const { kind, before, after, action, appeared, stored } = probe;
       if (kind && !seenSig.has(after.sig)) {
         seenSig.add(after.sig);
 
         const newModalId = after.openModalIds.find((x) => !before.openModalIds.includes(x));
         const newPanelId = after.openPanelIds.find((x) => !before.openPanelIds.includes(x));
-        const openId = newModalId ?? newPanelId;
+        // What the trigger says it controls, if the page has it now that it's open
+        // (a panel rendered on open isn't there before). An id it doesn't have is
+        // a broken reference — waiting for it would fail every capture.
+        const controls =
+          cand.controls && (await page.locator(idSelector(cand.controls)).count()) > 0
+            ? cand.controls
+            : undefined;
+        const openId = controls ?? newModalId ?? newPanelId;
 
         const id = makeStateId(kind, cand.label, nested ? parent.id : "", states);
+        const recipe = [
+          ...parent.recipe,
+          // A panel that slid in without being a dialog has none to wait for.
+          ...buildSteps(cand, kind, action, openId, after.modals > before.modals),
+        ];
         const state: StateNode = {
           id,
           kind,
           label: nested ? `${parent.label} → ${cand.label || kind}` : cand.label || kind,
           trigger: cand.target,
-          recipe: [
-            ...parent.recipe,
-            // A panel that slid in without being a dialog has none to wait for.
-            ...buildSteps(cand, kind, action, openId, after.modals > before.modals),
-          ],
+          recipe,
           signature: after.sig,
+          siteKey: siteKeyFor(recipe, appeared),
+          // Captured in a context of its own, so what it stores can't leak.
+          ...(stored ? { isolate: true } : {}),
           source: "auto",
           shots: {},
         };
         states.push(state);
         found.push(state);
-        const opened = cand.controls ?? openId;
+        const opened = openId;
         if (opened) containers.set(id, opened);
         ctx.urls.set(id, after.url);
         log(`    + ${ctx.route.id}: ${id}`);
@@ -479,9 +535,7 @@ export async function discoverStates(
   config: Config,
   log: (msg: string) => void,
 ): Promise<StateNode[]> {
-  const states: StateNode[] = [
-    { id: "default", kind: "default", label: "Default", recipe: [], source: "auto", shots: {} },
-  ];
+  const states: StateNode[] = [defaultState()];
   const interactions = config.discovery.interactions;
   if (!interactions.auto || interactions.nestDepth < 1) return states;
 

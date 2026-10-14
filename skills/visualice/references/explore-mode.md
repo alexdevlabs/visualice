@@ -53,7 +53,9 @@ Recipe rules:
 "sort" }, "value": "lohi" }`), `press`, `waitFor`, `scroll` and `wait`.
 - A state whose recipe **changes data** — adds to a cart, saves a preference, submits a
   login — gets `"isolate": true`: it is captured in a fresh browser context of its own,
-  so what it stores can't show up in the states captured after it. A state that needs
+  so what it stores can't show up in the states captured after it. (Automatic
+  discovery sets it itself on a state whose trigger wrote to local or session
+  storage.) A state that needs
   data first (a cart with items) builds it in its own recipe: `navigate` to where the
   data is made, act, `navigate` back, `waitFor` the result — and is isolated too.
 - Inline messages (a form error under a field, a toast that isn't a dialog) aren't

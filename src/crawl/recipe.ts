@@ -17,6 +17,10 @@ export function resolveUrl(base: string, u: string): string {
  * screenshotting the one before it. Reloading makes arriving at the route
  * identical to arriving at it cold, which is the only thing a recipe recorded
  * against it can rely on.
+ *
+ * `networkidle` is waited for past `load`, not instead of it, and only for so
+ * long: a page that polls (a live-activity feed, analytics heartbeats) never goes
+ * quiet, and treating that as a failed navigation failed every visit to it.
  */
 export async function gotoRoute(
   page: Page,
@@ -24,14 +28,26 @@ export async function gotoRoute(
   waitUntil?: "load" | "domcontentloaded" | "networkidle",
   timeout?: number,
 ): Promise<Response | null> {
-  const response = await page.goto(url, { waitUntil, timeout });
+  const idle = waitUntil === "networkidle";
+  const loadUntil = idle ? "load" : waitUntil;
+  let response = await page.goto(url, { waitUntil: loadUntil, timeout });
   // A null response is Playwright's way of saying "same document" — the only
   // navigation that produces no request at all.
   if (response === null && new URL(url, page.url()).hash) {
-    return page.reload({ waitUntil, timeout });
+    response = await page.reload({ waitUntil: loadUntil, timeout });
+  }
+  if (idle) {
+    await page
+      .waitForLoadState("networkidle", {
+        timeout: Math.min(timeout ?? NETWORK_IDLE_MS, NETWORK_IDLE_MS),
+      })
+      .catch(() => {});
   }
   return response;
 }
+
+/** The longest a loaded page is given to go network-idle before it is used anyway. */
+export const NETWORK_IDLE_MS = 10_000;
 
 /** Replay an ordered list of interaction steps on a page. */
 export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void> {

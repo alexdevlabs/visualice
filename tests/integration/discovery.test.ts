@@ -199,3 +199,83 @@ describe("nested state discovery", () => {
     }
   });
 });
+
+// A shop header: a Categories dropdown on every page, folded away on a phone.
+const header = `<style>@media (max-width: 600px) { .desk { display: none } }</style>
+  <nav class="desk"><button id="cats-btn" aria-expanded="false" aria-controls="cats">Categories</button>
+  <ul id="cats" hidden><li>Hand Tools</li><li>Power Tools</li></ul></nav>
+  <script>
+    const b = document.getElementById("cats-btn");
+    b.addEventListener("click", () => {
+      const open = b.getAttribute("aria-expanded") !== "true";
+      b.setAttribute("aria-expanded", String(open));
+      document.getElementById("cats").hidden = !open;
+    });
+  </script>`;
+
+// A phone lays out a page without a viewport meta at 980px, media queries and all.
+const responsive = (title: string, body: string) =>
+  page(title, body).replace("<head>", '<head><meta name="viewport" content="width=device-width">');
+
+const SHOP_SITE = {
+  "index.html": responsive("Home", `${header}<h1>Home</h1><a href="/contact">contact</a>`),
+  "contact.html": responsive("Contact", `${header}<h1>Contact</h1>`),
+};
+
+describe("page chrome", () => {
+  it("keeps a state every page shares once, and off the devices that hide it", async () => {
+    const { server, dir } = await serveFiles(SHOP_SITE);
+    try {
+      const config = baseConfig();
+      const m = await discoverPipeline({ config, baseUrl: server.url, log: silent });
+      const cats = (url: string) =>
+        m.routes.find((r) => r.url === url)?.states.filter((s) => s.label === "Categories") ?? [];
+      expect(cats("/")).toHaveLength(1);
+      expect(cats("/contact")).toHaveLength(0);
+      const desktop = config.devices.filter((d) => !d.mobile).map((d) => d.name);
+      expect(cats("/")[0].devices).toEqual(desktop);
+    } finally {
+      await server.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
+
+const CATALOG_SITE = {
+  "index.html": page(
+    "Shop",
+    `<h1>Shop</h1>${[1, 2, 3, 4, 5].map((i) => `<a href="/product/p${i}">P${i}</a>`).join(" ")}
+     <a href="/about">about</a>`,
+  ),
+  ...Object.fromEntries(
+    [1, 2, 3, 4, 5].map((i) => [`product/p${i}.html`, page(`P${i}`, `<h1>P${i}</h1>`)]),
+  ),
+  "about.html": page("About", "<h1>About</h1>"),
+};
+
+describe("template sampling", () => {
+  it("keeps the first few pages of a sampled glob, plus any seeded by name", async () => {
+    const { server, dir } = await serveFiles(CATALOG_SITE);
+    try {
+      const m = await discoverPipeline({
+        config: baseConfig({
+          scope: { maxPages: 10, maxDepth: 2, samples: { "/product/*": 2 } },
+          seeds: ["/product/p5"],
+          discovery: { interactions: { auto: false } },
+        }),
+        baseUrl: server.url,
+        log: silent,
+      });
+      expect(m.routes.map((r) => r.url).sort()).toEqual([
+        "/",
+        "/about",
+        "/product/p1",
+        "/product/p2",
+        "/product/p5",
+      ]);
+    } finally {
+      await server.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+});

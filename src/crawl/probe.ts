@@ -6,7 +6,17 @@ import { testIdAttribute, useTestIdAttribute } from "../shared/selectors";
 import { applyContextInit } from "./stabilize";
 import { deviceContextOptions } from "./context-options";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
-import { addedRegions, markDocument, takeSnapshot } from "./snapshot";
+import {
+  addedLines,
+  addedRegions,
+  changedKeys,
+  markDocument,
+  readLines,
+  readStorage,
+  takeSnapshot,
+} from "./snapshot";
+
+export { addedLines, changedKeys } from "./snapshot";
 import { classifyChange, collectCandidates } from "./discover-states";
 import { sentToLogin } from "./capture";
 
@@ -99,31 +109,6 @@ export interface ProbeOptions {
   inventory?: boolean;
 }
 
-const MAX_LINES = 40;
-const LINE_CHARS = 140;
-
-/** Lines of `after` that `before` doesn't have, as a multiset difference. */
-export function addedLines(before: string[], after: string[]): string[] {
-  const remaining = new Map<string, number>();
-  for (const l of before) remaining.set(l, (remaining.get(l) ?? 0) + 1);
-  const out: string[] = [];
-  for (const l of after) {
-    const n = remaining.get(l) ?? 0;
-    if (n > 0) remaining.set(l, n - 1);
-    else if (!out.includes(l)) out.push(l);
-  }
-  return out.slice(0, MAX_LINES);
-}
-
-/** Keys whose value differs between two storage dumps, added and removed included. */
-export function changedKeys(
-  before: Record<string, string>,
-  after: Record<string, string>,
-): string[] {
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].filter((k) => before[k] !== after[k]).sort();
-}
-
 /**
  * A kind for what the recipe did, when it stayed on the page. Regions opening is
  * the discovery heuristic's call; text appearing with nothing opened is what an
@@ -141,45 +126,6 @@ export function guessKind(
   if (recipe.some((s) => s.action === "hover")) return "hover";
   return "other";
 }
-
-const readLines = (page: Page): Promise<string[]> =>
-  page
-    .evaluate(
-      (max) =>
-        (document.body?.innerText ?? "")
-          .split("\n")
-          .map((l) => l.replace(/\s+/g, " ").trim().slice(0, max))
-          .filter(Boolean),
-      LINE_CHARS,
-    )
-    .catch(() => []);
-
-const readStorage = (
-  page: Page,
-): Promise<{ local: Record<string, string>; session: Record<string, string> }> =>
-  page
-    // Flat on purpose, like readFormsAndControls: no named helpers inside the page.
-    .evaluate(() => {
-      const out: { local: Record<string, string>; session: Record<string, string> } = {
-        local: {},
-        session: {},
-      };
-      try {
-        for (const [into, store] of [
-          [out.local, localStorage],
-          [out.session, sessionStorage],
-        ] as const) {
-          for (let i = 0; i < store.length; i++) {
-            const k = store.key(i);
-            if (k !== null) into[k] = store.getItem(k) ?? "";
-          }
-        }
-      } catch {
-        /* storage blocked (sandboxed frame, opaque origin): report nothing changed */
-      }
-      return out;
-    })
-    .catch(() => ({ local: {}, session: {} }));
 
 const readCookies = async (context: BrowserContext): Promise<Record<string, string>> =>
   Object.fromEntries((await context.cookies()).map((c) => [`${c.name}@${c.domain}`, c.value]));

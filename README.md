@@ -172,33 +172,35 @@ Run `npm run schema` after changing the zod schema — a unit test fails if the 
 
 Options worth knowing:
 
-| Option                                      | Default               | What it does                                                                                                        |
-| ------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `politeness.respectRobots`                  | `true`                | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes                                      |
-| `politeness.retries`                        | `1`                   | Extra attempts for a failed navigation/capture before recording a failure                                           |
-| `politeness.reuseNavigation`                | `true`                | Skip the reload when the next state's recipe just extends what the page already shows                               |
-| `scope.hashRoutes`                          | `"auto"`              | `auto` treats `#/about`-style fragments as routes and plain anchors as anchors; `never`/`always` force it           |
-| `discovery.interactions.nestDepth`          | `1`                   | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states                                |
-| `discovery.interactions.maxPerPage`         | `12`                  | Hard cap on states per route, whatever the nesting depth                                                            |
-| `discovery.interactions.hover`              | `true`                | Also probe hover-revealed states (dropdown navs)                                                                    |
-| `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)                                      |
-| `testIdAttribute`                           | `"data-testid"`       | The attribute the site's test ids live in (`data-test`, `data-cy`, …); `testId` targets and discovery use it        |
-| `devices[].colorScheme`                     | `"light"`             | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog                                     |
-| `devices[].locale` / `timezoneId`           | `en-US` / `UTC`       | Pinned so `Intl`/date rendering is machine-independent                                                              |
-| `devices[].browser`                         | `"chromium"`          | `firefox` or `webkit` captures that device in another engine (`npx playwright install <name>` first)                |
-| `components`                                | `[]`                  | `{ name, selector, routes }` — screenshot an element on its own, on every route that has it                         |
-| `checks.accessibility`                      | `false`               | Run axe-core on every captured state; results land in the report, the sidecars and the viewer                       |
-| `stabilize.freezeTime` / `seedRandom`       | unset                 | Pin `Date` / `Math.random` in the page so reruns are byte-identical                                                 |
-| `stabilize.maskSelectors`                   | `[]`                  | Paint opaque boxes over volatile regions (ads, clocks, carousels)                                                   |
-| `stabilize.waitForSelectors` / `…TimeoutMs` | `[]` / `5000`         | Selectors that must be visible before a shot; they are waited on together and share the budget                      |
-| `screenshot.alsoViewport`                   | `false`               | Also write an above-the-fold crop next to each full-page shot                                                       |
-| `screenshot.screens`                        | `true`                | Capture full pages one screen at a time, as a user scrolls, so fixed bars and backdrops show truthfully             |
-| `screenshot.maxScreens`                     | `30`                  | Most screens per shot; a longer page is cut there and flagged `clamped`                                             |
-| `screenshot.maxHeight`                      | `20000`               | With `screens` off, crop full-page shots to this CSS-px height and flag them `clamped`; `0` disables (watch memory) |
-| `screenshot.thumbnail.midWidth`             | `1024`                | Mid-resolution LOD step between the thumbnail and the full image; `0` disables                                      |
-| `http.ignoreHTTPSErrors`                    | `false`               | Accept self-signed TLS (staging environments)                                                                       |
-| `http.httpCredentials` / `extraHTTPHeaders` | unset                 | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                                                     |
-| `routesFile`                                | `visualice.routes.md` | Where the editable site index lives; `false` disables it entirely                                                   |
+| Option                                      | Default               | What it does                                                                                                            |
+| ------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `politeness.respectRobots`                  | `true`                | Obeys robots.txt `Allow`/`Disallow` and `Crawl-delay` while discovering routes                                          |
+| `politeness.retries`                        | `1`                   | Extra attempts for a failed navigation/capture before recording a failure                                               |
+| `politeness.reuseNavigation`                | `true`                | Skip the reload when the next state's recipe just extends what the page already shows                                   |
+| `scope.samples`                             | `{}`                  | At most N pages per path glob (`{ "/product/*": 3 }`): a few pages of a template stand for the rest, whatever their ids |
+| `scope.hashRoutes`                          | `"auto"`              | `auto` treats `#/about`-style fragments as routes and plain anchors as anchors; `never`/`always` force it               |
+| `discovery.interactions.nestDepth`          | `1`                   | `0` = default render only, `1` = single mutations, `>1` = probe inside opened states                                    |
+| `discovery.interactions.maxPerPage`         | `12`                  | Hard cap on states per route, whatever the nesting depth                                                                |
+| `discovery.interactions.hover`              | `true`                | Also probe hover-revealed states (dropdown navs)                                                                        |
+| `discovery.interactions.siteWideOnce`       | `true`                | A state found identically on several pages (header dropdown, chat widget) is kept on the first page only                |
+| `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)                                          |
+| `testIdAttribute`                           | `"data-testid"`       | The attribute the site's test ids live in (`data-test`, `data-cy`, …); `testId` targets and discovery use it            |
+| `devices[].colorScheme`                     | `"light"`             | `prefers-color-scheme` per device — add a `dark` device for a dark-mode catalog                                         |
+| `devices[].locale` / `timezoneId`           | `en-US` / `UTC`       | Pinned so `Intl`/date rendering is machine-independent                                                                  |
+| `devices[].browser`                         | `"chromium"`          | `firefox` or `webkit` captures that device in another engine (`npx playwright install <name>` first)                    |
+| `components`                                | `[]`                  | `{ name, selector, routes }` — screenshot an element on its own, on every route that has it                             |
+| `checks.accessibility`                      | `false`               | Run axe-core on every captured state; results land in the report, the sidecars and the viewer                           |
+| `stabilize.freezeTime` / `seedRandom`       | unset                 | Pin `Date` / `Math.random` in the page so reruns are byte-identical                                                     |
+| `stabilize.maskSelectors`                   | `[]`                  | Paint opaque boxes over volatile regions (ads, clocks, carousels)                                                       |
+| `stabilize.waitForSelectors` / `…TimeoutMs` | `[]` / `5000`         | Selectors that must be visible before a shot; they are waited on together and share the budget                          |
+| `screenshot.alsoViewport`                   | `false`               | Also write an above-the-fold crop next to each full-page shot                                                           |
+| `screenshot.screens`                        | `true`                | Capture full pages one screen at a time, as a user scrolls, so fixed bars and backdrops show truthfully                 |
+| `screenshot.maxScreens`                     | `30`                  | Most screens per shot; a longer page is cut there and flagged `clamped`                                                 |
+| `screenshot.maxHeight`                      | `20000`               | With `screens` off, crop full-page shots to this CSS-px height and flag them `clamped`; `0` disables (watch memory)     |
+| `screenshot.thumbnail.midWidth`             | `1024`                | Mid-resolution LOD step between the thumbnail and the full image; `0` disables                                          |
+| `http.ignoreHTTPSErrors`                    | `false`               | Accept self-signed TLS (staging environments)                                                                           |
+| `http.httpCredentials` / `extraHTTPHeaders` | unset                 | Basic-auth / preview-token headers; values may use `${ENV_VAR}`                                                         |
+| `routesFile`                                | `visualice.routes.md` | Where the editable site index lives; `false` disables it entirely                                                       |
 
 ## More than page screenshots
 
@@ -360,7 +362,7 @@ Both the viewer and the fixture site are styled with Tailwind v4, configured in 
 than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
 fixture's in `tests/fixture-src/tailwind.input.css`.
 
-The 445 unit tests are pure and fast. The 66 browser-driven tests in `tests/integration/`
+The 451 unit tests are pure and fast. The 70 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`

@@ -1,13 +1,13 @@
 import { chromium } from "playwright";
 import type { BrowserContext } from "playwright";
 import type { Config } from "../shared/config";
-import type { Device, InputManifest, RouteNode, StateNode } from "../shared/types";
+import type { Device, InputManifest, RouteNode, StateNode, Target } from "../shared/types";
 import { applyContextInit } from "./stabilize";
 import { httpContextOptions } from "./context-options";
-import { useTestIdAttribute } from "../shared/selectors";
 import { discoverRoutes, type RouteDiscoveryLimit } from "./discover-routes";
-import { discoverStates } from "./discover-states";
-import { resolveUrl } from "./recipe";
+import { defaultState, discoverStates } from "./discover-states";
+import { gotoRoute, resolveUrl } from "./recipe";
+import { locatorFor, useTestIdAttribute } from "../shared/selectors";
 import { mapPool } from "../shared/pool";
 import { uniqueId } from "../shared/url";
 import { countStates } from "./manifest";
@@ -19,6 +19,76 @@ export interface DiscoverOptions {
   log?: (msg: string) => void;
   /** Discover only these pages (see `RouteDiscoveryLimit`). */
   limit?: RouteDiscoveryLimit;
+  /** The model discovery is adding to, whose site-wide states new pages shouldn't repeat. */
+  existing?: InputManifest;
+}
+
+/**
+ * The desktop-found states whose trigger a phone doesn't show: a header dropdown
+ * folded into the hamburger menu, a sidebar the layout drops. Replayed on a phone
+ * they can only time out, so they capture on desktop devices only — the mobile
+ * pass finds what the phone shows instead.
+ */
+async function hiddenTriggers(
+  context: BrowserContext,
+  url: string,
+  states: StateNode[],
+  config: Config,
+): Promise<StateNode[]> {
+  const candidates = states.filter((s) => {
+    const first = s.recipe[0];
+    return (
+      s.source === "auto" && !s.devices && (first?.action === "click" || first?.action === "hover")
+    );
+  });
+  if (!candidates.length) return [];
+  const page = await context.newPage();
+  try {
+    await gotoRoute(page, url, config.stabilize.waitStrategy);
+    const hidden: StateNode[] = [];
+    for (const state of candidates) {
+      const target = (state.recipe[0] as { target: Target }).target;
+      const visible = await locatorFor(page, target)
+        .first()
+        .isVisible()
+        .catch(() => true); // can't tell — leave it on every device
+      if (!visible) hidden.push(state);
+    }
+    return hidden;
+  } catch {
+    return []; // the page didn't load at this size: nothing to conclude
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * Keep each site-wide state once. A header dropdown or a chat widget opens the
+ * same thing on every page, and every page's discovery finds it again — on a shop
+ * with forty pages that is most of the states and most of the shots, all alike.
+ * The first page it was found on keeps it (route order puts the start page first);
+ * on the rest it is dropped. Auto states only: an authored state is there because
+ * someone wanted it on that page. `existing` holds pages already mapped, so a
+ * page discovered later doesn't bring back what they already show.
+ * Returns how many were dropped.
+ */
+export function keepSiteWideOnce(routes: RouteNode[], existing: RouteNode[] = []): number {
+  const key = (s: StateNode) => (s.siteKey ? `${s.siteKey}|${(s.devices ?? []).join(",")}` : "");
+  const seen = new Set(existing.flatMap((r) => r.states.map(key)).filter(Boolean));
+  let dropped = 0;
+  for (const route of routes) {
+    route.states = route.states.filter((s) => {
+      const k = s.source === "auto" ? key(s) : "";
+      if (!k) return true;
+      if (seen.has(k)) {
+        dropped++;
+        return false;
+      }
+      seen.add(k);
+      return true;
+    });
+  }
+  return dropped;
 }
 
 /**
@@ -86,7 +156,11 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
     // (each call opens its own page on the shared context).
     await mapPool(routes, config.politeness.concurrency, async (route) => {
       const url = resolveUrl(baseUrl, route.finalUrl ?? route.url);
-      route.states = await discoverStates(context, url, route, config, log);
+      route.states = await discoverStates(context, url, route, config, log).catch((e) => {
+        // One page that won't load costs that page its states, not the whole run.
+        log(`  ! ${route.url}: states not discovered — ${(e as Error).message.split("\n")[0]}`);
+        return [defaultState()];
+      });
     });
     await context.close();
 
@@ -101,12 +175,32 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
       log(`probing mobile-only states (${probeDevice.name} viewport)…`);
       const mobileContext = await newDiscoveryContext(probeDevice);
       const names = mobileDevices.map((d) => d.name);
+      const desktopNames = config.devices.filter((d) => !d.mobile).map((d) => d.name);
       await mapPool(routes, config.politeness.concurrency, async (route) => {
         const url = resolveUrl(baseUrl, route.finalUrl ?? route.url);
-        const mobileStates = await discoverStates(mobileContext, url, route, config, log);
+        if (desktopNames.length) {
+          const hidden = await hiddenTriggers(mobileContext, url, route.states, config);
+          for (const state of hidden) state.devices = [...desktopNames];
+        }
+        const mobileStates = await discoverStates(mobileContext, url, route, config, log).catch(
+          (e) => {
+            log(
+              `  ! ${route.url}: mobile states not discovered — ${(e as Error).message.split("\n")[0]}`,
+            );
+            return [];
+          },
+        );
         mergeMobileStates(route, mobileStates, names);
       });
       await mobileContext.close();
+    }
+
+    if (interactions.siteWideOnce) {
+      const existing = (opts.existing?.routes ?? []).filter(
+        (r) => !routes.some((x) => x.url === r.url),
+      );
+      const dropped = keepSiteWideOnce(routes, existing);
+      if (dropped) log(`kept site-wide states once: dropped ${dropped} repeat(s) on other pages`);
     }
 
     const totalStates = countStates(routes);

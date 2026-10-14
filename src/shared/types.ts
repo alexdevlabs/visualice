@@ -123,6 +123,13 @@ export interface StateNode {
   recipe: RecipeStep[];
   signature?: string;
   /**
+   * What the state is regardless of the page it was found on: its recipe, the
+   * devices it applies to, and the text it brought on screen, hashed. Two pages
+   * with the same `siteKey` opened the same thing — a header dropdown, a chat
+   * widget — and the site-wide copy only needs capturing once.
+   */
+  siteKey?: string;
+  /**
    * Provenance. "auto" = found by the heuristic discoverer (safe to refresh on a
    * re-crawl). "authored" = hand-written or Explore-mode authored (never clobbered
    * by auto-discovery). Absent is treated as "authored" so legacy/hand-edited cache

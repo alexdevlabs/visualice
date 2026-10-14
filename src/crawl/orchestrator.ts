@@ -351,6 +351,7 @@ async function crawlRun(
         storageState,
         log,
         limit: { only: added, takenIds: cached.routes.map((r) => r.id) },
+        existing: cached,
       });
       inputManifest = { ...mergeManifests(cached, found), site: cached.site ?? found.site };
       await saveJson(cachePath, inputManifest);

@@ -168,6 +168,62 @@ describe("the probe ladder", () => {
     expect(nested!.recipe.slice(0, details!.recipe.length)).toEqual(details!.recipe);
   }, 60_000);
 
+  it("doesn't wait for a panel aria-controls names but the page doesn't have", async () => {
+    // The Toolshop's mobile Filters button: aria-controls="collapseExample", and no
+    // element with that id. Waiting for it fails every capture of the state.
+    const { states } = await discover({
+      "index.html": page(
+        "Dangling",
+        `<button id="t" aria-expanded="false" aria-controls="collapseExample">Filters</button>
+         <div id="filters" hidden>Sort by price</div>
+         <script>
+           const t = document.getElementById("t");
+           t.addEventListener("click", () => {
+             const open = t.getAttribute("aria-expanded") !== "true";
+             t.setAttribute("aria-expanded", String(open));
+             document.getElementById("filters").hidden = !open;
+           });
+         </script>`,
+      ),
+    });
+    const filters = states.find((s) => s.label === "Filters");
+    expect(filters, states.map((s) => s.id).join(", ")).toBeDefined();
+    expect(waitSelectors(filters!.recipe)).toEqual([]);
+  }, 60_000);
+
+  it("isolates a state whose trigger writes to storage, and undoes the write", async () => {
+    // The Toolshop's Testing Guide remembers it was opened: left in storage, every
+    // later page loads with it open and its trigger renamed.
+    const { states } = await discover({
+      "index.html": page(
+        "Stored",
+        `<button id="g" aria-expanded="false" aria-controls="guide">Guide</button>
+         <div id="guide" hidden>How to test</div>
+         <button id="h" aria-expanded="false" aria-controls="help">Help</button>
+         <div id="help" hidden>Ask us</div>
+         <script>
+           const toggle = (btn, panel, remember) => {
+             const b = document.getElementById(btn);
+             b.addEventListener("click", () => {
+               const open = b.getAttribute("aria-expanded") !== "true";
+               b.setAttribute("aria-expanded", String(open));
+               document.getElementById(panel).hidden = !open;
+               if (remember) localStorage.setItem("guide-open", String(open));
+             });
+           };
+           toggle("g", "guide", true);
+           toggle("h", "help", false);
+           if (localStorage.getItem("guide-open") === "true") document.body.dataset.leaked = "yes";
+         </script>`,
+      ),
+    });
+    const guide = states.find((s) => s.label === "Guide");
+    const help = states.find((s) => s.label === "Help");
+    expect(guide?.isolate).toBe(true);
+    expect(help, states.map((s) => s.id).join(", ")).toBeDefined();
+    expect(help!.isolate).toBeUndefined();
+  }, 60_000);
+
   it("finds an off-canvas drawer that slides in, under the site's own test-id attribute", async () => {
     // react-burger-menu's shape: a fixed panel parked off-screen by a transform, no
     // dialog role, no aria-expanded — opening it only moves it into view. The site
