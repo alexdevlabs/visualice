@@ -71,6 +71,20 @@ async function runSummary(dir: string): Promise<RunSummary | undefined> {
   return summary;
 }
 
+/**
+ * Whether `name`, taken from a URL, names an entry directly inside `dir`. Rejects
+ * `.`, `..` and anything holding a separator — on Windows a `\` too, which the
+ * URL's own `/` split doesn't catch — so a root built from it can't leave `dir`.
+ */
+export function isChild(dir: string, name: string): boolean {
+  return (
+    path.dirname(path.resolve(dir, name)) === path.resolve(dir) &&
+    path.basename(name) === name &&
+    name !== "." &&
+    name !== ".."
+  );
+}
+
 /** Every site under `outRoot` and its runs, for the dashboard and the viewer's pickers. */
 export async function siteList(outRoot: string, current: SiteList["current"]): Promise<SiteList> {
   const sites = await Promise.all(
@@ -127,7 +141,7 @@ export async function serveViewer(opts: {
   ): Promise<boolean> => {
     const id = rel.split("/")[0];
     const immutable =
-      !!id && id !== "latest" && id !== ".." && (await isRunComplete(path.join(root, id)));
+      !!id && id !== "latest" && isChild(root, id) && (await isRunComplete(path.join(root, id)));
     return !!rel && serveFileFromRoot(res, root, rel, req, { immutable });
   };
 
@@ -160,7 +174,7 @@ export async function serveViewer(opts: {
         const [site, runs, ...rest] = pathname.slice("/sites/".length).split("/");
         const ok =
           site &&
-          site !== ".." &&
+          isChild(sitesDir, site) &&
           runs === "runs" &&
           (await serveRun(res, req, path.join(sitesDir, site, "runs"), rest.join("/")));
         if (ok) return;

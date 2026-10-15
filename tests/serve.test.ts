@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { serveViewer } from "../src/serve";
+import { isChild, serveViewer } from "../src/serve";
 import type { StaticServer } from "../src/shared/file-serve";
 
 let tmp: string;
@@ -168,5 +168,15 @@ describe("serveViewer sites and runs", () => {
     await fs.writeFile(path.join(runsDir, ID, ".incomplete"), "");
     expect(await header(pinned)).toBe("no-cache");
     await fs.rm(path.join(runsDir, ID, ".incomplete"));
+  });
+});
+
+describe("isChild", () => {
+  it("accepts a plain name and rejects ones that leave the directory", () => {
+    const dir = path.resolve("/out/sites");
+    expect(isChild(dir, "example.com")).toBe(true);
+    for (const bad of ["", ".", "..", "a/b", "../x", `..${path.sep}..`]) {
+      expect(isChild(dir, bad)).toBe(false);
+    }
   });
 });
