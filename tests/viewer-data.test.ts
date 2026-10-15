@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ConfigSchema, type Config, type VisualiceConfig } from "../src/shared/config";
-import { latestRunId, listRuns } from "../src/crawl/runs";
+import { latestRunId, listRuns, siteDir } from "../src/crawl/runs";
 import type { InputManifest, ShotRef, ViewerData } from "../src/shared/types";
 
 /**
@@ -170,9 +170,13 @@ async function run(
   return { runDir, viewer };
 }
 
+/** `run()` crawls https://x.test, whose runs live in this site's folder. */
+const xSite = () => siteDir(out, "x.test");
+
 /** An old run directory that a later crawl may or may not prune. */
-async function fabricateRun(id: string): Promise<void> {
-  const dir = path.join(out, "runs", id);
+
+async function fabricateRun(id: string, root = xSite()): Promise<void> {
+  const dir = path.join(root, "runs", id);
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(dir, "crawl-map.json"), "{}");
 }
@@ -285,8 +289,8 @@ describe("run bookkeeping", () => {
   it("points `latest` at the run it just finished", async () => {
     const { runDir } = await run();
     const id = path.basename(runDir);
-    expect(await fs.readlink(path.join(out, "runs", "latest"))).toBe(id);
-    expect(await latestRunId(out)).toBe(id);
+    expect(await fs.readlink(path.join(xSite(), "runs", "latest"))).toBe(id);
+    expect(await latestRunId(xSite())).toBe(id);
   });
 
   it("prunes all but the newest keepRuns runs, sparing the one it just wrote", async () => {
@@ -298,14 +302,45 @@ describe("run bookkeeping", () => {
       await fabricateRun(id);
     }
     const { runDir } = await run({ config: config({ output: { dir: out, keepRuns: 2 } }) });
-    expect(await listRuns(out)).toEqual(["2026-01-03T00-00-00-000Z", path.basename(runDir)]);
+    expect(await listRuns(xSite())).toEqual(["2026-01-03T00-00-00-000Z", path.basename(runDir)]);
+  });
+
+  it("prunes only the crawled site's runs, never another site's", async () => {
+    const other = siteDir(out, "other.test");
+    for (const id of ["2026-01-01T00-00-00-000Z", "2026-01-02T00-00-00-000Z"]) {
+      await fabricateRun(id, other);
+    }
+    await run({ config: config({ output: { dir: out, keepRuns: 1 } }) });
+    expect(await listRuns(other)).toHaveLength(2);
+  });
+
+  it("files runs under output.site when the config names one", async () => {
+    const { runDir } = await run({
+      config: config({ output: { dir: out, site: "Staging Shop" } }),
+    });
+    expect(path.relative(out, runDir).split(path.sep).slice(0, 3)).toEqual([
+      "sites",
+      "staging-shop",
+      "runs",
+    ]);
+  });
+
+  it("sorts runs left in the old flat layout into their sites first", async () => {
+    const flat = path.join(out, "runs", "2026-01-01T00-00-00-000Z");
+    await fs.mkdir(flat, { recursive: true });
+    await fs.writeFile(
+      path.join(flat, "crawl-map.json"),
+      JSON.stringify({ site: { baseUrl: "https://www.other.test" } }),
+    );
+    await run();
+    expect(await listRuns(siteDir(out, "other.test"))).toEqual(["2026-01-01T00-00-00-000Z"]);
   });
 
   it("never prunes a directory whose name isn't a run id", async () => {
     await fabricateRun("2026-01-01T00-00-00-000Z");
     await fabricateRun("baseline"); // a copied-in reference run, not something we made
     const { runDir } = await run({ config: config({ output: { dir: out, keepRuns: 1 } }) });
-    expect(await listRuns(out)).toEqual([path.basename(runDir), "baseline"]);
+    expect(await listRuns(xSite())).toEqual([path.basename(runDir), "baseline"]);
   });
 
   it("reuses the interrupted run's directory when resuming", async () => {

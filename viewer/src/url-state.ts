@@ -10,6 +10,8 @@
 export interface UrlState {
   q?: string;
   tile?: string;
+  /** The site whose run is shown; absent is the one the server was started on. */
+  site?: string;
   run?: string;
   /** The one route on the canvas; absent shows them all. */
   route?: string;
@@ -35,6 +37,7 @@ export function readUrlState(search: string): UrlState {
   return {
     q: p.get("q") ?? undefined,
     tile: value("tile"),
+    site: value("site"),
     run: value("run"),
     route: value("route"),
     devices: list("devices"),
@@ -51,6 +54,7 @@ function modeOf(v: string | undefined): UrlState["mode"] {
 export function serializeUrlState(state: UrlState): string {
   const p = new URLSearchParams();
   if (state.q) p.set("q", state.q);
+  if (state.site) p.set("site", state.site);
   if (state.run) p.set("run", state.run);
   if (state.route) p.set("route", state.route);
   if (state.devices?.length) p.set("devices", state.devices.join(LIST_SEPARATOR));

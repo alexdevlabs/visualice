@@ -68,9 +68,9 @@ haven't scoped, run `visualice discover <url> --json` first: it maps routes and
 states **without taking a single screenshot**, and its counts are the real estimate.
 Then narrow with `--max-pages` / `--include` / `--devices` and confirm with the user.
 
-`output.keepRuns` (default 5) prunes older runs automatically, so `.visualice/` holds
-roughly five runs' worth. To reclaim space sooner, lower `keepRuns` or delete
-`.visualice/runs/<id>/` directories directly — everything under `.visualice/` is
+`output.keepRuns` (default 5) prunes older runs of each site automatically, so
+`.visualice/` holds roughly five runs' worth per site. To reclaim space sooner, lower
+`keepRuns` or delete `.visualice/sites/<site>/runs/<id>/` directories directly — everything under `.visualice/` is
 machine-owned and gitignored. Keep `crawl-map.cache.json`: deleting it forces a full
 rediscovery and loses any Explore-mode states authored into it.
 
@@ -102,7 +102,7 @@ password-protected staging: [`references/auth.md`](references/auth.md).
 
 ## 5. Capture, report, view
 
-- Output lands in `.visualice/runs/<id>/`: `screenshots/<path>/<state>/<device>.*`,
+- Output lands in `.visualice/sites/<site>/runs/<id>/`: `screenshots/<path>/<state>/<device>.*`,
   `crawl-map.json`, `viewer-data.json`, `crawl-report.md`.
 - With `--json` the run summary (route/state/shot counts, a `failures` array of
   `{route, state, device, error}`, and the `wanted` array of unmet routes-file

@@ -738,10 +738,15 @@
         },
         "keepRuns": {
           "default": 5,
-          "description": "Prune all but the newest N runs.",
+          "description": "Prune all but the newest N runs of each site.",
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 9007199254740991
+        },
+        "site": {
+          "description": "Folder name for this site's runs under <dir>/sites/. Default: the target's hostname without www. (and without the port on localhost).",
+          "type": "string",
+          "minLength": 1
         }
       }
     },

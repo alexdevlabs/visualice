@@ -72,6 +72,33 @@
   --animate-loader-out: fade-out 450ms ease-in 60ms both;
   --animate-app-in: fade-in 450ms ease-out both;
 
+  /* The shot details: a side panel slides in from the right, the phone sheet from below. */
+  --animate-panel-in: panel-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-panel-out: panel-out 180ms ease-in both;
+  --animate-sheet-in: sheet-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-sheet-out: sheet-out 200ms ease-in both;
+
+  @keyframes panel-in {
+    from {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes panel-out {
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes sheet-out {
+    to {
+      transform: translateY(100%);
+    }
+  }
+
   @keyframes fade-in {
     from {
       opacity: 0;

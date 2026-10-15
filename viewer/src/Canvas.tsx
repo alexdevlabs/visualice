@@ -22,6 +22,12 @@ const WHEEL_ZOOM_RATE = 0.01;
 const WHEEL_ZOOM_MAX = 30;
 /** How long the view has to sit still before it is redrawn sharp. */
 const SETTLE_MS = 160;
+/** Bringing a selected shot into focus: how long it takes, and the room left around it. */
+const GLIDE_MS = 320;
+const FOCUS_PAD = 0.86;
+/** A long page, fitted by its width rather than whole; the gap above it then. */
+const LONG_PAGE = 3;
+const FOCUS_TOP = 48;
 
 /**
  * The selected tile's ring, drawn in screen pixels over the canvas (see the
@@ -114,6 +120,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   }, []);
 
   const fitTo = (b: Bounds, pad = 0.86) => {
+    takeOver();
     const w = Math.max(1, b.maxX - b.minX);
     const h = Math.max(1, b.maxY - b.minY);
     const scale = clamp(Math.min(vp.w / w, vp.h / h) * pad, MIN_SCALE, MAX_SCALE);
@@ -123,6 +130,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   };
 
   const zoomAt = (sx: number, sy: number, factor: number) => {
+    takeOver();
     setT((cur) => {
       const ns = clamp(cur.scale * factor, MIN_SCALE, MAX_SCALE);
       const wx = (sx - cur.x) / cur.scale;
@@ -133,7 +141,65 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
   /** Centre a world point without changing zoom — used by the minimap and tile nav. */
   const centerOn = (wx: number, wy: number) => {
+    takeOver();
     setT((cur) => ({ ...cur, x: vp.w / 2 - wx * cur.scale, y: vp.h / 2 - wy * cur.scale }));
+  };
+
+  // A glide eases the view to a transform over a few frames. Anything the person
+  // does to the view themselves stops it, and stops following the selection.
+  const glideRaf = useRef<number | null>(null);
+  const following = useRef(false);
+  const stopGlide = () => {
+    if (glideRaf.current != null) cancelAnimationFrame(glideRaf.current);
+    glideRaf.current = null;
+  };
+  const takeOver = () => {
+    stopGlide();
+    following.current = false;
+  };
+  const glideTo = (to: Transform) => {
+    stopGlide();
+    const from = tRef.current;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return setT(to);
+    // Ease the world point at the centre and the zoom (in log space), so the shot
+    // doesn't swing off to the side on its way in.
+    const centre = (t: Transform) => ({
+      x: (vp.w / 2 - t.x) / t.scale,
+      y: (vp.h / 2 - t.y) / t.scale,
+    });
+    const a = centre(from);
+    const b = centre(to);
+    const start = performance.now();
+    const frame = (now: number) => {
+      const k = Math.min(1, (now - start) / GLIDE_MS);
+      const e = 1 - (1 - k) ** 3;
+      const scale = Math.exp(
+        Math.log(from.scale) + (Math.log(to.scale) - Math.log(from.scale)) * e,
+      );
+      const wx = a.x + (b.x - a.x) * e;
+      const wy = a.y + (b.y - a.y) * e;
+      setT(k < 1 ? { scale, x: vp.w / 2 - wx * scale, y: vp.h / 2 - wy * scale } : to);
+      glideRaf.current = k < 1 ? requestAnimationFrame(frame) : null;
+    };
+    glideRaf.current = requestAnimationFrame(frame);
+  };
+  useEffect(() => stopGlide, []);
+
+  /**
+   * The view that shows one shot: the whole of it, or for a long page, its width
+   * from the top down — fitting all of that would shrink it to a sliver.
+   */
+  const focusOn = (p: Placed): Transform => {
+    const fitW = (vp.w * FOCUS_PAD) / p.w;
+    const fitH = (vp.h * FOCUS_PAD) / p.h;
+    const long = p.h / p.w > (LONG_PAGE * vp.h) / vp.w;
+    const scale = clamp(long ? Math.min(fitW, 1) : Math.min(fitW, fitH), MIN_SCALE, MAX_SCALE);
+    const x = vp.w / 2 - (p.x + p.w / 2) * scale;
+    const y =
+      p.h * scale <= vp.h * FOCUS_PAD
+        ? vp.h / 2 - (p.y + p.h / 2) * scale
+        : FOCUS_TOP - p.y * scale;
+    return { scale, x, y };
   };
 
   useImperativeHandle(ref, () => ({
@@ -154,6 +220,25 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey, vp.w, vp.h]);
 
+  // Selecting a shot brings it into focus, and keeps it there while the details
+  // panel narrows the canvas — until the person pans or zooms.
+  const selectedPlace = layout.placed.find((p) => p.tile.id === selectedId);
+  const focusedId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedPlace || vp.w <= 1) {
+      focusedId.current = null;
+      return;
+    }
+    const fresh = focusedId.current !== selectedPlace.tile.id;
+    if (!fresh && !following.current) return;
+    focusedId.current = selectedPlace.tile.id;
+    following.current = true;
+    glideTo(focusOn(selectedPlace));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlace, vp.w, vp.h]);
+
+  const takeOverRef = useRef(takeOver);
+  takeOverRef.current = takeOver;
   // native wheel listener (passive:false so we can preventDefault)
   useEffect(() => {
     const el = elRef.current;
@@ -180,6 +265,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     };
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      takeOverRef.current();
       // Firefox reports a mouse wheel in lines, not pixels.
       const unit = e.deltaMode === 1 ? 16 : 1;
       if (e.ctrlKey || e.metaKey) {
@@ -221,6 +307,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     // unmounted by virtualization mid-drag, which would drop the capture and strand
     // the pan (drag.current left non-null, no pointerup).
     elRef.current?.setPointerCapture?.(e.pointerId);
+    stopGlide();
     drag.current = { x: e.clientX, y: e.clientY, t0: tRef.current, moved: false };
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -228,7 +315,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     if (!d) return;
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
-    if (!d.moved && Math.hypot(dx, dy) > 3) d.moved = true;
+    if (!d.moved && Math.hypot(dx, dy) > 3) {
+      d.moved = true;
+      following.current = false;
+    }
     if (!d.moved) return;
     // Coalesce to one setT per frame — pointermove can fire far faster than 60Hz.
     pendingPan.current = { ...d.t0, x: d.t0.x + dx, y: d.t0.y + dy };
@@ -249,18 +339,17 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     }
   };
 
-  /** Move the selection one tile in a direction and bring it on screen. */
+  /** Move the selection one tile in a direction; the focus effect brings it on screen. */
   const stepSelection = (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => {
     const id = nextTileId(layout.placed, selectedId, dx, dy);
     if (!id) return;
     onSelect(id);
-    const target = layout.placed.find((p) => p.tile.id === id);
-    if (target) centerOn(target.x + target.w / 2, target.y + target.h / 2);
   };
 
   // keyboard: arrows pan, shift+arrows walk tiles, +/- zoom, 0 fits, Escape clears
   const onKeyDown = (e: React.KeyboardEvent) => {
     const PAN = 90;
+    if (e.key.startsWith("Arrow") && !e.shiftKey) takeOver();
     switch (e.key) {
       case "+":
       case "=":
@@ -549,6 +638,7 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
   if (place.pinned) {
     return (
       <div
+        data-caption-for={tile.id}
         className="absolute flex items-center gap-1.5 overflow-hidden rounded-md border border-line-strong bg-chip px-2 py-1 whitespace-nowrap shadow-tile backdrop-blur-sm"
         style={{ left: place.left, top: place.top, maxWidth: Math.max(place.width, PIN_MIN_W_PX) }}
       >
@@ -567,11 +657,20 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
   return (
     <div
       className="absolute flex -translate-y-full flex-col gap-0.5"
+      data-caption-for={tile.id}
       style={{ left: place.left, top: place.top, width: place.width }}
     >
-      <span className="truncate text-[12px] leading-[16px] font-medium text-fg">
-        {tile.stateLabel}
-      </span>
+      <div className="flex min-w-0 items-center gap-1">
+        <span className="truncate text-[12px] leading-[16px] font-medium text-fg">
+          {tile.stateLabel}
+        </span>
+        {/* With room for one line only, warnings still show beside the name. */}
+        {place.compact && tile.a11y ? (
+          <span className="shrink-0">
+            <TileBadge warn>{`a11y ${tile.a11y}`}</TileBadge>
+          </span>
+        ) : null}
+      </div>
       {!place.compact && (
         <div className="flex items-center gap-1 overflow-hidden">
           <TileBadge>{tile.stateKind}</TileBadge>

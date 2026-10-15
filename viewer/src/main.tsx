@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import { Root } from "./Root";
 import { ErrorBoundary } from "./ErrorBoundary";
 // Bundled rather than fetched from a font CDN: the viewer is often opened offline,
 // and a local tool shouldn't phone out to render its own UI.
@@ -19,7 +19,7 @@ applyTheme(readTheme());
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <Root />
     </ErrorBoundary>
   </StrictMode>,
 );

@@ -56,7 +56,7 @@ time; queue the rest). Give each:
 
 ## 5. Check and report
 
-Look at the new shots (`.visualice/runs/<id>/screenshots/<page>/<state>/<device>.thumb.webp`)
+Look at the new shots (`.visualice/sites/<site>/runs/<id>/screenshots/<page>/<state>/<device>.thumb.webp`)
 — at least one per type — for login pages, spinners, empty screens and duplicates.
 Then report: per page type, the states added; totals (routes, states, shots,
 failures); what was skipped and why. Mention `/visualice-view` to browse.

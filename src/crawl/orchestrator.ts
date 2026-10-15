@@ -30,9 +30,13 @@ import {
   listRuns,
   markRunComplete,
   markRunIncomplete,
+  migrateFlatRuns,
   runDir as runDirFor,
   runIdTime,
   runsToPrune,
+  siteDir,
+  siteKey,
+  updateLatest,
 } from "./runs";
 import { redactConfig } from "../shared/redact";
 import { acquireLock } from "../shared/lock";
@@ -166,12 +170,6 @@ export function withComponents(
   };
 }
 
-async function updateLatest(outRoot: string, id: string): Promise<void> {
-  const link = runDirFor(outRoot, "latest");
-  await fs.rm(link, { force: true }).catch(() => {});
-  await fs.symlink(id, link, "dir").catch(() => {});
-}
-
 /**
  * Keep the newest `keep` runs, `current` among them. Ordering comes from the run ids'
  * timestamps rather than a lexical sort, and a failed delete is reported: silently
@@ -181,14 +179,14 @@ async function updateLatest(outRoot: string, id: string): Promise<void> {
  * if the symlink couldn't be made, `latest` falls back to whichever id sorts newest,
  * and under clock skew that isn't the run this crawl produced.
  */
-async function pruneRuns(outRoot: string, keep: number, current: string, log: Log): Promise<void> {
+async function pruneRuns(root: string, keep: number, current: string, log: Log): Promise<void> {
   // Only runs this tool generated are pruned *or counted*. A hand-named directory
   // (a copied-in baseline, say) is not ours to delete, and letting it occupy a slot
   // in the keep budget would silently push a real run out instead.
-  const ids = (await listRuns(outRoot)).filter((id) => runIdTime(id) !== undefined);
+  const ids = (await listRuns(root)).filter((id) => runIdTime(id) !== undefined);
   for (const id of runsToPrune(ids, keep, current)) {
     try {
-      await fs.rm(runDirFor(outRoot, id), { recursive: true, force: true });
+      await fs.rm(runDirFor(root, id), { recursive: true, force: true });
     } catch (e) {
       log(`⚠ could not prune old run ${id}: ${(e as Error).message.split("\n")[0]}`);
     }
@@ -229,7 +227,9 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
   const id = opts.resume ?? makeRunId();
   const origin = new URL(baseUrl).origin;
   const outRoot = path.resolve(opts.config.output.dir);
-  const runDir = runDirFor(outRoot, id);
+  await migrateFlatRuns(outRoot, log);
+  const site = siteDir(outRoot, siteKey(baseUrl, opts.config.output.site));
+  const runDir = runDirFor(site, id);
   await fs.mkdir(runDir, { recursive: true });
   await markRunIncomplete(runDir);
 
@@ -287,8 +287,8 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
   await fs.writeFile(path.join(runDir, "crawl-report.md"), renderReport(result.manifest));
 
   await markRunComplete(runDir);
-  await updateLatest(outRoot, id);
-  await pruneRuns(outRoot, config.output.keepRuns, id, log);
+  await updateLatest(site, id);
+  await pruneRuns(site, config.output.keepRuns, id, log);
 
   return { runDir, manifest: result.manifest };
 }
@@ -325,7 +325,8 @@ async function crawlRun(
 
   let resume: string | undefined;
   if (opts.resume) {
-    resume = await findResumableRun(outRoot);
+    await migrateFlatRuns(outRoot, log);
+    resume = await findResumableRun(siteDir(outRoot, siteKey(baseUrl, config.output.site)));
     if (resume) log(`resuming run ${resume}`);
     else log("nothing to resume — starting a new run");
   }

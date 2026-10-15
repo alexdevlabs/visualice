@@ -333,7 +333,19 @@ const HttpSchema = z.object({
 
 const OutputSchema = z.object({
   dir: z.string().default(".visualice").describe("Root output directory."),
-  keepRuns: z.number().int().positive().default(5).describe("Prune all but the newest N runs."),
+  keepRuns: z
+    .number()
+    .int()
+    .positive()
+    .default(5)
+    .describe("Prune all but the newest N runs of each site."),
+  site: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Folder name for this site's runs under <dir>/sites/. Default: the target's hostname without www. (and without the port on localhost).",
+    ),
 });
 
 const ComponentSchema = z.object({

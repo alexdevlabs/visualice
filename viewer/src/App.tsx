@@ -1,9 +1,20 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import type { ViewerData } from "./types";
 import { computeLayout, routePath, type ViewMode } from "./layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
 import { DL, Inspector } from "./Inspector";
 import { VirtualList } from "./VirtualList";
+import { Dropdown } from "./Dropdown";
+import { fetchSites, runBase, type SiteList } from "./sites";
 import { fetchViewerData, resolveDataUrl } from "./load";
 import { readUrlState, writeUrlState, type UrlState } from "./url-state";
 import { runLabel } from "./format";
@@ -35,18 +46,13 @@ import {
 /** Past this many tiles the canvas is capped, with a control to lift it. */
 const DEFAULT_LIMIT = 2500;
 /** The shortest time the boot loader shows, so its walk reads as intentional rather than a flicker. */
-const MIN_LOADER_MS = 2000;
+const MIN_LOADER_MS = 1000;
 
 /** Must match the route rows' `h-14` below — the virtual list pins rows to it. */
 const SIDEBAR_ROW_H = 56;
 
 /** Below this width the viewer switches to the phone layout: no sidebar, filters in a sheet. */
 const PHONE_QUERY = "(max-width: 760px)";
-
-interface RunList {
-  current: string;
-  runs: string[];
-}
 
 function useMediaQuery(query: string): boolean {
   const [on, setOn] = useState(() => matchMedia(query).matches);
@@ -85,7 +91,8 @@ function isTyping(e: KeyboardEvent): boolean {
   return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 }
 
-export default function App() {
+/** `onHome` returns to the dashboard; absent when there is only the one site. */
+export default function App({ onHome }: { onHome?: () => void } = {}) {
   const initial = useMemo(() => readUrlState(location.search), []);
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [data, setData] = useState<ViewerData | null>(null);
@@ -96,7 +103,9 @@ export default function App() {
   const [scale, setScale] = useState(1);
   const [deviceFilter, setDeviceFilter] = useState<Set<string>>(new Set(initial.devices ?? []));
   const [kindFilter, setKindFilter] = useState<Set<string>>(new Set(initial.kinds ?? []));
-  const [runs, setRuns] = useState<RunList | null>(null);
+  const [sites, setSites] = useState<SiteList | null>(null);
+  // Both null: the run the server was started on. A run alone is one of that site's.
+  const [site, setSite] = useState<string | null>(initial.site ?? null);
   const [run, setRun] = useState<string | null>(initial.run ?? null);
   const [failedOnly, setFailedOnly] = useState(false);
   const [limit, setLimit] = useState<number | undefined>(DEFAULT_LIMIT);
@@ -110,9 +119,9 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const isPhone = useMediaQuery(PHONE_QUERY);
 
-  // Where this run's files live: the server mounts the current run at ./data/ and
-  // every other run at ./runs/<id>/.
-  const base = run ? `./runs/${run}/` : "./data/";
+  // Where this run's files live: the server mounts the current run at ./data/, every
+  // run at ./sites/<site>/runs/<id>/, and the current site's at ./runs/<id>/ too.
+  const base = site && run ? runBase(site, run) : run ? `./runs/${run}/` : "./data/";
   const dataUrl = useMemo(() => resolveDataUrl(location.search, base + "viewer-data.json"), [base]);
 
   useEffect(() => applyTheme(theme), [theme]);
@@ -146,13 +155,30 @@ export default function App() {
     };
   }, [dataUrl.url]);
 
-  // The run list is optional: a viewer served from a bare directory just won't have one.
+  // The site list is optional: a viewer served from a bare directory just won't have one.
   useEffect(() => {
-    fetch("./runs.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((list: RunList | null) => list?.runs?.length && setRuns(list))
-      .catch(() => {});
+    void fetchSites().then((list) => list && setSites(list));
   }, []);
+
+  /**
+   * Show `nextRun` of `nextSite`, named in the URL so a reload or a shared link opens
+   * the same run. Another site's routes, shots and devices aren't this one's, so
+   * moving between sites starts from a clean view.
+   */
+  const openRun = useCallback(
+    (nextSite: string, nextRun: string) => {
+      const leaving = nextSite !== (site ?? sites?.current.site);
+      setSite(nextSite);
+      setRun(nextRun);
+      setSelectedId(null);
+      if (leaving) {
+        setRouteId(null);
+        setDeviceFilter(new Set());
+        setKindFilter(new Set());
+      }
+    },
+    [sites, site],
+  );
 
   // Deferred: typing in the search box must not recompute the full layout per keystroke.
   const deferredQuery = useDeferredValue(query);
@@ -176,6 +202,9 @@ export default function App() {
     () => data?.tiles.find((t) => t.id === selectedId) ?? null,
     [data, selectedId],
   );
+  // The panel keeps showing the last shot while it slides out after a close.
+  const [detailed, setDetailed] = useState(selected);
+  if (selected && selected !== detailed) setDetailed(selected);
   // Two routes can lay out to the same size, which the canvas alone takes for the
   // same layout; a route change always starts from the whole of the new one.
   const firstRoute = useRef(true);
@@ -195,6 +224,7 @@ export default function App() {
     const state: UrlState = {
       q: query || undefined,
       tile: selectedId ?? undefined,
+      site: site ?? undefined,
       run: run ?? undefined,
       route: routeId ?? undefined,
       devices:
@@ -205,7 +235,7 @@ export default function App() {
       mode: mode === "screen" ? undefined : mode,
     };
     writeUrlState(state);
-  }, [data, query, selectedId, run, routeId, deviceFilter, kindFilter, mode]);
+  }, [data, query, selectedId, site, run, routeId, deviceFilter, kindFilter, mode]);
 
   const onScaleChange = useCallback((s: number) => setScale(s), []);
 
@@ -301,7 +331,10 @@ export default function App() {
     if (!kindFilter.size || kindFilter.has(t.stateKind))
       routeCounts.set(t.routeId, (routeCounts.get(t.routeId) ?? 0) + 1);
   }
-  const kinds = [...kindCounts.keys()].sort();
+  // The page as it loads leads; the rest follow alphabetically.
+  const kinds = [...kindCounts.keys()].sort((a, b) =>
+    a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b),
+  );
   const withTiles = new Set(layout.routesWithTiles);
   const groupsWithTiles = data.groups.filter((g) => withTiles.has(g.routeId));
   const failedCount = data.tiles.filter((t) => t.error).length;
@@ -313,6 +346,8 @@ export default function App() {
     if (selected && id && selected.routeId !== id) setSelectedId(null);
     if (isPhone) setSheetOpen(false);
   };
+
+  const detailedIndex = detailed ? layout.placed.findIndex((p) => p.tile.id === detailed.id) : -1;
 
   // ---- pieces shared by the desktop toolbar and the phone sheet
 
@@ -380,41 +415,68 @@ export default function App() {
   // A native select laid invisibly over a styled face: keyboard and screen readers
   // get the real control. On a phone it's just a line of text under the domain.
   const picker = isPhone
-    ? "relative flex items-center gap-1 text-[11.5px] whitespace-nowrap text-dim"
-    : "relative flex h-8 items-center gap-2 rounded-lg border border-line bg-panel px-2.5 text-[12.5px] whitespace-nowrap text-fg focus-within:border-accent hover:border-line-strong";
-  const pickerSelect = "absolute inset-0 w-full cursor-pointer opacity-0";
-  const runPicker = (
-    <label className={picker} title={run ?? runs?.current ?? data.site.runId}>
+    ? "flex items-center gap-1 text-[11.5px] whitespace-nowrap text-dim"
+    : "flex h-8 items-center gap-2 rounded-lg border border-line bg-panel px-2.5 text-[12.5px] whitespace-nowrap text-fg hover:border-line-strong aria-expanded:border-accent";
+  const domain = data.site.origin.replace(/^https?:\/\//, "");
+  const shownSite = site ?? sites?.current.site;
+  const shownRun = run ?? (site ? null : sites?.current.run) ?? data.site.runId;
+  const siteEntry = sites?.sites.find((x) => x.key === shownSite);
+  const siteFace = <span className="truncate font-mono text-[11px]">{domain}</span>;
+  const sitePicker =
+    sites && sites.sites.length > 1 ? (
+      <Dropdown
+        label="Site"
+        value={shownSite}
+        className="flex min-w-0 items-center gap-1 border-0 bg-transparent p-0 text-dim hover:text-fg aria-expanded:text-fg"
+        options={sites.sites.map((x) => ({
+          value: x.key,
+          label: <span className="font-mono text-[12px]">{x.key}</span>,
+          hint: x.runs.length === 1 ? "1 version" : `${x.runs.length} versions`,
+        }))}
+        onChange={(key) => {
+          const next = sites.sites.find((x) => x.key === key);
+          const latest = next?.latest ?? next?.runs[0];
+          if (next && latest) openRun(next.key, latest);
+        }}
+      >
+        {siteFace}
+      </Dropdown>
+    ) : (
+      <span className="flex min-w-0 text-dim" title={shownSite}>
+        {siteFace}
+      </span>
+    );
+  const runFace = (
+    <>
       <Icon name="clock" size={14} className="text-dim" />
-      <span>{runLabel(run ?? runs?.current ?? data.site.runId)}</span>
-      {(!run || run === runs?.current) && (
+      <span>{runLabel(shownRun)}</span>
+      {(!siteEntry || shownRun === siteEntry.latest) && (
         <span className="rounded-full bg-accent-soft px-[7px] py-px text-[10.5px] font-semibold text-accent">
           latest
         </span>
       )}
-      {runs && runs.runs.length > 1 && (
-        <>
-          <Icon name="chev" size={14} className="text-dim" />
-          <select
-            className={pickerSelect}
-            aria-label="Run"
-            value={run ?? runs.current}
-            onChange={(e) => {
-              setRun(e.target.value === runs.current ? null : e.target.value);
-              setSelectedId(null);
-            }}
-          >
-            {[...runs.runs].reverse().map((id) => (
-              <option key={id} value={id}>
-                {runLabel(id)}
-                {id === runs.current ? " (latest)" : ""}
-              </option>
-            ))}
-          </select>
-        </>
-      )}
-    </label>
+    </>
   );
+  const runPicker =
+    siteEntry && shownSite && siteEntry.runs.length > 1 ? (
+      <Dropdown
+        label="Version"
+        value={shownRun}
+        className={picker}
+        options={siteEntry.runs.map((id) => ({
+          value: id,
+          label: runLabel(id),
+          badge: id === siteEntry.latest ? "latest" : undefined,
+        }))}
+        onChange={(id) => openRun(shownSite, id)}
+      >
+        {runFace}
+      </Dropdown>
+    ) : (
+      <span className={picker} title={shownRun}>
+        {runFace}
+      </span>
+    );
 
   const search = (
     <label
@@ -440,8 +502,6 @@ export default function App() {
 
   // ---- header
 
-  const domain = data.site.origin.replace(/^https?:\/\//, "");
-
   const themeToggle = (
     <IconButton
       icon={theme === "dark" ? "sun" : "moon"}
@@ -452,13 +512,61 @@ export default function App() {
   );
 
   const HEADER = "flex h-[52px] shrink-0 items-center border-b border-line bg-panel";
+  // The logo leads back to every site, when there is more than this one.
+  const goHome = (e: MouseEvent) => {
+    if (!onHome || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    onHome();
+  };
+  const homeLink = (logo: ReactNode) =>
+    onHome ? (
+      <a
+        href="./"
+        className="flex items-center rounded-md"
+        aria-label="All sites"
+        title="All sites"
+        onClick={goHome}
+      >
+        {logo}
+      </a>
+    ) : (
+      logo
+    );
+  // The way back spelled out: a breadcrumb ahead of the site picker.
+  const sitesCrumb = onHome && (
+    <>
+      <a
+        href="./"
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-medium text-dim no-underline hover:bg-hover hover:text-fg"
+        onClick={goHome}
+      >
+        <Icon name="grid" size={15} />
+        Sites
+      </a>
+      <span className="-mx-2 shrink-0 text-dim" aria-hidden="true">
+        ›
+      </span>
+    </>
+  );
   const header = isPhone ? (
     <header className={cx(HEADER, "gap-2.5 px-3")}>
-      <span className="flex shrink-0 items-center">
-        <Logo markOnly />
-      </span>
+      {onHome ? (
+        <a
+          href="./"
+          className="-ml-1 flex size-9 shrink-0 items-center justify-center rounded-lg text-dim hover:bg-hover hover:text-fg"
+          aria-label="All sites"
+          title="All sites"
+          onClick={goHome}
+        >
+          <Icon name="left" />
+        </a>
+      ) : (
+        <span className="flex shrink-0 items-center">
+          <Logo markOnly />
+        </span>
+      )}
       <div className="flex min-w-0 flex-auto flex-col leading-[1.2]">
-        <span className="truncate font-mono text-[11px] text-dim">{domain}</span>
+        {sitePicker}
         {runPicker}
       </div>
       <IconButton
@@ -478,13 +586,10 @@ export default function App() {
     </header>
   ) : (
     <header className={cx(HEADER, "gap-3.5 pr-3.5 pl-4")}>
-      <div className="flex shrink-0 items-center">
-        <Logo />
-      </div>
+      <div className="flex shrink-0 items-center">{homeLink(<Logo />)}</div>
       <span className={DIVIDER} />
-      <div className="flex min-w-0 flex-col leading-[1.2]">
-        <span className="truncate font-mono text-[11px] text-dim">{domain}</span>
-      </div>
+      {sitesCrumb}
+      <div className="flex min-w-0 flex-col leading-[1.2]">{sitePicker}</div>
       {runPicker}
       <span className="flex-auto" />
       {search}
@@ -762,7 +867,7 @@ export default function App() {
   );
 
   const body = (
-    <div className="flex min-h-0 flex-auto">
+    <div className="flex min-h-0 flex-auto overflow-hidden">
       {!isPhone && sidebar}
       <main className="flex min-w-0 flex-auto flex-col">
         {canvasHeader}
@@ -780,14 +885,21 @@ export default function App() {
           {canvasOverlays}
         </div>
       </main>
-      {selected && (
+      {detailed && (
         <Inspector
           data={data}
-          tile={selected}
+          tile={detailed}
           base={base}
           onSelect={setSelectedId}
           onStep={stepShot}
           phone={isPhone}
+          closing={!selected}
+          onClosed={() => setDetailed(null)}
+          position={
+            detailedIndex >= 0
+              ? { index: detailedIndex + 1, total: layout.placed.length }
+              : undefined
+          }
         />
       )}
     </div>

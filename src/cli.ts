@@ -19,12 +19,20 @@ import { pathExists } from "./shared/fsx";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
 import { formatDoctor, runDoctor } from "./doctor";
-import { latestRunId, runDir } from "./crawl/runs";
+import {
+  latestRunId,
+  listSites,
+  migrateFlatRuns,
+  newestSite,
+  runDir,
+  siteDir,
+  siteKey,
+} from "./crawl/runs";
 import type { Manifest, RecipeStep } from "./shared/types";
 import { exportRun } from "./export";
 import { probePage } from "./crawl/probe";
 import { listAuthoredFiles, mergeAuthored, readAuthoredFile } from "./crawl/author";
-import { acquireLock } from "./shared/lock";
+import { acquireLock, LockedError } from "./shared/lock";
 import { saveJson } from "./crawl/manifest";
 import { RecipeStepSchema } from "./shared/manifest-schema";
 import { canonicalPath } from "./shared/url";
@@ -100,7 +108,8 @@ Options (flags accept --name=value or --name value):
   --concurrency=<n>    override politeness.concurrency
   --timeout=<ms>       override politeness.timeoutMs
   --out=<dir>          override output.dir (default .visualice)
-  --run=<id>           for 'serve': which run to view (default: latest)
+  --site=<name>        for 'serve'/'export': which site (default: this project's, else the last crawled)
+  --run=<id>           for 'serve'/'export': which run of that site (default: its latest)
   --port=<n>           for 'serve'/'fixture': fixed port (default: random)
   --open               for 'serve'/'fixture': open in your browser
   --shoot=<file>       for 'serve': headless-screenshot the viewer to a file, then exit
@@ -114,7 +123,7 @@ Options (flags accept --name=value or --name value):
 
 Exit codes: 0 ok · 1 error · 2 usage · 3 capture failures (with --fail-on-error)
 
-Output lands under <config.output.dir>/runs/<runId>/ (default .visualice/).`);
+Output lands under <config.output.dir>/sites/<site>/runs/<runId>/ (default .visualice/).`);
 }
 
 /** Print the end-of-run summary; JSON on stdout when asked, human lines otherwise. */
@@ -283,15 +292,56 @@ function untilInterrupted(): Promise<void> {
   });
 }
 
-/** The run a command should act on: `--run`, or the latest. */
-async function resolveRun(outRoot: string, flags: Flags): Promise<{ id: string; dir: string }> {
-  const id = str(flags, "run") ?? (await latestRunId(outRoot));
-  if (!id) throw new UsageError(`no runs under ${outRoot}/runs — run a crawl first`);
-  const dir = runDir(outRoot, id);
+/**
+ * Sort runs left in the old flat layout into their sites. Under the lock, so a crawl
+ * mid-write isn't moved; when one is running it has already done this itself.
+ */
+async function migrateRuns(outRoot: string, log: Log): Promise<void> {
+  if (!(await pathExists(path.join(outRoot, "runs")))) return;
+  const lock = await acquireLock(outRoot, { log }).catch((e: unknown) => {
+    if (e instanceof LockedError) return undefined;
+    throw e;
+  });
+  if (!lock) return;
+  try {
+    await migrateFlatRuns(outRoot, log);
+  } finally {
+    await lock.release();
+  }
+}
+
+/**
+ * The run a command should act on. Site: `--site`, else this project's own (from
+ * `output.site` or the target) when it has runs, else whichever site was crawled
+ * last. Run: `--run`, else that site's latest.
+ */
+async function resolveRun(
+  config: Config,
+  flags: Flags,
+  log: Log,
+): Promise<{ outRoot: string; site: string; id: string; dir: string }> {
+  const outRoot = path.resolve(config.output.dir);
+  await migrateRuns(outRoot, log);
+  const sites = await listSites(outRoot);
+  const asked = str(flags, "site");
+  if (asked && !sites.includes(asked)) {
+    throw new UsageError(
+      `no runs for site '${asked}' under ${outRoot}/sites` +
+        (sites.length ? ` (have: ${sites.join(", ")})` : ""),
+    );
+  }
+  const own = config.target ? siteKey(config.target, config.output.site) : config.output.site;
+  const site =
+    asked ?? (own && sites.includes(own) ? own : undefined) ?? (await newestSite(outRoot));
+  if (!site) throw new UsageError(`no runs under ${outRoot}/sites — run a crawl first`);
+  const root = siteDir(outRoot, site);
+  const id = str(flags, "run") ?? (await latestRunId(root));
+  if (!id) throw new UsageError(`no runs for site '${site}' — run a crawl first`);
+  const dir = runDir(root, id);
   if (!(await pathExists(path.join(dir, "crawl-map.json")))) {
     throw new UsageError(`no run manifest at ${dir}/crawl-map.json`);
   }
-  return { id, dir };
+  return { outRoot, site, id, dir };
 }
 
 async function cmdExport(flags: Flags): Promise<void> {
@@ -299,8 +349,7 @@ async function cmdExport(flags: Flags): Promise<void> {
   const dest = str(flags, "dest");
   if (!dest) throw new UsageError("export needs a directory: visualice export <dir>");
   const config = await loadConfigWithOverrides(flags);
-  const outRoot = path.resolve(config.output.dir);
-  const run = await resolveRun(outRoot, flags);
+  const run = await resolveRun(config, flags, log);
 
   const viewerDist = path.join(PROJECT_ROOT, "viewer", "dist");
   await ensureViewerBuilt(viewerDist, log);
@@ -308,6 +357,7 @@ async function cmdExport(flags: Flags): Promise<void> {
   const result = await exportRun({
     runDir: run.dir,
     runId: run.id,
+    site: run.site,
     viewerDist,
     dest,
   });
@@ -323,11 +373,9 @@ async function cmdExport(flags: Flags): Promise<void> {
 async function cmdServe(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
-  const outRoot = path.resolve(config.output.dir);
   // Resolve `latest` up front: without the symlink (Windows, a copied tree) it falls
-  // back to the newest run directory instead of failing the existence check.
-  const runId = str(flags, "run") ?? (await latestRunId(outRoot)) ?? "latest";
-  const dir = runDir(outRoot, runId);
+  // back to the newest run directory.
+  const { outRoot, site, id: runId, dir } = await resolveRun(config, flags, log);
   if (!(await pathExists(path.join(dir, "viewer-data.json")))) {
     throw new Error(
       `no run data at ${dir}/viewer-data.json — run a crawl first (e.g. 'visualice crawl').`,
@@ -340,23 +388,31 @@ async function cmdServe(flags: Flags): Promise<void> {
   const server = await serveViewer({
     runDir: dir,
     viewerDist,
-    // Sibling runs are exposed too, so the viewer's run switcher has somewhere to go.
+    // Every site's runs are exposed too, so the viewer's pickers have somewhere to go.
     outRoot,
+    site,
     runId,
     port: parsePort(flags),
   });
 
+  // Naming a site or run opens it; otherwise the page decides (the dashboard, when
+  // there is more than one site).
+  const named = str(flags, "site") !== undefined || str(flags, "run") !== undefined;
+  const url = named
+    ? `${server.url}/?${new URLSearchParams({ site, run: runId }).toString()}`
+    : server.url;
+
   const shoot = str(flags, "shoot");
   if (shoot !== undefined) {
-    await shootViewer(server.url, shoot);
+    await shootViewer(url, shoot);
     await server.close();
     log(`wrote ${shoot}`);
     return;
   }
 
-  log(`viewer serving run '${runId}' at:`);
-  console.log(server.url);
-  if (flags.open === true) openInBrowser(server.url);
+  log(`viewer serving ${site} run '${runId}' at:`);
+  console.log(url);
+  if (flags.open === true) openInBrowser(url);
   log("press Ctrl-C to stop.");
   await untilInterrupted();
   await server.close();

@@ -99,8 +99,9 @@ visualice capture --manifest=path/to/crawl-map.json --base=https://your.site
 ## View the results
 
 ```bash
-visualice serve --open          # opens the zoomable viewer for the latest run
-visualice serve --run=<id>      # view a specific run
+visualice serve --open          # several sites: a dashboard of them; one: its latest run
+visualice serve --site=<name>   # another site in the same output directory
+visualice serve --run=<id>      # view a specific run of that site
 visualice serve --shoot=out.png # headless: screenshot the viewer to a file
 ```
 
@@ -319,15 +320,24 @@ mechanics and the evidence, agents the decisions:
 Agents never take the catalog's screenshots: they author recipes, the engine replays
 them, so a run stays deterministic.
 
-Output lands under the configured output directory (default `.visualice/`):
+Output lands under the configured output directory (default `.visualice/`), one folder
+per site. A site is named by its hostname without `www.` (`saucedemo.com`; `localhost`
+drops its port, which changes every run), or by `output.site` in the config:
 
 ```
-runs/<runId>/
+sites/<site>/runs/<runId>/
   screenshots/<path>/<state>/<device>.png   # + .thumb.webp, .mid.webp, .json sidecar
   crawl-map.json      # reusable manifest (routes, states, recipes, shots)
   viewer-data.json    # flattened tile index for the viewer
   crawl-report.md     # human summary
 ```
+
+Each site keeps its own `latest` and its own `output.keepRuns` budget, so crawling one
+site never prunes another's runs. In the viewer, the domain in the header picks the site
+and the date beside it picks the version. With more than one site, the viewer opens on a
+dashboard: a card per site with its latest run's home page and counts (the eye button
+hides the previews, remembered like the theme), and the logo leads back to it. Runs from the older flat `runs/<runId>/` layout
+are moved into their site folders the first time a crawl, `serve` or `export` runs.
 
 One run owns that directory while it works (`<out>/.lock`, reclaimed automatically when
 the holder died): a second concurrent run fails with a message pointing at `--out=<dir>`
@@ -362,7 +372,7 @@ Both the viewer and the fixture site are styled with Tailwind v4, configured in 
 than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
 fixture's in `tests/fixture-src/tailwind.input.css`.
 
-The 451 unit tests are pure and fast. The 70 browser-driven tests in `tests/integration/`
+The 463 unit tests are pure and fast. The 72 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`

@@ -65,7 +65,7 @@ export { applyRecipe, gotoRoute, resolveUrl } from "./crawl/recipe";
 export { applyContextInit, stabilizePage, waitForStableSelectors } from "./crawl/stabilize";
 
 export { serveViewer } from "./serve";
-export { listRuns } from "./crawl/runs";
+export { listRuns, listSites, siteDir, siteKey } from "./crawl/runs";
 export { exportRun } from "./export";
 export type { ExportOptions, ExportResult } from "./export";
 export { serveDirectory } from "./shared/static-server";

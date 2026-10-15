@@ -3,17 +3,7 @@ import { parseViolations, type ShotViolation } from "./load";
 import type { Device, ViewerData, ViewerTile } from "./types";
 import { runLabel } from "./format";
 import { routePath } from "./layout";
-import {
-  ACTION,
-  Caption,
-  cx,
-  deviceIcon,
-  Icon,
-  IconButton,
-  KindTag,
-  RouteBadge,
-  Segmented,
-} from "./ui";
+import { Caption, cx, deviceIcon, Icon, KindTag } from "./ui";
 
 interface Props {
   data: ViewerData;
@@ -25,13 +15,31 @@ interface Props {
   onStep: (dir: -1 | 1) => void;
   /** Phone layout: a sheet over the canvas instead of a side panel. */
   phone?: boolean;
+  /** Closing: slide out, then `onClosed` unmounts it. */
+  closing?: boolean;
+  onClosed?: () => void;
+  /** Where this shot sits in the canvas order, 1-based. */
+  position?: { index: number; total: number };
 }
 
 /** The label/value grid the details (and the shortcuts popover) use. */
 export const DL = "grid gap-x-3 gap-y-2 text-[12.5px] [&>dd]:wrap-anywhere [&>dt]:text-dim";
 
-const PRIMARY = "border-accent bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent";
-const SECONDARY = "border-line-strong bg-raised text-fg hover:border-dim hover:text-fg";
+/** One of the four actions under the shot: an icon over its name. */
+const TILE_BASE =
+  "flex flex-col items-center gap-1.5 rounded-[10px] border-0 px-1 py-2.5 text-[11.5px] font-medium no-underline motion-safe:transition-[background-color,box-shadow,color] motion-safe:duration-120 active:translate-y-px";
+const TILE = cx(
+  TILE_BASE,
+  "bg-app text-fg hover:bg-canvas hover:text-fg hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
+);
+/** The first action, the one most often wanted, in the accent. */
+const TILE_MAIN = cx(
+  TILE_BASE,
+  "bg-accent-soft text-accent hover:text-accent hover:shadow-[inset_0_0_0_1px_var(--color-accent-line)]",
+);
+/** A fact about the shot, as a label and value in one chip. */
+const FACT =
+  "flex min-w-0 items-center gap-1.5 rounded-full bg-app px-2.5 py-1 text-[12px] text-fg";
 
 const SECTION = "flex flex-col gap-2.5 border-t border-line px-[18px] py-4";
 
@@ -39,10 +47,20 @@ const SECTION = "flex flex-col gap-2.5 border-t border-line px-[18px] py-4";
  * The details panel for one shot.
  *
  * Everything here answers a question someone has after clicking a tile: which
- * route and state this is, what it looks like on the other device, where the
- * full-size image lives, and what the route's other states look like.
+ * route and state this is, what it looks like on the other device, and where the
+ * full-size image lives.
  */
-export function Inspector({ data, tile, base, onSelect, onStep, phone }: Props) {
+export function Inspector({
+  data,
+  tile,
+  base,
+  onSelect,
+  onStep,
+  phone,
+  closing,
+  onClosed,
+  position,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const device: Device | undefined = data.devices.find((d) => d.name === tile.device);
 
@@ -82,221 +100,229 @@ export function Inspector({ data, tile, base, onSelect, onStep, phone }: Props) 
     };
   }, [sidecar]);
 
-  const preview = tile.mid ?? tile.full;
   const fileName = tile.full
     ? `${tile.routePath.replace(/[^a-zA-Z0-9._-]+/g, "-")}--${tile.stateId}--${tile.device}.${tile.full.split(".").pop()}`
     : undefined;
-  const navSize = phone ? 40 : 28;
+  const navSize = phone ? 40 : 32;
 
   return (
     <aside
       className={cx(
-        "flex flex-col overflow-y-auto bg-panel",
+        "flex flex-col overflow-hidden bg-panel",
         phone
           ? "fixed inset-x-0 top-[72px] bottom-0 z-15 rounded-t-2xl border-t border-line-strong shadow-sheet"
           : "w-[380px] shrink-0 border-l border-line",
+        phone
+          ? closing
+            ? "animate-sheet-out"
+            : "animate-sheet-in"
+          : closing
+            ? "animate-panel-out"
+            : "animate-panel-in",
+        // Still an animation, so `onAnimationEnd` fires and the panel goes.
+        "motion-reduce:[animation-duration:1ms]",
       )}
       aria-label="Shot details"
+      onAnimationEnd={(e) => {
+        if (closing && e.target === e.currentTarget) onClosed?.();
+      }}
     >
-      <div className="flex items-start gap-2.5 pt-4 pr-3.5 pb-3.5 pl-[18px]">
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className="flex min-w-0 items-center gap-1.5 text-dim">
-            <RouteBadge path={routePath(tile.routePath)} active />
-            <span aria-hidden="true">›</span>
-            <span className="truncate font-mono text-[12px]">{tile.stateId}</span>
+      <div className="flex min-h-0 flex-auto flex-col overflow-y-auto">
+        <div className="flex flex-col gap-3 px-4 pt-3.5 pb-1">
+          <div className="flex items-center gap-1.5">
+            {data.devices.length > 1 && (
+              <div
+                role="radiogroup"
+                aria-label="Device"
+                className="flex gap-0.5 rounded-[10px] bg-app p-[3px]"
+              >
+                {data.devices.map((d) => {
+                  const other = byDevice.get(d.name);
+                  return (
+                    <button
+                      key={d.name}
+                      type="button"
+                      role="radio"
+                      aria-checked={d.name === tile.device}
+                      aria-label={d.name}
+                      disabled={!other}
+                      title={other ? `${d.name} · ${d.width}px wide` : `Not captured on ${d.name}`}
+                      onClick={() => other && onSelect(other.id)}
+                      className="flex h-[26px] items-center gap-1.5 rounded-[7px] border-0 bg-transparent px-2 text-[11.5px] font-semibold text-dim enabled:hover:text-fg aria-checked:bg-fg aria-checked:text-app"
+                    >
+                      <Icon name={deviceIcon(d)} size={13} />
+                      <span className="font-mono">{d.width}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <span className="flex-auto" />
+            {(
+              [
+                ["left", "Previous shot", () => onStep(-1)],
+                ["right", "Next shot", () => onStep(1)],
+                ["x", "Close details", () => onSelect(null)],
+              ] as const
+            ).map(([icon, label, onClick]) => (
+              <button
+                key={icon}
+                type="button"
+                aria-label={label}
+                title={label}
+                onClick={onClick}
+                className="flex shrink-0 items-center justify-center rounded-[9px] border border-line bg-panel p-0 text-fg hover:border-line-strong hover:text-accent"
+                style={{ width: navSize, height: navSize }}
+              >
+                <Icon name={icon} size={15} />
+              </button>
+            ))}
           </div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-[18px] font-semibold tracking-[-0.01em]">{tile.stateLabel}</h2>
-            <KindTag>{tile.stateKind}</KindTag>
-          </div>
-        </div>
-        <div className="flex gap-1">
-          <IconButton icon="left" label="Previous shot" size={navSize} onClick={() => onStep(-1)} />
-          <IconButton icon="right" label="Next shot" size={navSize} onClick={() => onStep(1)} />
-          <IconButton
-            icon="x"
-            label="Close details"
-            size={navSize}
-            onClick={() => onSelect(null)}
-          />
-        </div>
-      </div>
-
-      {data.devices.length > 1 && (
-        <div className="px-[18px] pb-3.5">
-          <Segmented
-            small
-            label="Device"
-            value={tile.device}
-            onChange={(name) => {
-              const other = byDevice.get(name);
-              if (other) onSelect(other.id);
-            }}
-            items={data.devices.map((d) => ({
-              value: d.name,
-              label: d.name,
-              icon: deviceIcon(d),
-              disabled: !byDevice.has(d.name),
-              title: byDevice.has(d.name) ? undefined : `Not captured on ${d.name}`,
-            }))}
-          />
-        </div>
-      )}
-
-      <div className="px-[18px] pb-3.5">
-        {tile.error ? (
-          <div
-            className="flex flex-col gap-1.5 rounded-lg border border-amber-line bg-amber-soft p-3 text-[12px]"
-            role="alert"
-          >
-            <strong className="flex items-center gap-1.5 text-amber">
-              <Icon name="alert" size={14} /> Capture failed
-            </strong>
-            <code className="[word-break:break-word]">{tile.error}</code>
-            <span className="text-dim">
-              A failing state usually means its recipe needs a tweak — a stale selector, a changed
-              trigger, or an auth wall.
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate font-mono text-[11.5px] text-dim">
+              {routePath(tile.routePath)} · {tile.stateId}
             </span>
+            <h2 className="truncate text-[22px] leading-7 font-bold tracking-[-0.01em]">
+              {tile.stateLabel}
+            </h2>
           </div>
-        ) : (
-          preview && (
-            <a
-              className="block max-h-80 overflow-hidden rounded-lg bg-paper shadow-[0_0_0_1px_var(--color-line-strong)]"
-              href={base + (tile.full ?? preview)}
-              target="_blank"
-              rel="noreferrer"
+          {tile.error && (
+            <div
+              className="flex flex-col gap-1.5 rounded-lg border border-amber-line bg-amber-soft p-3 text-[12px]"
+              role="alert"
             >
-              <img
-                className="block w-full"
-                src={base + preview}
-                alt={`${tile.stateLabel}, ${tile.device}`}
-              />
-            </a>
-          )
-        )}
-      </div>
+              <strong className="flex items-center gap-1.5 text-amber">
+                <Icon name="alert" size={14} /> Capture failed
+              </strong>
+              <code className="[word-break:break-word]">{tile.error}</code>
+              <span className="text-dim">
+                A failing state usually means its recipe needs a tweak — a stale selector, a changed
+                trigger, or an auth wall.
+              </span>
+            </div>
+          )}
+        </div>
 
-      <div className="flex flex-wrap gap-2 px-[18px] pb-4">
+        <ul
+          className="m-0 flex list-none flex-wrap gap-1.5 border-t border-line px-4 py-3.5"
+          aria-label="Details"
+        >
+          {device && (
+            <li className={FACT}>
+              <span className="text-dim">Viewport</span>
+              {device.width}×{device.height} @{device.dpr}x
+            </li>
+          )}
+          {tile.width && !tile.error && (
+            <li className={FACT}>
+              <span className="text-dim">Image</span>
+              <span className="font-mono text-[11.5px]">
+                {tile.width}×{tile.height}
+                {tile.clamped ? " (cropped)" : ""}
+              </span>
+            </li>
+          )}
+          {tile.screens ? (
+            <li className={FACT}>
+              <span className="text-dim">Screens</span>
+              {tile.screens}
+            </li>
+          ) : null}
+          <li className={cx(FACT, "max-w-full")}>
+            <span className="text-dim">URL</span>
+            <span className="truncate font-mono text-[11.5px]">{tile.routeUrl}</span>
+          </li>
+          {tile.viewport && (
+            <li className={FACT}>
+              <a href={base + tile.viewport} target="_blank" rel="noreferrer">
+                Viewport crop ↗
+              </a>
+            </li>
+          )}
+        </ul>
+
+        {tile.a11y ? (
+          <section className={SECTION} aria-label="Accessibility">
+            <div className="flex items-center gap-2">
+              <Caption>Accessibility</Caption>
+              <span className="rounded-[4px] border border-amber-line bg-amber-soft px-[5px] font-mono text-[11px] leading-[17px] text-amber">
+                {tile.a11y} {tile.a11y === 1 ? "rule" : "rules"} broken
+              </span>
+            </div>
+            {violations === null ? (
+              <span className="text-[12.5px] text-dim">Loading…</span>
+            ) : violations.length === 0 ? (
+              <span className="text-[12.5px] text-dim">
+                The details for this shot couldn’t be read.
+              </span>
+            ) : (
+              <ul className="flex flex-col gap-2.5 text-[12.5px]">
+                {violations.map((v) => (
+                  <li key={v.id} className="flex flex-col gap-1">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {v.impact && <KindTag>{v.impact}</KindTag>}
+                      {v.helpUrl ? (
+                        <a href={v.helpUrl} target="_blank" rel="noreferrer">
+                          {v.help}
+                        </a>
+                      ) : (
+                        <span>{v.help}</span>
+                      )}
+                    </span>
+                    <span className="text-dim">
+                      {v.count} {v.count === 1 ? "element" : "elements"}
+                      {v.targets[0] && (
+                        <>
+                          {" · "}
+                          <code className="wrap-anywhere">{v.targets[0]}</code>
+                        </>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : null}
+      </div>
+      {/* Pinned to the foot, where the hand ends up after reading. */}
+      <div className="grid shrink-0 grid-cols-4 gap-1.5 border-t border-line px-4 py-3.5">
         {tile.full && (
-          <a
-            className={cx(ACTION, PRIMARY)}
-            href={base + tile.full}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Icon name="image" size={14} />
+          <a className={TILE_MAIN} href={base + tile.full} target="_blank" rel="noreferrer">
+            <Icon name="image" />
             <span>Full image</span>
           </a>
         )}
         {tile.full && (
-          <a className={cx(ACTION, SECONDARY)} href={base + tile.full} download={fileName}>
-            <Icon name="download" size={14} />
+          <a className={TILE} href={base + tile.full} download={fileName}>
+            <Icon name="download" />
             <span>Download</span>
           </a>
         )}
         {data.site.baseUrl && (
           <a
-            className={cx(ACTION, SECONDARY)}
+            className={TILE}
             href={new URL(tile.routeUrl, data.site.baseUrl).href}
             target="_blank"
             rel="noreferrer"
           >
-            <Icon name="ext" size={14} />
+            <Icon name="ext" />
             <span>Live page</span>
           </a>
         )}
-        <button type="button" className={cx(ACTION, SECONDARY)} onClick={copyLink}>
-          <Icon name={copied ? "check" : "link"} size={14} />
+        <button type="button" className={TILE} onClick={copyLink}>
+          <Icon name={copied ? "check" : "link"} />
           <span>{copied ? "Copied" : "Copy link"}</span>
         </button>
       </div>
-
-      <section className={SECTION}>
-        <Caption>Details</Caption>
-        <dl className={cx(DL, "grid-cols-[96px_minmax(0,1fr)]")}>
-          <dt>Device</dt>
-          <dd>
-            {tile.device}
-            {device && (
-              <span className="text-dim">
-                {" "}
-                · {device.width}×{device.height} @{device.dpr}x
-              </span>
-            )}
-          </dd>
-          {tile.width && !tile.error && (
-            <>
-              <dt>Image</dt>
-              <dd className="font-mono text-[11.5px]">
-                {tile.width} × {tile.height} px
-                {tile.screens ? ` · ${tile.screens} screens` : ""}
-                {tile.clamped ? " (cropped)" : ""}
-              </dd>
-            </>
-          )}
-          <dt>URL</dt>
-          <dd className="font-mono text-[11.5px]">{tile.routeUrl}</dd>
-          <dt>Captured</dt>
-          <dd>{runLabel(data.site.runId)} UTC</dd>
-          {tile.a11y === 0 && (
-            <>
-              <dt>Accessibility</dt>
-              <dd>No violations found</dd>
-            </>
-          )}
-        </dl>
-        <div className="flex flex-col items-start gap-1.5 text-[12.5px]">
-          {tile.viewport && (
-            <a href={base + tile.viewport} target="_blank" rel="noreferrer">
-              Viewport crop ↗
-            </a>
-          )}
-        </div>
-      </section>
-
-      {tile.a11y ? (
-        <section className={SECTION} aria-label="Accessibility">
-          <div className="flex items-center gap-2">
-            <Caption>Accessibility</Caption>
-            <span className="rounded-[4px] border border-amber-line bg-amber-soft px-[5px] font-mono text-[11px] leading-[17px] text-amber">
-              {tile.a11y} {tile.a11y === 1 ? "rule" : "rules"} broken
-            </span>
-          </div>
-          {violations === null ? (
-            <span className="text-[12.5px] text-dim">Loading…</span>
-          ) : violations.length === 0 ? (
-            <span className="text-[12.5px] text-dim">
-              The details for this shot couldn’t be read.
-            </span>
-          ) : (
-            <ul className="flex flex-col gap-2.5 text-[12.5px]">
-              {violations.map((v) => (
-                <li key={v.id} className="flex flex-col gap-1">
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    {v.impact && <KindTag>{v.impact}</KindTag>}
-                    {v.helpUrl ? (
-                      <a href={v.helpUrl} target="_blank" rel="noreferrer">
-                        {v.help}
-                      </a>
-                    ) : (
-                      <span>{v.help}</span>
-                    )}
-                  </span>
-                  <span className="text-dim">
-                    {v.count} {v.count === 1 ? "element" : "elements"}
-                    {v.targets[0] && (
-                      <>
-                        {" · "}
-                        <code className="wrap-anywhere">{v.targets[0]}</code>
-                      </>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12px] text-dim">
+        <span>Captured {runLabel(data.site.runId)} UTC</span>
+        {position && (
+          <span className="tabular-nums">
+            Shot {position.index} of {position.total}
+          </span>
+        )}
+      </div>
     </aside>
   );
 }

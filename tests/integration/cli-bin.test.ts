@@ -69,13 +69,23 @@ describe("visualice bin", () => {
       expect(summary.shots).toBeGreaterThan(0);
       // The run landed under the temp project…
       expect(summary.runDir.startsWith(await fs.realpath(dir))).toBe(true);
-      expect(await fs.readdir(path.join(dir, ".visualice", "runs"))).toContain("latest");
+      const runs = path.join(dir, ".visualice", "sites", "localhost", "runs");
+      expect(await fs.readdir(runs)).toContain("latest");
       // …and the routes file was generated there too.
       expect(await fs.readFile(path.join(dir, "visualice.routes.md"), "utf8")).toContain("- /");
       // Nothing was written into the install.
       expect(
         await fs
-          .access(path.join(REPO, ".visualice", "runs", path.basename(summary.runDir)))
+          .access(
+            path.join(
+              REPO,
+              ".visualice",
+              "sites",
+              "localhost",
+              "runs",
+              path.basename(summary.runDir),
+            ),
+          )
           .then(() => true)
           .catch(() => false),
       ).toBe(false);

@@ -37,6 +37,7 @@ let viewerDist: string;
 let server: StaticServer;
 let browser: Browser;
 let runId: string;
+const OTHER_RUN = "2026-01-02T03-04-05-006Z";
 
 const config = (dir: string): Config =>
   ConfigSchema.parse({
@@ -84,7 +85,13 @@ beforeAll(async () => {
       log: silent,
     });
     runId = run.manifest.site.runId;
-    server = await serveViewer({ runDir: run.runDir, viewerDist, outRoot: out, runId });
+    server = await serveViewer({
+      runDir: run.runDir,
+      viewerDist,
+      outRoot: out,
+      site: "localhost",
+      runId,
+    });
   } finally {
     await site.server.close();
   }
@@ -97,6 +104,25 @@ afterAll(async () => {
   await fs.rm(out, { recursive: true, force: true });
   await fs.rm(siteDir, { recursive: true, force: true });
 });
+
+/**
+ * Run `fn` with a second site beside the first — a copy of its run under another
+ * name. Only for as long as `fn` runs: with two sites the page opens on the
+ * dashboard, which every other test would have to click past.
+ */
+async function withOtherSite(fn: () => Promise<void>): Promise<void> {
+  const siteRoot = path.join(out, "sites", "other.test");
+  const other = path.join(siteRoot, "runs", OTHER_RUN);
+  await fs.cp(path.join(out, "sites", "localhost", "runs", runId), other, { recursive: true });
+  const data = JSON.parse(await fs.readFile(path.join(other, "viewer-data.json"), "utf8"));
+  data.site = { ...data.site, origin: "https://other.test", runId: OTHER_RUN };
+  await fs.writeFile(path.join(other, "viewer-data.json"), JSON.stringify(data));
+  try {
+    await fn();
+  } finally {
+    await fs.rm(siteRoot, { recursive: true, force: true });
+  }
+}
 
 /** Open the viewer and wait out the boot loader. Collects what the page complains about. */
 async function open(
@@ -115,6 +141,9 @@ async function open(
   p.on("requestfailed", (r) => errors.push(`failed: ${r.url()}`));
   p.on("response", (r) => r.status() >= 400 && errors.push(`${r.status()}: ${r.url()}`));
   await p.goto((opts.base ?? server.url) + query);
+  // The page is blank until it knows whether to show the dashboard or a run; wait
+  // for one of them to start before waiting out the viewer's loader.
+  await p.locator('[role="status"][aria-label="Loading"], a[data-site]').first().waitFor();
   await p.getByRole("status", { name: "Loading" }).waitFor({ state: "detached", timeout: 15_000 });
   return { page: p, errors };
 }
@@ -131,6 +160,77 @@ const loaded = (p: Page, selector: string) =>
     );
 
 describe("viewer", () => {
+  it("switches between sites, each with its own versions", () =>
+    withOtherSite(async () => {
+      const { page: p, errors } = await open(`?site=localhost&run=${runId}`);
+      try {
+        const pickSite = async (key: string) => {
+          await p.getByRole("button", { name: "Site" }).click();
+          await p.getByRole("listbox", { name: "Site" }).getByRole("option", { name: key }).click();
+        };
+        await p.getByRole("button", { name: "Site" }).click();
+        const selected = p.getByRole("option", { selected: true });
+        expect(await selected.textContent()).toContain("localhost");
+        await p.keyboard.press("Escape");
+        await expect.poll(() => p.getByRole("listbox").count()).toBe(0);
+        await pickSite("other.test");
+        await expect.poll(() => p.getByText("other.test", { exact: true }).count()).toBe(1);
+        const url = new URL(p.url());
+        expect(url.searchParams.get("site")).toBe("other.test");
+        expect(url.searchParams.get("run")).toBe(OTHER_RUN);
+        await expect.poll(() => p.locator("[data-tile-id]").count()).toBe(6);
+
+        // Back again: the URL names the run, so a reload opens it and not the dashboard.
+        await pickSite("localhost");
+        await expect.poll(() => new URL(p.url()).searchParams.get("site")).toBe("localhost");
+        expect(new URL(p.url()).searchParams.get("run")).toBe(runId);
+        expect(errors).toEqual([]);
+      } finally {
+        await p.context().close();
+      }
+    }));
+
+  it("opens on a dashboard of every site when there is more than one", () =>
+    withOtherSite(async () => {
+      const { page: p, errors } = await open();
+      try {
+        const cards = p.locator("a[data-site]");
+        await expect.poll(() => cards.count()).toBe(2);
+        expect(await p.locator("a[data-site] img").count()).toBe(2);
+        expect(await p.getByText("2 sites · 2 versions").count()).toBe(1);
+
+        // Hiding previews swaps them for placeholders, and the choice survives a reload.
+        const previews = p.getByRole("button", { name: "Previews" });
+        expect(await previews.getAttribute("aria-pressed")).toBe("true");
+        await previews.click();
+        await expect.poll(() => p.locator("[data-placeholder]").count()).toBe(2);
+        await p.reload();
+        await expect.poll(() => p.locator("[data-placeholder]").count()).toBe(2);
+        expect(await p.locator("a[data-site] img").count()).toBe(0);
+        expect(await previews.getAttribute("aria-pressed")).toBe("false");
+        await previews.click();
+        await expect.poll(() => p.locator("a[data-site] img").count()).toBe(2);
+
+        // Search narrows the cards.
+        await p.getByRole("searchbox", { name: "Search sites" }).fill("other");
+        await expect.poll(() => cards.count()).toBe(1);
+
+        // A card opens that site's latest run; the logo comes back, and so does Back.
+        await p.locator('a[data-site="other.test"]').click();
+        // The viewer's boot loader holds for a couple of seconds.
+        const tiles = () => p.locator("[data-tile-id]").count();
+        await expect.poll(tiles, { timeout: 10_000 }).toBe(6);
+        expect(new URL(p.url()).searchParams.get("site")).toBe("other.test");
+        await p.getByRole("link", { name: "All sites" }).click();
+        await expect.poll(() => cards.count()).toBe(2);
+        await p.goBack();
+        await expect.poll(tiles, { timeout: 10_000 }).toBe(6);
+        expect(errors).toEqual([]);
+      } finally {
+        await p.context().close();
+      }
+    }));
+
   it("boots on a run and shows every shot", async () => {
     const { page: p, errors } = await open();
     try {
@@ -139,8 +239,8 @@ describe("viewer", () => {
         .poll(() => p.getByRole("navigation", { name: "Routes" }).getByRole("listitem").count())
         .toBe(3);
       expect(await loaded(p, "[data-tile-id] img")).toBeGreaterThan(0);
-      // The accessibility finding on the home page is flagged on its tile.
-      expect(await p.locator("[data-tile-id]", { hasText: "a11y" }).count()).toBeGreaterThan(0);
+      // The accessibility finding on the home page is flagged in its tile's caption.
+      expect(await p.locator("[data-caption-for]", { hasText: "a11y" }).count()).toBeGreaterThan(0);
       expect(errors).toEqual([]);
 
       // Picking a route leaves only that route on the canvas, and the link keeps it.
@@ -248,7 +348,7 @@ describe("viewer", () => {
   it("works from a static export, with no server of its own", async () => {
     const dest = path.join(out, "site");
     const result = await exportRun({
-      runDir: path.join(out, "runs", runId),
+      runDir: path.join(out, "sites", "localhost", "runs", runId),
       runId,
       viewerDist,
       dest,

@@ -6,6 +6,7 @@ argument-hint: [--run=<id>] [--shoot=<file>]
 Open the `visualice` viewer for the most recent crawl run.
 
 - `visualice serve --open` — launch the viewer and open it in the browser.
+- `visualice serve --site=<name> --open` — view another site's latest run
 - `visualice serve --run=<id> --open` — view a specific run instead of the latest
   (pass `--run=<id>` if `$ARGUMENTS` names one).
 - `visualice serve --shoot=<file>` — headless: capture a screenshot of the viewer

@@ -8,10 +8,15 @@ import {
   latestRunId,
   listRuns,
   markRunComplete,
+  listSites,
   markRunIncomplete,
+  migrateFlatRuns,
+  newestSite,
   runDir,
   runIdTime,
   runsToPrune,
+  siteDir,
+  siteKey,
   sortRunIds,
 } from "../src/crawl/runs";
 
@@ -177,5 +182,85 @@ describe("runsToPrune", () => {
   it("spends no slot on a current run that isn't in the list", () => {
     expect(runsToPrune(ids, 3, "hand-named")).toEqual(ids.slice(0, 2));
     expect(runsToPrune(ids, 3)).toEqual(ids.slice(0, 2));
+  });
+});
+
+describe("siteKey", () => {
+  it("names a site by its hostname, without www.", () => {
+    expect(siteKey("https://www.saucedemo.com/inventory.html")).toBe("saucedemo.com");
+    expect(siteKey("https://practicesoftwaretesting.com")).toBe("practicesoftwaretesting.com");
+    expect(siteKey("https://Demo.RealWorld.show")).toBe("demo.realworld.show");
+  });
+
+  it("drops a loopback port, which changes every run, and keeps any other", () => {
+    expect(siteKey("http://localhost:58192")).toBe("localhost");
+    expect(siteKey("http://localhost:65445/about")).toBe("localhost");
+    expect(siteKey("http://127.0.0.1:4520")).toBe("127.0.0.1");
+    expect(siteKey("https://staging.example.com:8443")).toBe("staging.example.com-8443");
+  });
+
+  it("takes an override as given, made safe as a folder name", () => {
+    expect(siteKey("http://localhost:1", "Third Pour")).toBe("third-pour");
+    expect(siteKey("http://localhost:1", "../../etc")).toBe("etc");
+    expect(siteKey("http://localhost:1", "///")).toBe("site");
+  });
+});
+
+describe("sites", () => {
+  let out: string;
+  const ID_1 = "2026-01-01T00-00-00-000Z";
+  const ID_2 = "2026-02-02T00-00-00-000Z";
+  const ID_3 = "2026-03-03T00-00-00-000Z";
+
+  beforeEach(async () => {
+    out = await fs.mkdtemp(path.join(os.tmpdir(), "vc-sites-"));
+  });
+  afterEach(async () => {
+    await fs.rm(out, { recursive: true, force: true });
+  });
+
+  /** A finished run in the old flat layout, of `baseUrl`. */
+  async function flatRun(id: string, baseUrl?: string): Promise<string> {
+    const dir = runDir(out, id);
+    await fs.mkdir(dir, { recursive: true });
+    if (baseUrl) {
+      await fs.writeFile(path.join(dir, "crawl-map.json"), JSON.stringify({ site: { baseUrl } }));
+    }
+    return dir;
+  }
+
+  it("lists sites with runs, and finds the one crawled last", async () => {
+    await fs.mkdir(runDir(siteDir(out, "b.test"), ID_3), { recursive: true });
+    await fs.mkdir(runDir(siteDir(out, "a.test"), ID_1), { recursive: true });
+    await fs.mkdir(runDir(siteDir(out, "a.test"), ID_2), { recursive: true });
+    await fs.mkdir(siteDir(out, "empty.test"), { recursive: true });
+    expect(await listSites(out)).toEqual(["a.test", "b.test"]);
+    expect(await newestSite(out)).toBe("b.test");
+  });
+
+  it("moves flat runs into their sites, each by its own manifest", async () => {
+    await flatRun(ID_1, "http://localhost:58192");
+    await flatRun(ID_2, "https://www.saucedemo.com");
+    await flatRun(ID_3, "http://localhost:65445");
+    await fs.symlink(ID_3, path.join(out, "runs", "latest"), "dir").catch(() => {});
+
+    expect(await migrateFlatRuns(out)).toBe(3);
+    expect(await listRuns(siteDir(out, "localhost"))).toEqual([ID_1, ID_3]);
+    expect(await listRuns(siteDir(out, "saucedemo.com"))).toEqual([ID_2]);
+    expect(await latestRunId(siteDir(out, "localhost"))).toBe(ID_3);
+    // The flat directory, `latest` and all, is gone.
+    await expect(fs.stat(path.join(out, "runs"))).rejects.toThrow();
+    // And a second pass has nothing to do.
+    expect(await migrateFlatRuns(out)).toBe(0);
+  });
+
+  it("leaves a run it can't place, and anything it didn't name", async () => {
+    await flatRun(ID_1, "https://a.test");
+    await flatRun(ID_2); // interrupted before its manifest was written
+    await fs.mkdir(path.join(out, "runs", "baseline"));
+    const logs: string[] = [];
+    expect(await migrateFlatRuns(out, (m) => logs.push(m))).toBe(1);
+    expect(await listRuns(out)).toEqual([ID_2, "baseline"]);
+    expect(logs.join("\n")).toMatch(new RegExp(`left run ${ID_2}`));
   });
 });

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { pathExists } from "./shared/fsx";
+import type { SiteList } from "./serve";
 
 /**
  * A self-contained copy of the viewer and one run, for somewhere `visualice serve`
@@ -11,12 +12,14 @@ import { pathExists } from "./shared/fsx";
  *
  *   index.html, assets/   the built viewer
  *   data/                 the run
- *   runs.json             the (one-entry) run list
+ *   sites.json            the (one-entry) site and run list
  */
 
 export interface ExportOptions {
   runDir: string;
   runId: string;
+  /** The site the run belongs to, named in the exported site list. */
+  site?: string;
   viewerDist: string;
   dest: string;
 }
@@ -58,10 +61,12 @@ export async function exportRun(opts: ExportOptions): Promise<ExportResult> {
   await fs.cp(opts.runDir, path.join(dest, "data"), { recursive: true, dereference: true });
   await fs.rm(path.join(dest, "data", ".incomplete"), { force: true });
 
-  await fs.writeFile(
-    path.join(dest, "runs.json"),
-    JSON.stringify({ current: opts.runId, runs: [opts.runId] }),
-  );
+  const site = opts.site ?? "site";
+  const list: SiteList = {
+    current: { site, run: opts.runId },
+    sites: [{ key: site, latest: opts.runId, runs: [opts.runId] }],
+  };
+  await fs.writeFile(path.join(dest, "sites.json"), JSON.stringify(list));
 
   return { dest, runId: opts.runId, files: await countFiles(dest) };
 }

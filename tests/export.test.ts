@@ -40,6 +40,7 @@ const run = (over: Partial<Parameters<typeof exportRun>[0]> = {}) =>
   exportRun({
     runDir: path.join(tmp, "out/runs/r2"),
     runId: "r2",
+    site: "example.com",
     viewerDist: path.join(tmp, "viewer"),
     dest: path.join(tmp, "site"),
     ...over,
@@ -57,8 +58,11 @@ describe("exportRun", () => {
     expect(await exists("site/data/screenshots/home/default/desktop.png")).toBe(true);
     expect(await exists("site/data/.incomplete")).toBe(false);
 
-    const runs = JSON.parse(await fs.readFile(path.join(tmp, "site/runs.json"), "utf8"));
-    expect(runs).toEqual({ current: "r2", runs: ["r2"] });
+    const sites = JSON.parse(await fs.readFile(path.join(tmp, "site/sites.json"), "utf8"));
+    expect(sites).toEqual({
+      current: { site: "example.com", run: "r2" },
+      sites: [{ key: "example.com", latest: "r2", runs: ["r2"] }],
+    });
     // Only the exported run, not its siblings.
     expect(await exists("site/runs")).toBe(false);
   });

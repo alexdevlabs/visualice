@@ -50,7 +50,8 @@ command are accepted by it.
 | `--concurrency=<n>`      | `crawl`/`capture`    | Override `politeness.concurrency`                                      |
 | `--timeout=<ms>`         | `crawl`/`capture`    | Override `politeness.timeoutMs`                                        |
 | `--out=<dir>`            | most                 | Override `output.dir` (default `.visualice`)                           |
-| `--run=<id>`             | `serve`/`export`     | Which run to act on (default: latest)                                  |
+| `--site=<name>`          | `serve`/`export`     | Which site (default: this project's, else the last crawled)            |
+| `--run=<id>`             | `serve`/`export`     | Which run of that site (default: its latest)                           |
 | `--port=<n>`             | `serve`/`fixture`    | Fixed port (default: random)                                           |
 | `--open`                 | `serve`/`fixture`    | Open in your browser                                                   |
 | `--shoot=<file>`         | `serve`              | Headless-screenshot the viewer to a file, then exit                    |
@@ -88,7 +89,7 @@ command are accepted by it.
 
 Everything machine-owned lives under gitignored `.visualice/`:
 
-- `.visualice/runs/<runId>/` — one directory per crawl: `screenshots/<path>/<state>/<device>.*`,
+- `.visualice/sites/<site>/runs/<runId>/` — one directory per crawl, grouped by site: `screenshots/<path>/<state>/<device>.*`,
   `crawl-map.json`, `viewer-data.json`, `crawl-report.md`.
 - `.visualice/crawl-map.cache.json` — the cached site model that `--replay` and Explore
   mode read/write.
