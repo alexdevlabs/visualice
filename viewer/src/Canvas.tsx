@@ -1,4 +1,12 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { CAPTION_MIN_W, ROW_GAP, SCREEN_GAP } from "./layout";
 import type { Layout, Bounds, Placed, ViewMode } from "./layout";
 import { chromeAt, maxScroll, type Strip } from "./page";
@@ -6,7 +14,7 @@ import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SC
 import type { Transform } from "./lod";
 import { Minimap } from "./Minimap";
 import { nextTileId } from "./nav";
-import { cx, RouteBadge } from "./ui";
+import { cx, Icon, RouteBadge } from "./ui";
 
 export interface CanvasHandle {
   fit: () => void;
@@ -77,11 +85,25 @@ interface Props {
   /** URL prefix for shot paths — the run being viewed. */
   base: string;
   showMinimap?: boolean;
+  /** Floats under the selected shot, following it as the view moves. */
+  selectionBar?: ReactNode;
+  /** One shot on its own (full screen): no selection ring, no caption over it. */
+  solo?: boolean;
   mode?: ViewMode;
 }
 
 export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
-  { layout, selectedId, onSelect, onScaleChange, base, showMinimap = true, mode = "screen" },
+  {
+    layout,
+    selectedId,
+    onSelect,
+    onScaleChange,
+    base,
+    showMinimap = true,
+    mode = "screen",
+    selectionBar,
+    solo,
+  },
   ref,
 ) {
   const elRef = useRef<HTMLDivElement>(null);
@@ -190,15 +212,15 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
    * from the top down — fitting all of that would shrink it to a sliver.
    */
   const focusOn = (p: Placed): Transform => {
+    // With the bar under the shot, the shot takes the room above it.
+    const h = Math.max(1, vp.h - (selectionBar ? BAR_ROOM_PX : 0));
     const fitW = (vp.w * FOCUS_PAD) / p.w;
-    const fitH = (vp.h * FOCUS_PAD) / p.h;
-    const long = p.h / p.w > (LONG_PAGE * vp.h) / vp.w;
+    const fitH = (h * FOCUS_PAD) / p.h;
+    const long = p.h / p.w > (LONG_PAGE * h) / vp.w;
     const scale = clamp(long ? Math.min(fitW, 1) : Math.min(fitW, fitH), MIN_SCALE, MAX_SCALE);
     const x = vp.w / 2 - (p.x + p.w / 2) * scale;
     const y =
-      p.h * scale <= vp.h * FOCUS_PAD
-        ? vp.h / 2 - (p.y + p.h / 2) * scale
-        : FOCUS_TOP - p.y * scale;
+      p.h * scale <= h * FOCUS_PAD ? h / 2 - (p.y + p.h / 2) * scale : FOCUS_TOP - p.y * scale;
     return { scale, x, y };
   };
 
@@ -223,15 +245,29 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   // Selecting a shot brings it into focus, and keeps it there while the details
   // panel narrows the canvas — until the person pans or zooms.
   const selectedPlace = layout.placed.find((p) => p.tile.id === selectedId);
-  const focusedId = useRef<string | null>(null);
+  // Where the selection bar was dragged to, or under the shot. Remembered, so it
+  // stays out of the way across shots, full screen and reloads.
+  const [barAt, setBarAt] = useState<BarAt | null>(readBarAt);
+  const moveBar = (at: BarAt | null) => {
+    setBarAt(at);
+    try {
+      if (at) localStorage.setItem(BAR_AT_KEY, JSON.stringify(at));
+      else localStorage.removeItem(BAR_AT_KEY);
+    } catch {
+      // Blocked storage just doesn't remember it.
+    }
+  };
+  // Keyed on the layout too: a relayout (a new mode, a filter) fits the whole canvas
+  // first, and the selected shot is then brought back into focus over it.
+  const focusedKey = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedPlace || vp.w <= 1) {
-      focusedId.current = null;
+      focusedKey.current = null;
       return;
     }
-    const fresh = focusedId.current !== selectedPlace.tile.id;
-    if (!fresh && !following.current) return;
-    focusedId.current = selectedPlace.tile.id;
+    const key = selectedPlace.tile.id + "|" + layoutKey;
+    if (focusedKey.current === key && !following.current) return;
+    focusedKey.current = key;
     following.current = true;
     glideTo(focusOn(selectedPlace));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -527,16 +563,22 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
           pixels: the same size at any zoom. Over the canvas, never catching the pointer. */}
       <div className="pointer-events-none absolute inset-0">
         {visible.map((p) =>
-          p.tile.id === selectedId && p.tile.error === undefined ? (
+          !solo && p.tile.id === selectedId && p.tile.error === undefined ? (
             <SelectionRing key="ring" p={p} t={t} />
           ) : null,
         )}
         {showTileLabels &&
+          !solo &&
           visible.map((p) => {
             const place = captionPlace(p, t, mode);
             return place ? <TileCaption key={p.tile.id} p={p} place={place} /> : null;
           })}
       </div>
+      {selectionBar && selectedPlace && (
+        <SelectionBar p={selectedPlace} t={t} vp={vp} at={barAt} onMove={moveBar}>
+          {selectionBar}
+        </SelectionBar>
+      )}
       {showMinimap && (
         <Minimap
           layout={layout}
@@ -632,6 +674,148 @@ function SelectionRing({ p, t }: { p: Placed; t: Transform }) {
   );
 }
 
+/** The selection bar's height on screen, and its clearance from the shot and the canvas edges. */
+const BAR_H_PX = 42;
+const BAR_GAP_PX = 12;
+const BAR_EDGE_PX = 16;
+/** The lowest the bar goes: clear of the zoom controls along the canvas's foot. */
+const BAR_FOOT_PX = 68;
+/** The room a focused shot leaves under itself for the bar. */
+const BAR_ROOM_PX = BAR_GAP_PX + BAR_H_PX + BAR_FOOT_PX;
+
+/** Where a dragged bar sits: its centre and top, as fractions of the canvas. */
+interface BarAt {
+  x: number;
+  y: number;
+}
+const BAR_AT_KEY = "visualice.selection-bar";
+function readBarAt(): BarAt | null {
+  try {
+    const at = JSON.parse(localStorage.getItem(BAR_AT_KEY) ?? "null") as BarAt | null;
+    return at && Number.isFinite(at.x) && Number.isFinite(at.y) ? at : null;
+  } catch {
+    return null;
+  }
+}
+/** The least room between a dragged bar and the canvas's edges. */
+const BAR_INSET_PX = 8;
+/** How far an arrow key moves the bar, on screen. */
+const BAR_NUDGE_PX = 24;
+
+/**
+ * The bar under the selected shot. It follows the shot, and when the shot's foot
+ * is off screen — a long page — it stays at the canvas's foot instead; once the
+ * shot itself is out of view, it goes.
+ *
+ * Dragged by its grip, it stays where it's put instead, for whichever shot is
+ * selected, until a double-click on the grip (or Home) sends it back under the shot.
+ * Kept as fractions of the canvas, so a resize can't strand it off screen.
+ */
+function SelectionBar({
+  p,
+  t,
+  vp,
+  at,
+  onMove,
+  children,
+}: {
+  p: Placed;
+  t: Transform;
+  vp: { w: number; h: number };
+  at: BarAt | null;
+  onMove: (at: BarAt | null) => void;
+  children: ReactNode;
+}) {
+  const bar = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const left = p.x * t.scale + t.x;
+  const top = p.y * t.scale + t.y;
+  const right = left + p.w * t.scale;
+  const bottom = top + p.h * t.scale;
+  const half = (bar.current?.offsetWidth ?? 0) / 2;
+  /** A centre and top kept on the canvas, the whole bar in view. */
+  const clamp = (x: number, y: number) => ({
+    x: Math.max(Math.min(half + BAR_INSET_PX, vp.w / 2), Math.min(x, vp.w - half - BAR_INSET_PX)),
+    y: Math.max(BAR_INSET_PX, Math.min(y, vp.h - BAR_H_PX - BAR_INSET_PX)),
+  });
+  if (!at && (right < 0 || left > vp.w || bottom < 0 || top > vp.h)) return null;
+  const { x, y } = at
+    ? clamp(at.x * vp.w, at.y * vp.h)
+    : {
+        x: Math.max(BAR_EDGE_PX, Math.min((left + right) / 2, vp.w - BAR_EDGE_PX)),
+        y: Math.max(BAR_EDGE_PX, Math.min(bottom + BAR_GAP_PX, vp.h - BAR_H_PX - BAR_FOOT_PX)),
+      };
+  const place = (cx: number, cy: number) => {
+    const c = clamp(cx, cy);
+    onMove({ x: c.x / vp.w, y: c.y / vp.h });
+  };
+
+  return (
+    <div
+      ref={bar}
+      role="toolbar"
+      aria-label="Shot actions"
+      className={cx(
+        "absolute z-4 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-line bg-overlay p-[4px] backdrop-blur-sm",
+        dragging ? "shadow-pop" : "shadow-float",
+      )}
+      style={{ left: x, top: y, height: BAR_H_PX }}
+      // The canvas takes the pointer for panning and selecting; the bar's buttons
+      // keep it, and its keys aren't the canvas's shortcuts.
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        aria-label="Move the bar: drag, or use the arrow keys; double-click or Home puts it back"
+        title="Drag to move · double-click to put back"
+        className={cx(
+          "flex h-full w-5 shrink-0 touch-none items-center justify-center rounded-lg border-0 bg-transparent text-dim hover:bg-hover hover:text-fg",
+          dragging ? "cursor-grabbing" : "cursor-grab",
+        )}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          drag.current = { dx: e.clientX - x, dy: e.clientY - y };
+          setDragging(true);
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (d) place(e.clientX - d.dx, e.clientY - d.dy);
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+          setDragging(false);
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+          setDragging(false);
+        }}
+        onDoubleClick={() => onMove(null)}
+        onKeyDown={(e) => {
+          const step = e.shiftKey ? BAR_NUDGE_PX * 4 : BAR_NUDGE_PX;
+          const move: Record<string, [number, number]> = {
+            ArrowLeft: [-step, 0],
+            ArrowRight: [step, 0],
+            ArrowUp: [0, -step],
+            ArrowDown: [0, step],
+          };
+          if (e.key === "Home") onMove(null);
+          else if (move[e.key]) place(x + move[e.key][0], y + move[e.key][1]);
+          else return;
+          e.preventDefault();
+        }}
+      >
+        <Icon name="grip" size={14} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
 /** A tile's caption: the state name, then its kind / device / warning badges. */
 function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
   const tile = p.tile;
@@ -673,15 +857,14 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
       </div>
       {!place.compact && (
         <div className="flex items-center gap-1 overflow-hidden">
-          <TileBadge>{tile.stateKind}</TileBadge>
+          {/* Short of room, the kind gives way first: the warnings matter more. */}
+          <TileBadge yields>{tile.stateKind}</TileBadge>
           <TileBadge>{tile.device}</TileBadge>
           {p.page ? (
             p.cropped && <TileBadge warn>tall</TileBadge>
           ) : tile.screens ? (
             <TileBadge warn={p.cropped}>
-              {p.cropped
-                ? `${p.screensShown} of ${tile.screens} screens`
-                : `${tile.screens} screens`}
+              {p.cropped ? `${p.screensShown}/${tile.screens} screens` : `${tile.screens} screens`}
             </TileBadge>
           ) : (
             p.cropped && <TileBadge warn>tall</TileBadge>
@@ -694,12 +877,27 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
   );
 }
 
-/** A tile's kind / device / warning tag, in the caption above it. */
-function TileBadge({ children, warn }: { children: string; warn?: boolean }) {
+/**
+ * A tile's kind / device / warning tag, in the caption above it. Its text keeps
+ * one size at any zoom while the caption narrows with the tile, so the tag that
+ * yields ends in an ellipsis rather than any being sliced off mid-letter.
+ */
+function TileBadge({
+  children,
+  warn,
+  yields,
+}: {
+  children: string;
+  warn?: boolean;
+  /** The one that gives up its room when there isn't enough; the others keep theirs. */
+  yields?: boolean;
+}) {
   return (
     <span
+      title={children}
       className={cx(
-        "rounded-[4px] border bg-chip px-1 font-mono text-[10px] leading-[15px] whitespace-nowrap",
+        "truncate rounded-[4px] border bg-chip px-1 font-mono text-[10px] leading-[15px] whitespace-nowrap",
+        yields ? "min-w-[2.5ch]" : "shrink-0",
         warn ? "border-amber-line text-amber" : "border-line-strong text-dim",
       )}
     >

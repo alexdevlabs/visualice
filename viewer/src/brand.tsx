@@ -2,7 +2,7 @@ import lockup from "../../assets/logo/visualice-lockup.svg";
 import lockupReversed from "../../assets/logo/visualice-lockup-reversed.svg";
 import mark from "../../assets/logo/visualice-mark.svg";
 import markReversed from "../../assets/logo/visualice-mark-reversed.svg";
-import loaderSvg from "../../assets/loader/visualice-loader-960.svg?raw";
+import loaderSvg from "../../assets/loader/visualice-loader-pages.svg?raw";
 import { cx } from "./ui";
 
 /**
@@ -57,7 +57,7 @@ const LOADER_DARK = svgUrl(loaderSvg.replaceAll(INK, INK_REVERSED));
 
 export function Loader() {
   return (
-    <div className="w-full max-w-[960px]" role="status" aria-label="Loading">
+    <div className="w-full max-w-[760px]" role="status" aria-label="Loading">
       <Themed light={LOADER_LIGHT} dark={LOADER_DARK} className="h-auto w-full" alt="" />
     </div>
   );

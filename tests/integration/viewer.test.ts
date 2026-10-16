@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { build } from "vite";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type Locator, type Page } from "playwright";
 import { ConfigSchema, type Config } from "../../src/shared/config";
 import { capturePipeline } from "../../src/crawl/orchestrator";
 import { exportRun } from "../../src/export";
@@ -138,7 +138,7 @@ async function open(
   const errors: string[] = [];
   p.on("pageerror", (e) => errors.push(e.message));
   p.on("console", (m) => m.type() === "error" && errors.push(m.text()));
-  p.on("requestfailed", (r) => errors.push(`failed: ${r.url()}`));
+  p.on("requestfailed", (r) => errors.push(`failed: ${r.url()} (${r.failure()?.errorText})`));
   p.on("response", (r) => r.status() >= 400 && errors.push(`${r.status()}: ${r.url()}`));
   await p.goto((opts.base ?? server.url) + query);
   // The page is blank until it knows whether to show the dashboard or a run; wait
@@ -225,6 +225,37 @@ describe("viewer", () => {
         await expect.poll(() => cards.count()).toBe(2);
         await p.goBack();
         await expect.poll(tiles, { timeout: 10_000 }).toBe(6);
+        expect(errors).toEqual([]);
+      } finally {
+        await p.context().close();
+      }
+    }));
+
+  it("deletes a site from the dashboard, after asking", () =>
+    withOtherSite(async () => {
+      const { page: p, errors } = await open();
+      try {
+        const cards = p.locator("a[data-site]");
+        await expect.poll(() => cards.count()).toBe(2);
+        expect(await p.getByText("Add a site").count()).toBe(0);
+        // The site being served can't go: `/data/` points into it.
+        expect(await p.getByRole("button", { name: "Delete localhost" }).isDisabled()).toBe(true);
+
+        const remove = p.getByRole("button", { name: "Delete other.test" });
+        await p.locator('a[data-site="other.test"]').hover();
+        await remove.click();
+        const ask = p.getByRole("alertdialog", { name: "Delete other.test?" });
+        await ask.getByRole("button", { name: "Cancel" }).click();
+        expect(await ask.count()).toBe(0);
+        await expect.poll(() => cards.count()).toBe(2);
+
+        await p.locator('a[data-site="other.test"]').hover();
+        await remove.click();
+        await ask.getByRole("button", { name: "Delete site" }).click();
+        // One site left, so the page is that site's run.
+        await expect.poll(() => p.locator("[data-tile-id]").count(), { timeout: 10_000 }).toBe(6);
+        const otherDir = path.join(out, "sites", "other.test");
+        expect(await fs.stat(otherDir).catch(() => null)).toBeNull();
         expect(errors).toEqual([]);
       } finally {
         await p.context().close();
@@ -327,6 +358,119 @@ describe("viewer", () => {
       // Stepping moves to the next shot and the URL follows.
       await details.getByRole("button", { name: "Next shot" }).click();
       await expect.poll(() => p.url()).not.toContain("tile=home__default__desktop");
+      expect(errors).toEqual([]);
+    } finally {
+      await p.context().close();
+    }
+  });
+
+  it("floats the shot's actions under a clicked shot", async () => {
+    const { page: p, errors } = await open("");
+    try {
+      const tile = p.locator('[data-tile-id="home__default__desktop"]');
+      const box = (await tile.boundingBox())!;
+      await p.mouse.click(box.x + box.width / 2, box.y + Math.min(box.height / 2, 10));
+      const bar = p.getByRole("toolbar", { name: "Shot actions" });
+      await bar.waitFor();
+      for (const name of ["Full image", "Download"])
+        await bar.getByRole("link", { name }).waitFor();
+
+      // The bar and the details panel offer the same actions, 1:1 (see ShotActions).
+      const actions = (root: Locator) =>
+        root
+          .locator("a, button")
+          .filter({ hasText: /^(Full screen|Live page|Copy link|Copied|Download|Full image)$/ })
+          .allInnerTexts();
+      const panel = p.getByRole("complementary", { name: "Shot details" });
+      const order = ["Full screen", "Live page", "Copy link", "Download", "Full image"];
+      expect(await actions(bar)).toEqual(order);
+      expect(await actions(panel)).toEqual(order);
+
+      // Its buttons work without the click reaching the canvas and dropping the selection.
+      await bar.getByRole("button", { name: /Copy link|Copied/ }).click();
+      expect(p.url()).toContain("tile=home__default__desktop");
+
+      // The bar sits under the shot once it has glided into focus.
+      await expect
+        .poll(async () => {
+          const shot = (await p.locator('[data-tile-id="home__default__desktop"]').boundingBox())!;
+          const b = (await bar.boundingBox())!;
+          return b.y > shot.y + shot.height - 1;
+        })
+        .toBe(true);
+
+      // Dragged by its grip, it stays where it's put, even for another shot;
+      // a double-click on the grip puts it back under the shot.
+      const grip = bar.getByRole("button", { name: /Move the bar/ });
+      const g = (await grip.boundingBox())!;
+      await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+      await p.mouse.down();
+      await p.mouse.move(g.x + 40, g.y - 200, { steps: 5 });
+      await p.mouse.up();
+      const moved = (await bar.boundingBox())!;
+      expect(moved.y).toBeLessThan(g.y - 150);
+      expect(p.url()).toContain("tile=home__default__desktop");
+      await p.reload();
+      await bar.waitFor();
+      expect(Math.abs((await bar.boundingBox())!.y - moved.y)).toBeLessThan(2);
+      await bar.getByRole("button", { name: /Move the bar/ }).dblclick();
+      await expect
+        .poll(async () => {
+          const shot = (await p.locator('[data-tile-id="home__default__desktop"]').boundingBox())!;
+          const b = (await bar.boundingBox())!;
+          return b.y > shot.y + shot.height - 1;
+        })
+        .toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await p.context().close();
+    }
+  });
+
+  it("opens a shot full screen under the viewer's own header and toolbar", async () => {
+    const { page: p, errors } = await open("?tile=home__default__desktop");
+    try {
+      const details = p.getByRole("complementary", { name: "Shot details" });
+      await details.getByRole("button", { name: "Full screen" }).click();
+      const full = p.getByRole("region", { name: "Full screen" });
+      await full.waitFor();
+      expect(p.url()).toContain("full=1");
+      // Only the body changes: the same header and toolbar, no sidebar or details.
+      await p.getByRole("radiogroup", { name: "Mode" }).waitFor();
+      expect(await p.getByRole("navigation", { name: "Routes" }).count()).toBe(0);
+      expect(await details.count()).toBe(0);
+      // In full screen, Devices picks one device instead of toggling several.
+      const devices = p.getByRole("radiogroup", { name: "Devices" });
+      expect(await devices.getByRole("radio").count()).toBe(2);
+      // The tab over the body says so, and offers the way out.
+      await full.getByRole("button", { name: "Exit Esc", exact: true }).waitFor();
+      // The bar under the shot starts with the way out.
+      await full
+        .getByRole("toolbar", { name: "Shot actions" })
+        .getByRole("button", { name: "Exit full screen" })
+        .waitFor();
+
+      // One device at a time: picking mobile shows the same state on mobile, alone,
+      // and leaves the viewer's own device filter as it was.
+      expect(await full.locator("[data-tile-id]").count()).toBe(1);
+      await devices.getByRole("radio", { name: /mobile/ }).click();
+      await expect.poll(() => p.url()).toContain("tile=home__default__mobile");
+      expect(await full.locator("[data-tile-id]").count()).toBe(1);
+      expect(
+        await devices.getByRole("radio", { name: /mobile/ }).getAttribute("aria-checked"),
+      ).toBe("true");
+      expect(p.url()).not.toContain("devices=");
+
+      // The arrows step through that device's shots.
+      await p.keyboard.press("ArrowRight");
+      await expect.poll(() => p.url()).not.toContain("tile=home__default__mobile");
+      expect(p.url()).toMatch(/tile=[^&]*__mobile/);
+
+      await p.keyboard.press("Escape");
+      await details.waitFor();
+      expect(p.url()).not.toContain("full=1");
+      // Back on the canvas, Devices toggles again.
+      await p.getByRole("group", { name: "Devices" }).getByRole("checkbox").first().waitFor();
       expect(errors).toEqual([]);
     } finally {
       await p.context().close();

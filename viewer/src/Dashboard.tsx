@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Logo } from "./brand";
 import { runLabel } from "./format";
-import { openingRun, runBase, runHref, type SiteEntry, type SiteList } from "./sites";
+import { deleteSite, openingRun, runBase, runHref, type SiteEntry, type SiteList } from "./sites";
 import { applyTheme, readTheme, type Theme } from "./theme";
 import { cx, Icon, IconButton, Segmented } from "./ui";
 
 const PREVIEWS_KEY = "visualice:previews";
-const ADD_COMMAND = "visualice crawl <url>";
 
 /** Previews show unless this browser hid them before — remembered like the theme. */
 function readPreviewsHidden(): boolean {
@@ -40,23 +39,20 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export function Dashboard({
   list,
   onOpen,
+  onDeleted,
 }: {
   list: SiteList;
   onOpen: (site: string, run: string) => void;
+  /** A site was deleted: fetch the list again. */
+  onDeleted: () => void;
 }) {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [hidden, setHidden] = useState(readPreviewsHidden);
   const [sort, setSort] = useState<Sort>("recent");
   const [query, setQuery] = useState("");
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => applyTheme(theme), [theme]);
   useEffect(() => writePreviewsHidden(hidden), [hidden]);
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
 
   const sites = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -73,13 +69,6 @@ export function Dashboard({
 
   const versions = list.sites.reduce((n, s) => n + s.runs.length, 0);
   const shots = list.sites.reduce((n, s) => n + (s.summary?.shots ?? 0), 0);
-
-  const copy = () => {
-    navigator.clipboard?.writeText(ADD_COMMAND).then(
-      () => setCopied(true),
-      () => {},
-    );
-  };
 
   return (
     <div className="h-full overflow-y-auto bg-app">
@@ -136,27 +125,15 @@ export function Dashboard({
                 { value: "name", label: "Name" },
               ]}
             />
-            <div className="flex h-8 items-center gap-2 rounded-lg border border-dashed border-line-strong bg-panel pr-1 pl-3">
-              <span className="text-[12px] text-dim">Add a site</span>
-              <code className="font-mono text-[12px] text-fg">{ADD_COMMAND}</code>
-              <button
-                type="button"
-                className="flex size-6 cursor-pointer items-center justify-center rounded-md border-0 bg-canvas text-dim hover:text-fg"
-                aria-label={copied ? "Copied" : "Copy command"}
-                title={copied ? "Copied" : "Copy command"}
-                onClick={copy}
-              >
-                <Icon name={copied ? "check" : "copy"} size={14} />
-              </button>
-            </div>
           </div>
         </div>
 
         {sites.length ? (
           <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-5 p-0">
             {sites.map((s) => (
-              <li key={s.key} className="flex">
+              <li key={s.key} className="group relative flex">
                 <SiteCard site={s} hidden={hidden} onOpen={onOpen} />
+                <DeleteSite site={s} serving={s.key === list.current.site} onDeleted={onDeleted} />
               </li>
             ))}
           </ul>
@@ -288,5 +265,107 @@ function SiteCard({
         )}
       </div>
     </a>
+  );
+}
+
+const DELETE_ERRORS = {
+  serving: "This site is the one being served. Serve another site to delete it.",
+  forbidden: "Sites can only be deleted from the machine running the server.",
+  failed: "The site couldn’t be deleted. Try again.",
+} as const;
+
+/**
+ * The card's delete button, and the confirmation over the card it opens: deleting
+ * removes every run of the site from disk, so it always asks first. Outside the
+ * card's link, which can't hold a button.
+ */
+function DeleteSite({
+  site,
+  serving,
+  onDeleted,
+}: {
+  site: SiteEntry;
+  serving: boolean;
+  onDeleted: () => void;
+}) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<keyof typeof DELETE_ERRORS | null>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const openRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (asking) cancelRef.current?.focus();
+  }, [asking]);
+
+  const close = () => {
+    setAsking(false);
+    setError(null);
+    openRef.current?.focus();
+  };
+
+  const confirm = async () => {
+    setBusy(true);
+    const result = await deleteSite(site.key);
+    setBusy(false);
+    if (result === "ok") onDeleted();
+    else setError(result);
+  };
+
+  const titleId = `delete-${site.key}`;
+  return asking ? (
+    <div
+      role="alertdialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+      onKeyDown={(e) => e.key === "Escape" && !busy && close()}
+      className="absolute inset-0 z-1 flex flex-col justify-end gap-3 rounded-xl border border-line-strong bg-panel/95 p-4 shadow-float backdrop-blur-sm"
+    >
+      <div className="flex flex-col gap-1">
+        <strong id={titleId} className="text-[15px] leading-5 text-fg">
+          Delete {site.key}?
+        </strong>
+        <span className="text-[12.5px] text-dim">
+          Its {plural(site.runs.length, "version")} and every shot in them are removed from disk.
+          This can’t be undone.
+        </span>
+      </div>
+      {error && (
+        <span role="alert" className="text-[12.5px] text-amber">
+          {DELETE_ERRORS[error]}
+        </span>
+      )}
+      <div className="flex justify-end gap-2">
+        <button
+          ref={cancelRef}
+          type="button"
+          disabled={busy}
+          onClick={close}
+          className="h-8 cursor-pointer rounded-lg border border-line bg-panel px-3 text-[12.5px] font-medium text-fg hover:border-line-strong"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy || !!error}
+          onClick={() => void confirm()}
+          className="h-8 cursor-pointer rounded-lg border-0 bg-danger px-3 text-[12.5px] font-semibold text-white hover:brightness-95 disabled:cursor-default disabled:opacity-50"
+        >
+          {busy ? "Deleting…" : "Delete site"}
+        </button>
+      </div>
+    </div>
+  ) : (
+    <button
+      ref={openRef}
+      type="button"
+      aria-label={`Delete ${site.key}`}
+      title={serving ? DELETE_ERRORS.serving : `Delete ${site.key}`}
+      disabled={serving}
+      onClick={() => setAsking(true)}
+      className="absolute top-2 right-2 z-1 flex size-8 cursor-pointer items-center justify-center rounded-lg border border-line-strong bg-chip p-0 text-dim opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-danger focus-visible:opacity-100 disabled:cursor-default disabled:hover:text-dim [@media(hover:none)]:opacity-100"
+    >
+      <Icon name="trash" size={15} />
+    </button>
   );
 }

@@ -19,6 +19,8 @@ export interface UrlState {
   kinds?: string[];
   /** How shots are drawn; absent is Screen mode. */
   mode?: "continuous" | "scroll";
+  /** The selected shot is open full screen. */
+  full?: boolean;
 }
 
 const LIST_SEPARATOR = ",";
@@ -43,6 +45,7 @@ export function readUrlState(search: string): UrlState {
     devices: list("devices"),
     kinds: list("kinds"),
     mode: modeOf(value("mode")),
+    full: p.get("full") === "1" || undefined,
   };
 }
 
@@ -60,6 +63,7 @@ export function serializeUrlState(state: UrlState): string {
   if (state.devices?.length) p.set("devices", state.devices.join(LIST_SEPARATOR));
   if (state.kinds?.length) p.set("kinds", state.kinds.join(LIST_SEPARATOR));
   if (state.mode) p.set("mode", state.mode);
+  if (state.full && state.tile) p.set("full", "1");
   if (state.tile) p.set("tile", state.tile);
   return p.toString();
 }

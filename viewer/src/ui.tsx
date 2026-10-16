@@ -70,6 +70,10 @@ const ICONS = {
   map: '<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="12" y="12" width="6" height="5" rx="1"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
   grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  collapse: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
+  trash: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5"/>',
+  grip: '<circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
 } as const;
 
@@ -245,6 +249,8 @@ export function DeviceToggle({
   on,
   onToggle,
   card,
+  single,
+  disabled,
 }: {
   name: string;
   width: number;
@@ -253,14 +259,19 @@ export function DeviceToggle({
   onToggle: () => void;
   /** The larger, two-line version the phone filter sheet uses. */
   card?: boolean;
+  /** One of the devices, not any of them (full screen): a radio, not a checkbox. */
+  single?: boolean;
+  /** Can't be picked, and why. */
+  disabled?: string;
 }) {
   return (
     <button
       type="button"
-      role="checkbox"
+      role={single ? "radio" : "checkbox"}
       aria-checked={on}
+      disabled={!!disabled}
       className={cx(
-        "flex items-center border text-[12.5px] font-medium whitespace-nowrap",
+        "flex items-center border text-[12.5px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-45",
         EASE,
         card ? "h-14 gap-2.5 rounded-[10px] px-3" : "h-[30px] gap-[7px] rounded-[7px] pr-2.5 pl-2",
         on
@@ -270,12 +281,13 @@ export function DeviceToggle({
             : "border-line bg-panel text-dim",
       )}
       onClick={onToggle}
-      title={`${name} · ${width}px wide`}
+      title={disabled ?? `${name} · ${width}px wide`}
     >
       {!card && (
         <span
           className={cx(
-            "flex size-3.5 items-center justify-center rounded-[4px] border",
+            "flex size-3.5 items-center justify-center border",
+            single ? "rounded-full" : "rounded-[4px]",
             on ? "border-accent bg-accent text-app" : "border-line-strong",
           )}
           aria-hidden="true"

@@ -29,6 +29,8 @@
   --color-accent-ink: #1e4fc2;
   --color-on-accent: #ffffff;
   --color-amber: #a86400;
+  /* Destructive actions; white text on it passes 4.5:1. */
+  --color-danger: #c4321a;
   --color-amber-soft: rgba(214, 140, 16, 0.12);
   --color-amber-line: rgba(168, 100, 0, 0.35);
   --color-on-amber: #ffffff;
@@ -129,6 +131,7 @@
   --color-accent-ink: #d6e4ff;
   --color-on-accent: #0b1220;
   --color-amber: #f5b94a;
+  --color-danger: #cf3b20;
   --color-amber-soft: rgba(245, 185, 74, 0.14);
   --color-amber-line: rgba(245, 185, 74, 0.4);
   --color-on-amber: #1a1206;

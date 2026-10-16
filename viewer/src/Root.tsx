@@ -45,5 +45,11 @@ export function Root() {
   // A blank page for the moment `sites.json` takes, not a loader that restarts.
   if (list === undefined) return <div className="h-full bg-app" />;
   if (!list || !several) return <App />;
-  return <Dashboard list={list} onOpen={open} />;
+  return (
+    <Dashboard
+      list={list}
+      onOpen={open}
+      onDeleted={() => void fetchSites().then((next) => setList(next))}
+    />
+  );
 }

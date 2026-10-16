@@ -73,6 +73,8 @@ export interface LayoutFilters {
   routeId?: string;
   /** Screen when absent. */
   mode?: ViewMode;
+  /** Draw every shot whole, however tall (full screen): no overview cap. */
+  uncapped?: boolean;
 }
 
 const CARD = 360; // world px for the widest device
@@ -103,13 +105,14 @@ type TileSize = Pick<Placed, "h" | "cropped" | "screenH" | "screensShown" | "pag
  * through the middle of one, so the canvas only ever shows whole screens: a half
  * screen reads as a broken capture. A continuous page is one document and is cut
  * wherever the cap falls; a scrolled one is always one screen tall.
- * `viewportH` is the device's window height in image px.
+ * `viewportH` is the device's window height in image px. `maxH` is the cap.
  */
 export function tileHeight(
   tile: ViewerTile,
   w: number,
   mode: ViewMode = "screen",
   viewportH?: number,
+  maxH = MAX_H,
 ): TileSize {
   const full = w * aspect(tile);
   if (mode !== "screen" && !tile.error) {
@@ -117,15 +120,15 @@ export function tileHeight(
     if (page && tile.width) {
       const k = w / tile.width;
       const h = (mode === "scroll" ? page.viewH : page.height) * k;
-      return { h: Math.min(h, MAX_H), cropped: h > MAX_H, page, k };
+      return { h: Math.min(h, maxH), cropped: h > maxH, page, k };
     }
   }
   const n = tile.screens;
-  if (!n || n < 2) return { h: Math.min(full, MAX_H), cropped: full > MAX_H };
+  if (!n || n < 2) return { h: Math.min(full, maxH), cropped: full > maxH };
   const screenH = full / n;
   const screensShown = Math.max(
     1,
-    Math.min(n, Math.floor((MAX_H + SCREEN_GAP) / (screenH + SCREEN_GAP))),
+    Math.min(n, Math.floor((maxH + SCREEN_GAP) / (screenH + SCREEN_GAP))),
   );
   return {
     h: screensShown * screenH + (screensShown - 1) * SCREEN_GAP,
@@ -209,7 +212,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   const size = (t: ViewerTile, w: number) => {
     const d = byName.get(t.device);
     const viewportH = d && t.width ? (d.height * t.width) / d.width : undefined;
-    return tileHeight(t, w, mode, viewportH);
+    return tileHeight(t, w, mode, viewportH, filters.uncapped ? Infinity : MAX_H);
   };
   /** The room a tile takes in its row: its own width, or its caption's if wider. */
   const slotW = (w: number) => Math.max(w, CAPTION_MIN_W);

@@ -85,6 +85,40 @@ export function isChild(dir: string, name: string): boolean {
   );
 }
 
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+/** Host names that can only mean this machine, as `URL#hostname` writes them. */
+const LOCAL_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Whether a request that changes files may go ahead: sent from this machine, and
+ * by a page this server served. The server listens on every interface so a phone
+ * on the LAN can browse runs, but only the person at the machine deletes them; and
+ * a page from some other origin can't either, whatever it sends.
+ */
+export function mayWrite(req: {
+  socket: { remoteAddress?: string };
+  headers: { origin?: string; host?: string };
+}): boolean {
+  if (!LOOPBACK.has(req.socket.remoteAddress ?? "")) return false;
+  // A loopback name, not just whatever the page sent: a site that rebinds its
+  // own name to 127.0.0.1 would otherwise send a matching Host and Origin.
+  const local = (host?: string) => {
+    try {
+      return !!host && LOCAL_NAMES.has(new URL(`http://${host}`).hostname);
+    } catch {
+      return false;
+    }
+  };
+  if (!local(req.headers.host)) return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+}
+
 /** Every site under `outRoot` and its runs, for the dashboard and the viewer's pickers. */
 export async function siteList(outRoot: string, current: SiteList["current"]): Promise<SiteList> {
   const sites = await Promise.all(
@@ -105,6 +139,7 @@ export async function siteList(outRoot: string, current: SiteList["current"]): P
  * - `/sites/<site>/runs/<id>/…`  any run of any site in the same output directory
  * - `/runs/<id>/…`               a run of the current site (older links name no site)
  * - `/sites.json`                the sites and their runs, so the viewer can offer pickers
+ * - `DELETE /sites/<site>`       delete a site and its runs (from this machine only)
  *
  * Exposing the other runs is what lets the viewer change site or version without
  * restarting the server. `outRoot` stays optional so a bare run directory still serves.
@@ -149,6 +184,23 @@ export async function serveViewer(opts: {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const pathname = decodeURIComponent(url.pathname);
+
+      if (req.method === "DELETE") {
+        // `/sites/<site>`: the site and every run of it, from the dashboard. Not the
+        // site being served: `/data/` would go on pointing into it.
+        const site = /^\/sites\/([^/]+)$/.exec(pathname)?.[1];
+        const dir = sitesDir && site && isChild(sitesDir, site) ? path.join(sitesDir, site) : "";
+        res.statusCode = !mayWrite(req)
+          ? 403
+          : !dir || !(await fs.stat(dir).catch(() => undefined))?.isDirectory()
+            ? 404
+            : site === current.site
+              ? 409
+              : 204;
+        if (res.statusCode === 204) await fs.rm(dir, { recursive: true, force: true });
+        res.end();
+        return;
+      }
 
       if (pathname === "/sites.json") {
         const list = outRoot ? await siteList(outRoot, current) : { current, sites: [] };

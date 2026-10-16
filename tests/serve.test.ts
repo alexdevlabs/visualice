@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { isChild, serveViewer } from "../src/serve";
+import { isChild, mayWrite, serveViewer } from "../src/serve";
 import type { StaticServer } from "../src/shared/file-serve";
 
 let tmp: string;
@@ -127,6 +127,25 @@ describe("serveViewer sites and runs", () => {
     await fs.rm(path.join(dir, "crawl-map.json"));
   });
 
+  it("deletes a site and its runs, but not the one it serves nor outside sites/", async () => {
+    const gone = path.join(root, "sites", "gone.test", "runs", OTHER);
+    await fs.mkdir(gone, { recursive: true });
+    await fs.writeFile(path.join(gone, "viewer-data.json"), "{}");
+    const del = (site: string, headers?: Record<string, string>) =>
+      fetch(`${withRuns.url}/sites/${site}`, { method: "DELETE", headers }).then((r) => r.status);
+
+    // A page from another origin can't, whatever it names.
+    expect(await del("gone.test", { origin: "https://evil.test" })).toBe(403);
+    expect(await del("example.com")).toBe(409);
+    expect(await del("..")).toBe(404);
+    expect(await del("secret.txt")).toBe(404);
+    expect(await del("nope.test")).toBe(404);
+    expect(await del("gone.test", { origin: withRuns.url })).toBe(204);
+    expect(await fs.stat(path.join(root, "sites", "gone.test")).catch(() => null)).toBeNull();
+    expect(await fs.readFile(path.join(root, "sites", "secret.txt"), "utf8")).toBe("TOP SECRET");
+    expect(await del("gone.test")).toBe(404);
+  });
+
   it("serves any site's runs, and the current site's under their old path too", async () => {
     const other = await fetch(`${withRuns.url}/sites/shop.test/runs/${OTHER}/viewer-data.json`);
     expect(await other.json()).toEqual({ other: true });
@@ -178,5 +197,29 @@ describe("isChild", () => {
     for (const bad of ["", ".", "..", "a/b", "../x", `..${path.sep}..`]) {
       expect(isChild(dir, bad)).toBe(false);
     }
+  });
+});
+
+describe("mayWrite", () => {
+  const req = (remoteAddress: string, origin?: string) => ({
+    socket: { remoteAddress },
+    headers: { origin, host: "localhost:4519" },
+  });
+
+  it("lets only this machine, and only its own pages, change files", () => {
+    expect(mayWrite(req("127.0.0.1"))).toBe(true);
+    expect(mayWrite(req("::1", "http://localhost:4519"))).toBe(true);
+    expect(mayWrite(req("::ffff:127.0.0.1", "http://localhost:4519"))).toBe(true);
+    expect(mayWrite(req("192.168.1.20"))).toBe(false);
+    expect(mayWrite(req("127.0.0.1", "http://localhost:9999"))).toBe(false);
+    expect(mayWrite(req("127.0.0.1", "null"))).toBe(false);
+    // DNS rebinding: a site's own name, pointed at this machine, matches itself.
+    const rebound = {
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { origin: "http://evil.test:4519", host: "evil.test:4519" },
+    };
+    expect(mayWrite(rebound)).toBe(false);
+    expect(mayWrite({ ...rebound, headers: { host: "127.0.0.1:4519" } })).toBe(true);
+    expect(mayWrite({ ...rebound, headers: { host: "[::1]:4519" } })).toBe(true);
   });
 });

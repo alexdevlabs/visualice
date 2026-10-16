@@ -289,6 +289,16 @@ describe("tileHeight — modes", () => {
     expect(tileHeight(single, 100, "scroll", 625).h).toBeCloseTo(62.5);
   });
 
+  it("cuts a tall shot at whole screens, unless asked for all of it (full screen)", () => {
+    const tall = tile("home", "default", "mobile", { width: 390, height: 6 * 844, screens: 6 });
+    const capped = tileHeight(tall, 360);
+    expect(capped.screensShown).toBeLessThan(6);
+    expect(capped.cropped).toBe(true);
+    const whole = tileHeight(tall, 360, "screen", undefined, Infinity);
+    expect(whole.screensShown).toBe(6);
+    expect(whole.cropped).toBe(false);
+  });
+
   it("keeps a failed capture's placeholder in every mode", () => {
     const failed = tile("home", "default", "desktop", { error: "boom", screens: 3 });
     expect(tileHeight(failed, 100, "scroll").page).toBeUndefined();

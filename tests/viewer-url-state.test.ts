@@ -25,6 +25,13 @@ describe("url state", () => {
     expect(query).toBe("q=x&tile=t1");
   });
 
+  it("keeps full screen only alongside the shot it shows", () => {
+    expect(serializeUrlState({ full: true, tile: "t1" })).toBe("full=1&tile=t1");
+    expect(serializeUrlState({ full: true })).toBe("");
+    expect(readUrlState("?full=1&tile=t1")).toMatchObject({ full: true, tile: "t1" });
+    expect(readUrlState("?full=0").full).toBeUndefined();
+  });
+
   it("ignores modes it doesn't know, including the retired layout values", () => {
     expect(readUrlState("?mode=all&route=home").mode).toBeUndefined();
     expect(readUrlState("?mode=screen").mode).toBeUndefined();

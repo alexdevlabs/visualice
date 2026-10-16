@@ -39,6 +39,22 @@ export async function fetchSites(): Promise<SiteList | null> {
   }
 }
 
+/**
+ * Delete a site and all its runs. The server refuses the site it's serving (409)
+ * and anyone not on this machine (403); the answer says which.
+ */
+export async function deleteSite(key: string): Promise<"ok" | "serving" | "forbidden" | "failed"> {
+  try {
+    const r = await fetch(`./sites/${encodeURIComponent(key)}`, { method: "DELETE" });
+    // Drained, even empty: Chromium reports a response left unread as aborted.
+    await r.text().catch(() => "");
+    if (r.ok) return "ok";
+    return r.status === 409 ? "serving" : r.status === 403 ? "forbidden" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
 /** The run a site opens on: its `latest`, else its newest. */
 export const openingRun = (s: SiteEntry): string | undefined => s.latest ?? s.runs[0];
 

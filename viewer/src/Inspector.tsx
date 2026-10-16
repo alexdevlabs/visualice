@@ -3,6 +3,7 @@ import { parseViolations, type ShotViolation } from "./load";
 import type { Device, ViewerData, ViewerTile } from "./types";
 import { runLabel } from "./format";
 import { routePath } from "./layout";
+import { ShotActions } from "./ShotActions";
 import { Caption, cx, deviceIcon, Icon, KindTag } from "./ui";
 
 interface Props {
@@ -20,23 +21,13 @@ interface Props {
   onClosed?: () => void;
   /** Where this shot sits in the canvas order, 1-based. */
   position?: { index: number; total: number };
+  /** Open this shot full screen. */
+  onFullScreen?: () => void;
 }
 
 /** The label/value grid the details (and the shortcuts popover) use. */
 export const DL = "grid gap-x-3 gap-y-2 text-[12.5px] [&>dd]:wrap-anywhere [&>dt]:text-dim";
 
-/** One of the four actions under the shot: an icon over its name. */
-const TILE_BASE =
-  "flex flex-col items-center gap-1.5 rounded-[10px] border-0 px-1 py-2.5 text-[11.5px] font-medium no-underline motion-safe:transition-[background-color,box-shadow,color] motion-safe:duration-120 active:translate-y-px";
-const TILE = cx(
-  TILE_BASE,
-  "bg-app text-fg hover:bg-canvas hover:text-fg hover:shadow-[inset_0_0_0_1px_var(--color-line-strong)]",
-);
-/** The first action, the one most often wanted, in the accent. */
-const TILE_MAIN = cx(
-  TILE_BASE,
-  "bg-accent-soft text-accent hover:text-accent hover:shadow-[inset_0_0_0_1px_var(--color-accent-line)]",
-);
 /** A fact about the shot, as a label and value in one chip. */
 const FACT =
   "flex min-w-0 items-center gap-1.5 rounded-full bg-app px-2.5 py-1 text-[12px] text-fg";
@@ -60,8 +51,8 @@ export function Inspector({
   closing,
   onClosed,
   position,
+  onFullScreen,
 }: Props) {
-  const [copied, setCopied] = useState(false);
   const device: Device | undefined = data.devices.find((d) => d.name === tile.device);
 
   // The same state on each device.
@@ -72,16 +63,6 @@ export function Inspector({
     }
     return byDevice;
   }, [data, tile]);
-
-  const copyLink = () => {
-    navigator.clipboard?.writeText(location.href).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1400);
-      },
-      () => {},
-    );
-  };
 
   // The elements behind the count live in the shot's sidecar; fetch it only when
   // there is something to list.
@@ -100,9 +81,6 @@ export function Inspector({
     };
   }, [sidecar]);
 
-  const fileName = tile.full
-    ? `${tile.routePath.replace(/[^a-zA-Z0-9._-]+/g, "-")}--${tile.stateId}--${tile.device}.${tile.full.split(".").pop()}`
-    : undefined;
   const navSize = phone ? 40 : 32;
 
   return (
@@ -286,34 +264,14 @@ export function Inspector({
         ) : null}
       </div>
       {/* Pinned to the foot, where the hand ends up after reading. */}
-      <div className="grid shrink-0 grid-cols-4 gap-1.5 border-t border-line px-4 py-3.5">
-        {tile.full && (
-          <a className={TILE_MAIN} href={base + tile.full} target="_blank" rel="noreferrer">
-            <Icon name="image" />
-            <span>Full image</span>
-          </a>
-        )}
-        {tile.full && (
-          <a className={TILE} href={base + tile.full} download={fileName}>
-            <Icon name="download" />
-            <span>Download</span>
-          </a>
-        )}
-        {data.site.baseUrl && (
-          <a
-            className={TILE}
-            href={new URL(tile.routeUrl, data.site.baseUrl).href}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <Icon name="ext" />
-            <span>Live page</span>
-          </a>
-        )}
-        <button type="button" className={TILE} onClick={copyLink}>
-          <Icon name={copied ? "check" : "link"} />
-          <span>{copied ? "Copied" : "Copy link"}</span>
-        </button>
+      <div className="grid shrink-0 grid-cols-5 gap-1.5 border-t border-line px-4 py-3.5">
+        <ShotActions
+          data={data}
+          tile={tile}
+          base={base}
+          variant="tiles"
+          onFullScreen={onFullScreen}
+        />
       </div>
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12px] text-dim">
         <span>Captured {runLabel(data.site.runId)} UTC</span>

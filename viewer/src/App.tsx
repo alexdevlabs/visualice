@@ -8,10 +8,12 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import type { ViewerData } from "./types";
+import type { ViewerData, ViewerTile } from "./types";
 import { computeLayout, routePath, type ViewMode } from "./layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
 import { DL, Inspector } from "./Inspector";
+import { ShotActions } from "./ShotActions";
+import { FullScreen } from "./FullScreen";
 import { VirtualList } from "./VirtualList";
 import { Dropdown } from "./Dropdown";
 import { fetchSites, runBase, type SiteList } from "./sites";
@@ -45,8 +47,8 @@ import {
 
 /** Past this many tiles the canvas is capped, with a control to lift it. */
 const DEFAULT_LIMIT = 2500;
-/** The shortest time the boot loader shows, so its walk reads as intentional rather than a flicker. */
-const MIN_LOADER_MS = 1000;
+/** The shortest time the boot loader shows: one full pass of its crawl over the pages (2 s in the SVG). */
+const MIN_LOADER_MS = 2000;
 
 /** Must match the route rows' `h-14` below — the virtual list pins rows to it. */
 const SIDEBAR_ROW_H = 56;
@@ -111,6 +113,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
   const [limit, setLimit] = useState<number | undefined>(DEFAULT_LIMIT);
   const [routeId, setRouteId] = useState<string | null>(initial.route ?? null);
   const [mode, setMode] = useState<ViewMode>(initial.mode ?? "screen");
+  const [full, setFull] = useState(!!initial.full);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -233,9 +236,15 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           : undefined,
       kinds: kindFilter.size ? [...kindFilter] : undefined,
       mode: mode === "screen" ? undefined : mode,
+      full: full || undefined,
     };
     writeUrlState(state);
-  }, [data, query, selectedId, site, run, routeId, deviceFilter, kindFilter, mode]);
+  }, [data, query, selectedId, site, run, routeId, deviceFilter, kindFilter, mode, full]);
+
+  // Full screen is about the selected shot; without one there's nothing to show.
+  const isFull = full && !!selected;
+  const openFull = useCallback(() => setFull(true), []);
+  const exitFull = useCallback(() => setFull(false), []);
 
   const onScaleChange = useCallback((s: number) => setScale(s), []);
 
@@ -266,6 +275,36 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
     [layout, selectedId],
   );
 
+  // The selected state on each device it was captured on: full screen's device picker.
+  const sameState = useMemo(() => {
+    const byDevice = new Map<string, ViewerTile>();
+    for (const t of data?.tiles ?? []) {
+      if (selected && t.routeId === selected.routeId && t.stateId === selected.stateId)
+        byDevice.set(t.device, t);
+    }
+    return byDevice;
+  }, [data, selected]);
+
+  // Full screen steps through the shots of the device on screen, in canvas order.
+  const devicePlaced = useMemo(
+    () =>
+      layout && selected ? layout.placed.filter((p) => p.tile.device === selected.device) : [],
+    [layout, selected],
+  );
+  const devicePosition = useMemo(() => {
+    const i = devicePlaced.findIndex((p) => p.tile.id === selectedId);
+    return i >= 0 ? { index: i + 1, total: devicePlaced.length } : undefined;
+  }, [devicePlaced, selectedId]);
+  const stepDevice = useCallback(
+    (dir: -1 | 1) => {
+      if (!devicePlaced.length) return;
+      const i = devicePlaced.findIndex((p) => p.tile.id === selectedId);
+      setSelectedId(devicePlaced[(i + dir + devicePlaced.length) % devicePlaced.length].tile.id);
+    },
+    [devicePlaced, selectedId],
+  );
+
+  const hasSelection = !!selected;
   // Shortcuts that work anywhere on the page. The canvas handles its own keys
   // (pan, zoom, shift+arrows) while it has focus.
   useEffect(() => {
@@ -283,6 +322,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
       if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "?") setShortcutsOpen((v) => !v);
       else if (e.key === "m") toggleMinimap();
+      else if (e.key === "f" && hasSelection) setFull(true);
       else if (e.key === "/") {
         e.preventDefault();
         setSearchOpen(true);
@@ -291,7 +331,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleMinimap]);
+  }, [toggleMinimap, hasSelection]);
 
   if (error) {
     return (
@@ -351,18 +391,31 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   // ---- pieces shared by the desktop toolbar and the phone sheet
 
-  const deviceToggles = (card: boolean) =>
-    data.devices.map((d) => (
-      <DeviceToggle
-        key={d.name}
-        card={card}
-        name={d.name}
-        width={d.width}
-        icon={deviceIcon(d)}
-        on={deviceFilter.has(d.name)}
-        onToggle={() => setDeviceFilter((prev) => toggle(prev, d.name, true))}
-      />
-    ));
+  /**
+   * Toggles for every device: which ones the canvas shows, or with `only` (full
+   * screen), the one device the selected state is seen on, picked from its shots.
+   */
+  const deviceToggles = (card: boolean, only?: Map<string, ViewerTile>) =>
+    data.devices.map((d) => {
+      const shot = only?.get(d.name);
+      return (
+        <DeviceToggle
+          key={d.name}
+          card={card}
+          name={d.name}
+          width={d.width}
+          icon={deviceIcon(d)}
+          single={!!only}
+          disabled={only && !shot ? `Not captured on ${d.name}` : undefined}
+          on={only ? d.name === selected?.device : deviceFilter.has(d.name)}
+          onToggle={() =>
+            only
+              ? shot && setSelectedId(shot.id)
+              : setDeviceFilter((prev) => toggle(prev, d.name, true))
+          }
+        />
+      );
+    });
 
   const modeSwitch = (fill?: boolean) => (
     <Segmented<ViewMode>
@@ -605,17 +658,26 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   const TOOLBAR =
     "flex min-h-12 shrink-0 flex-wrap items-center gap-x-[18px] gap-y-2 border-b border-line bg-app px-4 py-2";
-  const toolbar = isPhone ? null : (
-    <div className={TOOLBAR}>
+  /**
+   * Mode and Devices, the toolbar's start. In full screen Devices picks the one
+   * device the shot is seen on (`only`: the selected state on each) instead.
+   */
+  const viewControls = (only?: Map<string, ViewerTile>) => (
+    <>
       <div className={TOOLBAR_GROUP}>
         <Caption className="mr-0.5">Mode</Caption>
         {modeSwitch()}
       </div>
       <span className={DIVIDER} />
-      <div className={TOOLBAR_GROUP} role="group" aria-label="Devices">
+      <div className={TOOLBAR_GROUP} role={only ? "radiogroup" : "group"} aria-label="Devices">
         <Caption className="mr-0.5">Devices</Caption>
-        {deviceToggles(false)}
+        {deviceToggles(false, only)}
       </div>
+    </>
+  );
+  const toolbar = isPhone ? null : (
+    <div className={TOOLBAR}>
+      {viewControls(isFull ? sameState : undefined)}
       {kinds.length > 1 && (
         <>
           <span className={DIVIDER} />
@@ -881,6 +943,18 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
             base={base}
             showMinimap={!isPhone && minimapOn}
             mode={mode}
+            selectionBar={
+              !isPhone &&
+              selected && (
+                <ShotActions
+                  data={data}
+                  tile={selected}
+                  base={base}
+                  variant="bar"
+                  onFullScreen={openFull}
+                />
+              )
+            }
           />
           {canvasOverlays}
         </div>
@@ -895,6 +969,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           phone={isPhone}
           closing={!selected}
           onClosed={() => setDetailed(null)}
+          onFullScreen={openFull}
           position={
             detailedIndex >= 0
               ? { index: detailedIndex + 1, total: layout.placed.length }
@@ -1033,6 +1108,10 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
         </dt>
         <dd>Step between shots</dd>
         <dt>
+          <Kbd>F</Kbd>
+        </dt>
+        <dd>Selected shot full screen</dd>
+        <dt>
           <Kbd>Esc</Kbd>
         </dt>
         <dd>Clear the selection</dd>
@@ -1064,7 +1143,22 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           </div>
         )}
         {toolbar}
-        {body}
+        {/* Full screen keeps the header and toolbar; only the body changes. */}
+        {isFull && selected ? (
+          <FullScreen
+            data={data}
+            tile={selected}
+            base={base}
+            mode={mode}
+            sameState={sameState}
+            onSelect={setSelectedId}
+            onStep={stepDevice}
+            onExit={exitFull}
+            position={devicePosition}
+          />
+        ) : (
+          body
+        )}
         {sheet}
         {shortcuts}
       </div>
