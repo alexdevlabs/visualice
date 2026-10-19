@@ -14,7 +14,8 @@ import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SC
 import type { Transform } from "./lod";
 import { Minimap } from "./Minimap";
 import { nextTileId } from "./nav";
-import { cx, Icon, RouteBadge } from "./ui";
+import type { Device } from "./types";
+import { cx, deviceIcon, Icon, RouteBadge } from "./ui";
 
 export interface CanvasHandle {
   fit: () => void;
@@ -36,6 +37,8 @@ const FOCUS_PAD = 0.86;
 /** A long page, fitted by its width rather than whole; the gap above it then. */
 const LONG_PAGE = 3;
 const FOCUS_TOP = 48;
+/** Solo, the room above the shots: full screen's tab, then each shot's device caption. */
+const SOLO_TOP = 64;
 
 /**
  * The selected tile's ring, drawn in screen pixels over the canvas (see the
@@ -87,8 +90,12 @@ interface Props {
   showMinimap?: boolean;
   /** Floats under the selected shot, following it as the view moves. */
   selectionBar?: ReactNode;
-  /** One shot on its own (full screen): no selection ring, no caption over it. */
+  /**
+   * One shot on its own (full screen): no selection ring, and over each shot only
+   * its device, from `devices`, as full screen's tab names the rest.
+   */
   solo?: boolean;
+  devices?: Device[];
   mode?: ViewMode;
 }
 
@@ -103,6 +110,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     mode = "screen",
     selectionBar,
     solo,
+    devices,
   },
   ref,
 ) {
@@ -211,16 +219,19 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
    * The view that shows one shot: the whole of it, or for a long page, its width
    * from the top down — fitting all of that would shrink it to a sliver.
    */
-  const focusOn = (p: Placed): Transform => {
+  const focusOn = (p: Pick<Placed, "x" | "y" | "w" | "h">): Transform => {
     // With the bar under the shot, the shot takes the room above it.
-    const h = Math.max(1, vp.h - (selectionBar ? BAR_ROOM_PX : 0));
+    const top = solo ? SOLO_TOP : 0;
+    const h = Math.max(1, vp.h - top - (selectionBar ? BAR_ROOM_PX : 0));
     const fitW = (vp.w * FOCUS_PAD) / p.w;
     const fitH = (h * FOCUS_PAD) / p.h;
     const long = p.h / p.w > (LONG_PAGE * h) / vp.w;
     const scale = clamp(long ? Math.min(fitW, 1) : Math.min(fitW, fitH), MIN_SCALE, MAX_SCALE);
     const x = vp.w / 2 - (p.x + p.w / 2) * scale;
     const y =
-      p.h * scale <= h * FOCUS_PAD ? h / 2 - (p.y + p.h / 2) * scale : FOCUS_TOP - p.y * scale;
+      p.h * scale <= h * FOCUS_PAD
+        ? top + h / 2 - (p.y + p.h / 2) * scale
+        : (solo ? SOLO_TOP : FOCUS_TOP) - p.y * scale;
     return { scale, x, y };
   };
 
@@ -269,7 +280,13 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     if (focusedKey.current === key && !following.current) return;
     focusedKey.current = key;
     following.current = true;
-    glideTo(focusOn(selectedPlace));
+    // Solo, the shot sits beside its state on the other devices shown: frame them all.
+    const b = layout.bounds;
+    glideTo(
+      focusOn(
+        solo ? { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY } : selectedPlace,
+      ),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlace, vp.w, vp.h]);
 
@@ -436,7 +453,7 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   return (
     <div
       ref={elRef}
-      className="absolute inset-0 cursor-grab touch-none overflow-hidden bg-canvas bg-[radial-gradient(var(--color-grid-dot)_1px,transparent_1px)] bg-size-[22px_22px] focus-visible:-outline-offset-2 active:cursor-grabbing"
+      className="absolute inset-0 cursor-grab touch-none overflow-hidden select-none bg-canvas bg-[radial-gradient(var(--color-grid-dot)_1px,transparent_1px)] bg-size-[22px_22px] focus-visible:-outline-offset-2 active:cursor-grabbing"
       role="application"
       aria-label="Screenshot canvas — arrow keys pan, shift+arrows move between shots, plus and minus zoom, 0 fits all"
       tabIndex={0}
@@ -573,6 +590,15 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
             const place = captionPlace(p, t, mode);
             return place ? <TileCaption key={p.tile.id} p={p} place={place} /> : null;
           })}
+        {solo &&
+          visible.map((p) => (
+            <DeviceCaption
+              key={p.tile.id}
+              p={p}
+              t={t}
+              device={devices?.find((d) => d.name === p.tile.device)}
+            />
+          ))}
       </div>
       {selectionBar && selectedPlace && (
         <SelectionBar p={selectedPlace} t={t} vp={vp} at={barAt} onMove={moveBar}>
@@ -873,6 +899,23 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
           {tile.a11y ? <TileBadge warn>{`a11y ${tile.a11y}`}</TileBadge> : null}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Solo, a shot's caption: its device and width, left-aligned over it. */
+function DeviceCaption({ p, t, device }: { p: Placed; t: Transform; device?: Device }) {
+  return (
+    <div
+      data-caption-for={p.tile.id}
+      className="absolute flex -translate-y-full items-center gap-1.5 pb-2 text-[12.5px] font-medium whitespace-nowrap text-fg"
+      style={{ left: p.x * t.scale + t.x, top: p.y * t.scale + t.y }}
+    >
+      <span className="flex text-accent">
+        <Icon name={deviceIcon(device)} size={14} />
+      </span>
+      {p.tile.device}
+      {device && <span className="font-mono text-[11px] text-dim">{device.width}</span>}
     </div>
   );
 }

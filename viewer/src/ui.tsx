@@ -249,8 +249,6 @@ export function DeviceToggle({
   on,
   onToggle,
   card,
-  single,
-  disabled,
 }: {
   name: string;
   width: number;
@@ -259,19 +257,14 @@ export function DeviceToggle({
   onToggle: () => void;
   /** The larger, two-line version the phone filter sheet uses. */
   card?: boolean;
-  /** One of the devices, not any of them (full screen): a radio, not a checkbox. */
-  single?: boolean;
-  /** Can't be picked, and why. */
-  disabled?: string;
 }) {
   return (
     <button
       type="button"
-      role={single ? "radio" : "checkbox"}
+      role="checkbox"
       aria-checked={on}
-      disabled={!!disabled}
       className={cx(
-        "flex items-center border text-[12.5px] font-medium whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-45",
+        "flex items-center border text-[12.5px] font-medium whitespace-nowrap",
         EASE,
         card ? "h-14 gap-2.5 rounded-[10px] px-3" : "h-[30px] gap-[7px] rounded-[7px] pr-2.5 pl-2",
         on
@@ -281,13 +274,12 @@ export function DeviceToggle({
             : "border-line bg-panel text-dim",
       )}
       onClick={onToggle}
-      title={disabled ?? `${name} · ${width}px wide`}
+      title={`${name} · ${width}px wide`}
     >
       {!card && (
         <span
           className={cx(
-            "flex size-3.5 items-center justify-center border",
-            single ? "rounded-full" : "rounded-[4px]",
+            "flex size-3.5 items-center justify-center rounded-[4px] border",
             on ? "border-accent bg-accent text-app" : "border-line-strong",
           )}
           aria-hidden="true"

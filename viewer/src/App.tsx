@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import type { ViewerData, ViewerTile } from "./types";
+import type { ViewerData } from "./types";
 import { computeLayout, routePath, type ViewMode } from "./layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
 import { DL, Inspector } from "./Inspector";
@@ -275,15 +275,45 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
     [layout, selectedId],
   );
 
-  // The selected state on each device it was captured on: full screen's device picker.
-  const sameState = useMemo(() => {
-    const byDevice = new Map<string, ViewerTile>();
-    for (const t of data?.tiles ?? []) {
-      if (selected && t.routeId === selected.routeId && t.stateId === selected.stateId)
-        byDevice.set(t.device, t);
-    }
-    return byDevice;
-  }, [data, selected]);
+  // The selected state on each device it was captured on, in device order.
+  const sameState = useMemo(
+    () =>
+      selected
+        ? (data?.devices ?? []).flatMap(
+            (d) =>
+              data?.tiles.find(
+                (t) =>
+                  t.device === d.name &&
+                  t.routeId === selected.routeId &&
+                  t.stateId === selected.stateId,
+              ) ?? [],
+          )
+        : [],
+    [data, selected],
+  );
+  // Full screen shows that state on every device Devices has on — or, when none
+  // of those captured it, on the selected shot's own device.
+  const fullShown = useMemo(() => {
+    const on = sameState.filter((t) => deviceFilter.has(t.device));
+    return on.length ? on : selected ? [selected] : [];
+  }, [sameState, deviceFilter, selected]);
+  // Turning the selected shot's device off moves the selection to one still shown.
+  useEffect(() => {
+    if (isFull && selected && !fullShown.includes(selected)) setSelectedId(fullShown[0].id);
+  }, [isFull, selected, fullShown]);
+  // D in full screen: the next shown device, or with only one shown, the state
+  // on the next device that captured it, in its place.
+  const cycleDevice = useCallback(
+    (dir: -1 | 1) => {
+      if (!selected) return;
+      const pool = fullShown.length > 1 ? fullShown : sameState;
+      const next = pool[(pool.indexOf(selected) + dir + pool.length) % pool.length];
+      if (!next || next === selected) return;
+      if (fullShown.length <= 1) setDeviceFilter(new Set([next.device]));
+      setSelectedId(next.id);
+    },
+    [selected, fullShown, sameState],
+  );
 
   // Full screen steps through the shots of the device on screen, in canvas order.
   const devicePlaced = useMemo(
@@ -391,31 +421,19 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   // ---- pieces shared by the desktop toolbar and the phone sheet
 
-  /**
-   * Toggles for every device: which ones the canvas shows, or with `only` (full
-   * screen), the one device the selected state is seen on, picked from its shots.
-   */
-  const deviceToggles = (card: boolean, only?: Map<string, ViewerTile>) =>
-    data.devices.map((d) => {
-      const shot = only?.get(d.name);
-      return (
-        <DeviceToggle
-          key={d.name}
-          card={card}
-          name={d.name}
-          width={d.width}
-          icon={deviceIcon(d)}
-          single={!!only}
-          disabled={only && !shot ? `Not captured on ${d.name}` : undefined}
-          on={only ? d.name === selected?.device : deviceFilter.has(d.name)}
-          onToggle={() =>
-            only
-              ? shot && setSelectedId(shot.id)
-              : setDeviceFilter((prev) => toggle(prev, d.name, true))
-          }
-        />
-      );
-    });
+  /** Toggles for every device: which ones the canvas shows, full screen too. */
+  const deviceToggles = (card: boolean) =>
+    data.devices.map((d) => (
+      <DeviceToggle
+        key={d.name}
+        card={card}
+        name={d.name}
+        width={d.width}
+        icon={deviceIcon(d)}
+        on={deviceFilter.has(d.name)}
+        onToggle={() => setDeviceFilter((prev) => toggle(prev, d.name, true))}
+      />
+    ));
 
   const modeSwitch = (fill?: boolean) => (
     <Segmented<ViewMode>
@@ -658,26 +676,23 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   const TOOLBAR =
     "flex min-h-12 shrink-0 flex-wrap items-center gap-x-[18px] gap-y-2 border-b border-line bg-app px-4 py-2";
-  /**
-   * Mode and Devices, the toolbar's start. In full screen Devices picks the one
-   * device the shot is seen on (`only`: the selected state on each) instead.
-   */
-  const viewControls = (only?: Map<string, ViewerTile>) => (
+  /** Mode and Devices, the toolbar's start, the same on the canvas and full screen. */
+  const viewControls = () => (
     <>
       <div className={TOOLBAR_GROUP}>
         <Caption className="mr-0.5">Mode</Caption>
         {modeSwitch()}
       </div>
       <span className={DIVIDER} />
-      <div className={TOOLBAR_GROUP} role={only ? "radiogroup" : "group"} aria-label="Devices">
+      <div className={TOOLBAR_GROUP} role="group" aria-label="Devices">
         <Caption className="mr-0.5">Devices</Caption>
-        {deviceToggles(false, only)}
+        {deviceToggles(false)}
       </div>
     </>
   );
   const toolbar = isPhone ? null : (
     <div className={TOOLBAR}>
-      {viewControls(isFull ? sameState : undefined)}
+      {viewControls()}
       {kinds.length > 1 && (
         <>
           <span className={DIVIDER} />
@@ -1148,10 +1163,11 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           <FullScreen
             data={data}
             tile={selected}
+            shown={fullShown}
             base={base}
             mode={mode}
-            sameState={sameState}
             onSelect={setSelectedId}
+            onCycleDevice={cycleDevice}
             onStep={stepDevice}
             onExit={exitFull}
             position={devicePosition}

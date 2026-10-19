@@ -7,13 +7,16 @@ import { Icon, IconButton, Kbd } from "./ui";
 
 interface Props {
   data: ViewerData;
+  /** The selected shot, one of `shown`. */
   tile: ViewerTile;
+  /** Its state on each device Devices has on, side by side. */
+  shown: ViewerTile[];
   /** URL prefix for the run's files. */
   base: string;
   mode: ViewMode;
-  /** The shot's state on each device it was captured on, for the D key. */
-  sameState: Map<string, ViewerTile>;
   onSelect: (id: string) => void;
+  /** The D key: on to the shot's state on the next device. */
+  onCycleDevice: (dir: -1 | 1) => void;
   /** Step through this device's shots in canvas order. */
   onStep: (dir: -1 | 1) => void;
   onExit: () => void;
@@ -28,16 +31,18 @@ function isTyping(e: KeyboardEvent): boolean {
 
 /**
  * One shot, full screen: the body under the viewer's own header and toolbar —
- * there, Devices picks the one device it's seen on. The canvas holds nothing but
- * that shot, framed in the accent, with a tab saying where you are and the way out.
+ * there, Devices picks which devices it's seen on, as on the canvas. The canvas
+ * holds nothing but that state on those devices, framed in the accent, with a tab
+ * saying where you are and the way out.
  */
 export function FullScreen({
   data,
   tile,
+  shown,
   base,
   mode,
-  sameState,
   onSelect,
+  onCycleDevice,
   onStep,
   onExit,
   position,
@@ -45,27 +50,26 @@ export function FullScreen({
   const layout = useMemo(
     () =>
       computeLayout(
-        { ...data, tiles: [tile] },
-        { devices: new Set([tile.device]), routeId: tile.routeId, mode, uncapped: true },
+        { ...data, tiles: shown },
+        {
+          devices: new Set(shown.map((t) => t.device)),
+          routeId: tile.routeId,
+          mode,
+          uncapped: true,
+        },
       ),
-    [data, tile, mode],
+    [data, shown, tile.routeId, mode],
   );
 
   // Ahead of the canvas's own keys: the arrows step here rather than pan.
   useEffect(() => {
-    const cycle = (dir: -1 | 1) => {
-      const have = data.devices.flatMap((d) => sameState.get(d.name) ?? []);
-      const i = have.indexOf(tile);
-      const next = have[(i + dir + have.length) % have.length];
-      if (next && next !== tile) onSelect(next.id);
-    };
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
       let handled = true;
       if (e.key === "Escape" || e.key === "f") onExit();
       else if (e.key === "ArrowLeft") onStep(-1);
       else if (e.key === "ArrowRight") onStep(1);
-      else if (e.key.toLowerCase() === "d") cycle(e.shiftKey ? -1 : 1);
+      else if (e.key.toLowerCase() === "d") onCycleDevice(e.shiftKey ? -1 : 1);
       else handled = false;
       if (handled) {
         e.preventDefault();
@@ -74,7 +78,7 @@ export function FullScreen({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [data, sameState, tile, onSelect, onStep, onExit]);
+  }, [onCycleDevice, onStep, onExit]);
 
   return (
     <div className="relative min-h-0 flex-auto" role="region" aria-label="Full screen">
@@ -86,6 +90,7 @@ export function FullScreen({
         showMinimap={false}
         mode={mode}
         solo
+        devices={data.devices}
         selectionBar={
           <ShotActions
             data={data}
@@ -105,10 +110,13 @@ export function FullScreen({
       <div className="absolute top-0 left-1/2 z-6 flex h-[34px] max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-2.5 rounded-b-xl bg-accent pr-1.5 pl-3.5 text-[12.5px] whitespace-nowrap text-on-accent">
         <Icon name="expand" size={15} />
         <span className="font-semibold">Full screen</span>
-        <span className="min-w-0 truncate opacity-85">
-          · {tile.stateLabel} · {tile.device}
-          {position && ` · ${position.index} of ${position.total}`}
-        </span>
+        <span className="h-4 w-px shrink-0 bg-on-accent/35" aria-hidden="true" />
+        <span className="min-w-0 truncate font-medium">{tile.stateLabel}</span>
+        {position && (
+          <span className="flex h-[22px] shrink-0 items-center rounded-full bg-on-accent/18 px-2 font-mono text-[11.5px]">
+            {position.index} of {position.total}
+          </span>
+        )}
         <button
           type="button"
           onClick={onExit}

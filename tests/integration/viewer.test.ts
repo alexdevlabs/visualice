@@ -439,9 +439,9 @@ describe("viewer", () => {
       await p.getByRole("radiogroup", { name: "Mode" }).waitFor();
       expect(await p.getByRole("navigation", { name: "Routes" }).count()).toBe(0);
       expect(await details.count()).toBe(0);
-      // In full screen, Devices picks one device instead of toggling several.
-      const devices = p.getByRole("radiogroup", { name: "Devices" });
-      expect(await devices.getByRole("radio").count()).toBe(2);
+      // Devices is the canvas's own: checkboxes, both devices on.
+      const devices = p.getByRole("group", { name: "Devices" });
+      expect(await devices.getByRole("checkbox").count()).toBe(2);
       // The tab over the body says so, and offers the way out.
       await full.getByRole("button", { name: "Exit Esc", exact: true }).waitFor();
       // The bar under the shot starts with the way out.
@@ -450,16 +450,13 @@ describe("viewer", () => {
         .getByRole("button", { name: "Exit full screen" })
         .waitFor();
 
-      // One device at a time: picking mobile shows the same state on mobile, alone,
-      // and leaves the viewer's own device filter as it was.
-      expect(await full.locator("[data-tile-id]").count()).toBe(1);
-      await devices.getByRole("radio", { name: /mobile/ }).click();
+      // The state on every device that's on, side by side; turning the selected
+      // shot's device off leaves it on the other one, alone.
+      await expect.poll(() => full.locator("[data-tile-id]").count()).toBe(2);
+      await devices.getByRole("checkbox", { name: /desktop/ }).click();
       await expect.poll(() => p.url()).toContain("tile=home__default__mobile");
       expect(await full.locator("[data-tile-id]").count()).toBe(1);
-      expect(
-        await devices.getByRole("radio", { name: /mobile/ }).getAttribute("aria-checked"),
-      ).toBe("true");
-      expect(p.url()).not.toContain("devices=");
+      expect(p.url()).toContain("devices=mobile");
 
       // The arrows step through that device's shots.
       await p.keyboard.press("ArrowRight");
@@ -469,8 +466,6 @@ describe("viewer", () => {
       await p.keyboard.press("Escape");
       await details.waitFor();
       expect(p.url()).not.toContain("full=1");
-      // Back on the canvas, Devices toggles again.
-      await p.getByRole("group", { name: "Devices" }).getByRole("checkbox").first().waitFor();
       expect(errors).toEqual([]);
     } finally {
       await p.context().close();
