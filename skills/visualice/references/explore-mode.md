@@ -61,14 +61,26 @@ Recipe rules:
 - Inline messages (a form error under a field, a toast that isn't a dialog) aren't
   detected automatically: discovery looks for things that open. Author them, ending
   the recipe on a `waitFor` of the message.
-- A missing **page** (reachable only after login, or never linked): add `- /path` to
-  `visualice.routes.md` (or list it in an explore file's `pages`). The next run —
-  `--replay` included — discovers that page alone and merges it into the cache.
 - A state can carry `"devices": ["mobile"]` to capture only on those devices.
 - Native browser validation (a `required` field's tooltip) is not in the page and never
   appears in a screenshot: look for the site's own error message instead.
 - The Playwright MCP browser is still the tool for working out a login flow by eye
   (see [`auth.md`](auth.md)); for states, prefer `probe` — what it verifies replays.
+
+## Adding a missing page
+
+Discovery only finds pages something links to. For one it can't reach (behind a login,
+or never linked, like a dashboard or a `?id=99` not-found page), don't edit the cache by
+hand:
+
+1. Add `- /path` as a top-level bullet in `visualice.routes.md`, or list it in an
+   explore file's `"pages"` (`visualice author` seeds those into the routes file).
+2. Run `visualice crawl --replay`. Replay discovers just the new pages — routes and
+   their states — merges them into the cache and captures everything.
+3. Author any states the new page needs on top, like any other page.
+
+If the page needs a login, configure `auth` first ([`auth.md`](auth.md)), or discovery
+lands on the login form and records that instead.
 
 Note the heuristics are stronger than they look: hover dropdowns are probed
 automatically, and a second discovery pass runs at the first mobile device's viewport so
@@ -93,8 +105,9 @@ exploring keeps paying off:
 - `flakyRegions` → merged into `stabilize.maskSelectors`: painted over, so a
   never-identical region (a clock, an ad) doesn't change from run to run.
 - `stableSelectors` → waited for (visible) before each screenshot, so a shot isn't
-  taken mid-hydration. Each has a short timeout and logs a warning if it never
-  appears — don't leave a stale one in place.
+  taken mid-hydration. They are waited on together and share one budget
+  (`stabilize.waitForSelectorsTimeoutMs`, 5 s by default); one that never appears
+  costs that wait on every shot and logs a warning — don't leave a stale one in place.
 - `skipTriggers` → merged into `discovery.interactions.denySelectors`: never probed.
 
 Hints only ever add to the config; they can't remove what the user set, and applying

@@ -87,8 +87,10 @@ const CAPTION_H = 44;
  */
 export const CAPTION_MIN_W = 180;
 export const ROW_GAP = 12 + CAPTION_H;
-const SECTION_GAP = 90;
-const HEADER_H = 46 + CAPTION_H;
+export const SECTION_GAP = 90;
+/** A route header's own band, above its first row's captions. */
+export const HEADER_BAND = 46;
+const HEADER_H = HEADER_BAND + CAPTION_H;
 /** Space between the screens of a stacked shot, so each reads as its own frame. */
 export const SCREEN_GAP = 20;
 const MAX_H = 1120; // cap very tall full-page shots so the overview stays tidy

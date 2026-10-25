@@ -43,12 +43,12 @@ command are accepted by it.
 | `--json`                 | most                 | Print a machine-readable JSON summary to stdout                        |
 | `--quiet`                | most                 | Suppress progress output on stderr                                     |
 | `--fail-on-error`        | capture cmds         | Exit 3 if any capture failed                                           |
-| `--max-pages=<n>`        | `crawl`/`discover`   | Override `scope.maxPages`                                              |
-| `--include=<globs>`      | `crawl`/`discover`   | Override `scope.include` (comma-separated)                             |
-| `--exclude=<globs>`      | `crawl`/`discover`   | Override `scope.exclude` (comma-separated)                             |
-| `--devices=<names>`      | `crawl`/`capture`    | Capture only these configured devices (comma-separated)                |
-| `--concurrency=<n>`      | `crawl`/`capture`    | Override `politeness.concurrency`                                      |
-| `--timeout=<ms>`         | `crawl`/`capture`    | Override `politeness.timeoutMs`                                        |
+| `--max-pages=<n>`        | crawl cmds           | Override `scope.maxPages`                                              |
+| `--include=<globs>`      | crawl cmds           | Override `scope.include` (comma-separated)                             |
+| `--exclude=<globs>`      | crawl cmds           | Override `scope.exclude` (comma-separated)                             |
+| `--devices=<names>`      | crawl cmds           | Capture only these configured devices (comma-separated)                |
+| `--concurrency=<n>`      | crawl cmds           | Override `politeness.concurrency`                                      |
+| `--timeout=<ms>`         | crawl cmds           | Override `politeness.timeoutMs`                                        |
 | `--out=<dir>`            | most                 | Override `output.dir` (default `.visualice`)                           |
 | `--site=<name>`          | `serve`/`export`     | Which site (default: this project's, else the last crawled)            |
 | `--run=<id>`             | `serve`/`export`     | Which run of that site (default: its latest)                           |
@@ -63,6 +63,9 @@ command are accepted by it.
 | `--shot=<file>`          | `probe`              | Write a viewport screenshot (CSS px) after the recipe                  |
 | `--inventory`            | `probe`              | With a recipe: also inventory the page the recipe left                 |
 | `--all-devices`          | `probe`              | Also run the recipe on every configured device; `devices` reports each |
+
+_crawl cmds_ = `crawl`, `discover` and `capture`; _capture cmds_ = `crawl`, `capture`, `demo`
+and `demo-crawl`.
 
 ## Exit codes
 

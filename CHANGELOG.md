@@ -1,0 +1,75 @@
+# Changelog
+
+## 0.1.0 — first release
+
+Crawl a website, capture every page and UI state across devices, and browse the shots on
+a zoomable canvas.
+
+### Crawling
+
+- `visualice crawl <url>` discovers routes (links, sitemaps, data-loaded links,
+  hash-router routes) and UI states (modals, menus, drawers, accordions, tabs, hover
+  dropdowns, form focus and validation), then captures them on every configured device.
+  A second probe pass at the first mobile viewport finds hamburger navs.
+- Full pages are captured one screen at a time, as a user scrolls, so sticky headers,
+  cookie bars and modal backdrops show as they really do.
+- A cached site model makes later runs fast and deterministic (`--replay`); `--resume`
+  continues an interrupted run. Hand-written and Explore-mode states survive re-crawls.
+- `visualice.routes.md` is an editable site index: add `- /path` to seed a page,
+  `- skip:` to exclude one, `- [ ] state` to request a state.
+- Template sampling (`scope.samples`), site-wide states kept once, automatic isolation
+  for states that write to storage, robots.txt and crawl-delay, retries, and a guard
+  that fails a shot that lands on the login page.
+- Login recipes with saved sessions, staleness checks and credential redaction.
+- Other engines (`devices[].browser`: Firefox, WebKit), element-level component shots
+  and axe-core accessibility checks.
+
+### Agentic exploration
+
+- `/visualice-explore` runs one `visualice-explorer` agent per kind of page. Each reads
+  its page with `visualice probe`, verifies candidate recipes through the same code
+  capture uses, and writes what it verified to an explore file; `visualice author`
+  merges them into the cache.
+
+### Viewer
+
+- `visualice serve`: a dashboard of sites, each with dated versions, and a canvas per
+  run, grouped by route with a row per state and a column per device.
+- Screen, Continuous and Scroll view modes; device and state-kind filters; search;
+  minimap; light and dark themes; a phone layout.
+- Click a shot to focus it, with a floating bar of its actions (Full screen, Live page,
+  Copy link, Download, Full image) matching the details panel.
+- Full screen shows a state on every checked device, with device captions.
+- Failed captures render as placeholder tiles; the view lives in the URL.
+- Sites can be deleted from the dashboard (from this computer only).
+- `visualice export <dir>` writes the viewer and a run as a static folder.
+
+### Distribution
+
+- An npm package (`npx visualice`) with `visualice doctor` as a self-healing
+  preflight, and a Claude Code plugin with the `visualice` skill, the explorer agent and
+  three commands.
+
+## Known limitations
+
+Things worth knowing before someone reports them as bugs.
+
+- **No annotations in the viewer.** Shots can be downloaded and linked to, not drawn on
+  or commented on.
+- **Discovery runs in Chromium only.** A Firefox or WebKit device replays the recipes
+  Chromium recorded; a state that only exists in another engine isn't found. Firefox
+  has no mobile emulation, so a `mobile: true` Firefox device is a narrow desktop one.
+- **`scope.hashRoutes: "always"` will fork on anchors.** It exists for routers that
+  drop the slash (`#about`); on a documentation site it turns every heading link into a
+  route. `auto` is the default for that reason.
+- **The Windows integration leg has never actually run.** It's wired and the code it
+  exercises is OS-sensitive (symlinked `latest`, run directories, temp paths); the
+  first CI run on it is the one to watch.
+- **Unnamed region signatures are a DOM path plus a hash of what the region says.** Two
+  unnamed regions with the same opening text in the same spot still collide, and a
+  region whose text changes between probes (a live timer) stops deduping against
+  itself. Named regions (`id`, `aria-label`, `aria-labelledby`) are unaffected, which is
+  most of them.
+- **A state that closes on scroll is shot without a post-open lazy-load pass.** The
+  page is scrolled before the state is opened instead, so content that only starts
+  loading once the state is open _and_ the page is scrolled isn't woken.

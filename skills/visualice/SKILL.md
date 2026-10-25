@@ -111,16 +111,21 @@ password-protected staging: [`references/auth.md`](references/auth.md).
   usually means its recipe needs an Explore-mode tweak.
 - Failed captures were already retried (`politeness.retries`); don't blindly re-run
   the whole crawl for one flaky shot — fix or mask the cause.
-- Open the viewer: `visualice serve --open` (`--run=<id>` for a specific run instead
-  of the latest, `--shoot=out.png` to grab a headless screenshot of the viewer
-  itself). Grouped, Grid, or By device — the last shows one route with every
-  device at the same width, which is how you answer "does this look right on mobile?"
-  without eyeballing two differently-scaled tiles. Thumbnails when zoomed out, full
-  resolution as you zoom in.
-- The viewer also surfaces failures (a "N failed" toggle and a Failed list in the
+- Open the viewer: `visualice serve --open` (`--site=<name>` for another site in the
+  output directory, `--run=<id>` for a specific run instead of the latest,
+  `--shoot=out.png` to grab a headless screenshot of the viewer itself). Shots are
+  grouped by route, a row per state and a column per device. The mode switch draws
+  each shot as **Screen** (the captured screens, one card each), **Continuous** (the
+  screens joined, pinned bars shown once) or **Scroll** (one scrollable screen per
+  tile). The device toggles pick which devices show; **Full screen** (`F`) on a selected
+  shot shows that state on every checked device side by side, which is how you answer
+  "does this look right on mobile?". Thumbnails when zoomed out, full resolution as you
+  zoom in.
+- The viewer also surfaces failures (an "N failed captures · Show only" button in the
   sidebar, each failed shot rendered as a placeholder carrying its error), lets you
-  switch runs without restarting the server, and puts the current view in the URL —
-  copy the address bar to point the user at one specific shot.
+  switch site and version from the header without restarting the server, and puts
+  the current view in the URL — copy the address bar to point the user at one
+  specific shot.
 - Interrupted mid-crawl? `visualice crawl --resume` continues the newest unfinished
   run and keeps the shots already on disk instead of starting over.
 

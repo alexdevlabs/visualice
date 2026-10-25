@@ -4,8 +4,8 @@ Crawl a website, capture **every page and every UI state** (modals, menus, drawe
 across multiple device profiles, organize the screenshots, record a reusable crawl map, and view
 the results on a zoomable Photoshop-like canvas.
 
-See [`PLAN.md`](./PLAN.md) for the full design and [`IMPROVEMENTS.md`](./IMPROVEMENTS.md)
-for the prioritized roadmap.
+See [`PLAN.md`](./PLAN.md) for the design rationale and [`CHANGELOG.md`](./CHANGELOG.md)
+for what's in each release and the known limitations.
 
 ## Quick start
 
@@ -107,8 +107,17 @@ visualice serve --shoot=out.png # headless: screenshot the viewer to a file
 
 The viewer is a standalone static app (`viewer/`); it reads `viewer-data.json` + the
 screenshots and needs no connection to the crawled site. Scroll to pan, ⌘/ctrl+scroll
-(or pinch) to zoom, click any shot for metadata (and to download the image), shift+arrow to step to the next one.
-Shots are grouped by route: one section per path, a row per state, a column per device.
+(or pinch) to zoom, click any shot to focus it and open its details, shift+arrow to step
+to the next one. Shots are grouped by route: one section per path, a row per state, a
+column per device.
+
+A selected shot has a floating bar under it with the same actions as its details panel:
+**Full screen**, **Live page**, **Copy link**, **Download** and **Full image**. The bar can
+be dragged aside and remembers where you put it. Full screen keeps the header and toolbar,
+frames the canvas in the accent colour and shows that state on every checked device, each
+with a caption naming the device and its width. Tall shots fill the width and are read from
+the top. In full screen ← → step through the shots,
+`D` (`⇧D` backwards) switches device, and `Esc` or `F` exits.
 
 The mode switch in the toolbar picks how each shot is drawn. The images are never edited;
 every mode is a different way of cropping the same file.
@@ -130,20 +139,25 @@ turn it on (the button in the zoom controls, or `M`); it shows where you are in 
 and jumps there on click. The path list virtualizes past a few dozen routes so a large run
 doesn't build a sidebar it never shows.
 
-`⌘K` or `/` focuses search, `+` `−` `0` zoom in, out and fit, and `?` lists every
-shortcut. The header's sun/moon button switches between the light (default) and dark
+`⌘K` or `/` focuses search, `+` `−` `0` zoom in, out and fit, `M` toggles the minimap, `F`
+opens the selected shot in full screen, `Esc` clears the selection, and `?` lists the
+shortcuts. The header's sun/moon button switches between the light (default) and dark
 theme; that choice and the minimap's are remembered in the browser. Below 760px the
 viewer switches to a phone layout with the filters in a bottom sheet.
 
-Filter by device or by state kind, search by path, and flip between runs from the run
-switcher — `serve` exposes the sibling runs in the same output directory, so comparing
-runs needs no restart. Failed captures are tiles too: a placeholder carrying its error,
-an **N failed** toggle and a **Failed** list in the sidebar, so a broken shot is visible
-rather than missing. The view lives in the URL (mode, route, query, devices, kinds, selected
-tile, run), so copying the address bar shares the exact shot you're looking
-at. `?data=`
-accepts same-origin paths only, and a `viewer-data.json` the viewer can't read gets an
-error naming the offending field instead of a blank canvas.
+Filter by device or by state kind, search by path, and switch site and version from the
+**Site** and **Version** dropdowns in the header — `serve` exposes every site and run in
+the output directory, so switching needs no restart. Failed captures are tiles too: a
+placeholder carrying its error, plus an **N failed captures · Show only** button at the
+foot of the sidebar, so a broken shot is visible rather than missing. The view lives in the
+URL (mode, route, query, devices, kinds, selected tile, run), so copying the address bar
+shares the exact shot you're looking at. `?data=` accepts same-origin paths only, and a
+`viewer-data.json` the viewer can't read gets an error naming the offending field instead
+of a blank canvas.
+
+`serve` listens on every network interface, so a phone on the same network can browse the
+runs. Writes are local only: deleting a site (below) is refused from any other machine
+(403) and from pages on other origins.
 
 ## Share a run
 
@@ -336,8 +350,11 @@ Each site keeps its own `latest` and its own `output.keepRuns` budget, so crawli
 site never prunes another's runs. In the viewer, the domain in the header picks the site
 and the date beside it picks the version. With more than one site, the viewer opens on a
 dashboard: a card per site with its latest run's home page and counts (the eye button
-hides the previews, remembered like the theme), and the logo leads back to it. Runs from the older flat `runs/<runId>/` layout
-are moved into their site folders the first time a crawl, `serve` or `export` runs.
+hides the previews, remembered like the theme), with search and sort, and the logo leads
+back to it. A card's trash button deletes the site and all its runs from disk after a
+confirmation; the site `serve` was started on can't be deleted (409) while it's on
+screen. Runs from the older flat `runs/<runId>/` layout are moved into their site folders
+the first time a crawl, `serve` or `export` runs.
 
 One run owns that directory while it works (`<out>/.lock`, reclaimed automatically when
 the holder died): a second concurrent run fails with a message pointing at `--out=<dir>`
@@ -372,7 +389,7 @@ Both the viewer and the fixture site are styled with Tailwind v4, configured in 
 than a `tailwind.config.js`: the viewer's theme tokens live in `viewer/src/index.css`, the
 fixture's in `tests/fixture-src/tailwind.input.css`.
 
-The 463 unit tests are pure and fast. The 72 browser-driven tests in `tests/integration/`
+The 469 unit tests are pure and fast. The 75 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `bin/`

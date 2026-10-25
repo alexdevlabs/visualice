@@ -5,13 +5,5 @@
   "author": {
     "name": "Alexecus"
   },
-  "keywords": [
-    "screenshot",
-    "crawler",
-    "visual-regression",
-    "playwright",
-    "ui-testing",
-    "web-crawler",
-    "visual-catalog"
-  ]
+  "keywords": ["screenshot", "crawler", "playwright", "ui-testing", "web-crawler", "visual-catalog"]
 }

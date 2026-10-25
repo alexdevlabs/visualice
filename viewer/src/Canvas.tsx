@@ -7,8 +7,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { CAPTION_MIN_W, ROW_GAP, SCREEN_GAP } from "./layout";
-import type { Layout, Bounds, Placed, ViewMode } from "./layout";
+import { CAPTION_MIN_W, HEADER_BAND, ROW_GAP, SCREEN_GAP, SECTION_GAP } from "./layout";
+import type { Layout, Bounds, GroupLabel, Placed, ViewMode } from "./layout";
 import { chromeAt, maxScroll, type Strip } from "./page";
 import { buildTileIndex, cullLabels, cullTilesIndexed, lodFor, TILE_LABEL_MIN_SCALE } from "./lod";
 import type { Transform } from "./lod";
@@ -36,6 +36,11 @@ const GLIDE_MS = 320;
 const FOCUS_PAD = 0.86;
 /** A long page, fitted by its width rather than whole; the gap above it then. */
 const LONG_PAGE = 3;
+/**
+ * Solo (full screen), the shots are what the view is for: they're fitted by width as
+ * soon as fitting them whole would leave them this much smaller, and read from the top.
+ */
+const SOLO_LONG = 1.25;
 const FOCUS_TOP = 48;
 /** Solo, the room above the shots: full screen's tab, then each shot's device caption. */
 const SOLO_TOP = 64;
@@ -66,14 +71,13 @@ function frame(scale: number): React.CSSProperties {
   };
 }
 
-/**
- * How much a caption is drawn smaller than canvas units, so it keeps its screen
- * size as the view zooms in. Zoomed out it shrinks with the tiles after all: its
- * room above a tile is canvas units, and a caption kept full size there would
- * spill over the shot above.
- */
-function labelShrink(scale: number): number {
-  return Math.max(scale, 1);
+/** The smallest box around the given shots. */
+function spanOf(placed: Placed[]): Pick<Placed, "x" | "y" | "w" | "h"> {
+  const x = Math.min(...placed.map((p) => p.x));
+  const y = Math.min(...placed.map((p) => p.y));
+  const w = Math.max(...placed.map((p) => p.x + p.w)) - x;
+  const h = Math.max(...placed.map((p) => p.y + p.h)) - y;
+  return { x, y, w, h };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -225,8 +229,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     const h = Math.max(1, vp.h - top - (selectionBar ? BAR_ROOM_PX : 0));
     const fitW = (vp.w * FOCUS_PAD) / p.w;
     const fitH = (h * FOCUS_PAD) / p.h;
-    const long = p.h / p.w > (LONG_PAGE * h) / vp.w;
-    const scale = clamp(long ? Math.min(fitW, 1) : Math.min(fitW, fitH), MIN_SCALE, MAX_SCALE);
+    const long = solo ? fitW > fitH * SOLO_LONG : p.h / p.w > (LONG_PAGE * h) / vp.w;
+    // A long page on the canvas stops at 100%; solo, the width is the shots' to fill.
+    const byWidth = solo ? fitW : Math.min(fitW, 1);
+    const scale = clamp(long ? byWidth : Math.min(fitW, fitH), MIN_SCALE, MAX_SCALE);
     const x = vp.w / 2 - (p.x + p.w / 2) * scale;
     const y =
       p.h * scale <= h * FOCUS_PAD
@@ -281,12 +287,9 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     focusedKey.current = key;
     following.current = true;
     // Solo, the shot sits beside its state on the other devices shown: frame them all.
-    const b = layout.bounds;
-    glideTo(
-      focusOn(
-        solo ? { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY } : selectedPlace,
-      ),
-    );
+    // By the shots themselves, not the layout's bounds: those keep room above for the
+    // canvas's captions, which solo doesn't draw and would grow with the zoom.
+    glideTo(focusOn(solo ? spanOf(layout.placed) : selectedPlace));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPlace, vp.w, vp.h]);
 
@@ -466,22 +469,6 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
         className={cx("absolute top-0 left-0 origin-top-left", moving && "will-change-transform")}
         style={{ transform: `translate(${t.x}px, ${t.y}px) scale(${t.scale})` }}
       >
-        {labelsVisible.map((l) => (
-          <div
-            key={l.routeId}
-            className="absolute flex h-10 origin-top-left items-center gap-3 overflow-hidden whitespace-nowrap"
-            style={{
-              left: l.x,
-              top: l.y,
-              width: l.w * labelShrink(t.scale),
-              transform: `scale(${1 / labelShrink(t.scale)})`,
-            }}
-          >
-            {l.path && <RouteBadge path={l.path} size="lg" />}
-            <span className="truncate text-[20px] font-semibold text-fg">{l.title}</span>
-            <span className="text-[15px] text-dim">{l.subtitle}</span>
-          </div>
-        ))}
         {visible.map((p) => {
           const src = lodFor(p.tile, p.w * t.scale * dpr);
           const selected = p.tile.id === selectedId;
@@ -579,6 +566,9 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       {/* Captions and the selection ring live outside the zoomed world, in screen
           pixels: the same size at any zoom. Over the canvas, never catching the pointer. */}
       <div className="pointer-events-none absolute inset-0">
+        {labelsVisible.map((l) => (
+          <RouteHeader key={l.routeId} l={l} t={t} first={l.y <= layout.bounds.minY} />
+        ))}
         {visible.map((p) =>
           !solo && p.tile.id === selectedId && p.tile.error === undefined ? (
             <SelectionRing key="ring" p={p} t={t} />
@@ -843,6 +833,58 @@ function SelectionBar({
 }
 
 /** A tile's caption: the state name, then its kind / device / warning badges. */
+/** A route header's rows on screen: badge, title and count; then the path alone. */
+const HEADER_FULL_PX = 30;
+const HEADER_NAME_PX = 22;
+/** Narrower than this on screen, a header has no room to say anything. */
+const HEADER_MIN_W_PX = 40;
+/** How wide a header has to be on screen for the title beside the path, then the count. */
+const HEADER_TITLE_W_PX = 220;
+const HEADER_COUNT_W_PX = 320;
+
+/**
+ * A route's header, at a fixed screen size like the tile captions. It sits on the
+ * bottom of its band, so it grows upward into the gap after the section above; zoomed
+ * out until that room is shorter than the header, it drops to the path, then hides
+ * rather than cover the shots above. The top section has the canvas edge above it.
+ * As its column narrows it gives up the count, then the title, keeping the path.
+ */
+function RouteHeader({ l, t, first }: { l: GroupLabel; t: Transform; first: boolean }) {
+  const room = (HEADER_BAND + (first ? Infinity : SECTION_GAP)) * t.scale;
+  // A section panned partly off the left edge keeps its header in view, sliding in
+  // with it like a pinned caption, until there's too little of the section left.
+  const x = t.x + l.x * t.scale;
+  const left = Math.max(x, PIN_INSET_PX);
+  const width = l.w * t.scale - (left - x);
+  if (room < HEADER_NAME_PX || width < HEADER_MIN_W_PX) return null;
+  const compact = room < HEADER_FULL_PX;
+  const h = compact ? HEADER_NAME_PX : HEADER_FULL_PX;
+  const showTitle = !l.path || (!compact && width >= HEADER_TITLE_W_PX);
+  const showCount = !compact && width >= HEADER_COUNT_W_PX;
+  // Centred on the band while it's tall enough, else resting on its bottom edge.
+  const band = HEADER_BAND * t.scale;
+  const top = t.y + l.y * t.scale + (band >= h ? (band - h) / 2 : band - h);
+  return (
+    <div
+      className="absolute flex items-center gap-2.5 overflow-hidden whitespace-nowrap"
+      style={{ left, top, width, height: h }}
+    >
+      {l.path && (
+        <span className="flex min-w-0">
+          <RouteBadge path={l.path} size={compact ? "sm" : "md"} />
+        </span>
+      )}
+      {showTitle && (
+        // Gives way first, so the path stays whole for as long as it can.
+        <span className="min-w-0 shrink-[100] truncate text-[15px] font-semibold text-fg">
+          {l.title}
+        </span>
+      )}
+      {showCount && <span className="shrink-0 text-[13px] text-dim">{l.subtitle}</span>}
+    </div>
+  );
+}
+
 function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
   const tile = p.tile;
   if (place.pinned) {

@@ -115,8 +115,6 @@ export function deviceIcon(d: { mobile?: boolean; width?: number } | undefined):
 const ROUTE_SIZE = {
   sm: "rounded-md px-[7px] py-px text-[11px] leading-[18px]",
   md: "rounded-md px-[7px] py-px text-[12px] leading-[18px]",
-  /** The canvas's route headers: drawn in world space, so sized for a zoomed-out view. */
-  lg: "shrink min-w-0 rounded-lg px-2.5 py-px text-[18px] leading-7",
 };
 
 /** The one way a route path is shown: a mono pill, accent-tinted when its route is selected. */

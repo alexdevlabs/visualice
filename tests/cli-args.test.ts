@@ -65,6 +65,14 @@ describe("parseFlags", () => {
     expect(() => parseFlags("export", ["site", "--diff=none"])).toThrow(/unknown flag --diff/);
   });
 
+  it("takes --site on serve and export", () => {
+    expect(parseFlags("serve", ["--site=saucedemo.com"])).toEqual({ site: "saucedemo.com" });
+    expect(parseFlags("export", ["out", "--site", "saucedemo.com"])).toEqual({
+      dest: "out",
+      site: "saucedemo.com",
+    });
+  });
+
   it("mixes forms", () => {
     expect(parseFlags("crawl", ["--base", "https://x.dev", "--max-pages=5", "--quiet"])).toEqual({
       base: "https://x.dev",

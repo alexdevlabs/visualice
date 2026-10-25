@@ -70,7 +70,7 @@ function printHelp(): void {
   console.log(`visualice — crawl a site and capture pages + UI states across devices
 
 Usage:
-  visualice init [url]        Scaffold visualice.config.json (+ .gitignore entry)
+  visualice init [url]        Scaffold visualice.config.json (+ .gitignore entry; --force overwrites)
   visualice crawl [url]       Discover routes + UI states, then capture across devices
   visualice discover [url]    Auto-discover routes + UI states (no screenshots)
   visualice routes [opts]     Regenerate the routes file from the cached site model

@@ -4,6 +4,24 @@
   "type": "module",
   "description": "Crawl a website and capture every page and UI state across devices, then view them on a zoomable canvas.",
   "license": "MIT",
+  "author": "Alexecus",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexecus/visualice.git"
+  },
+  "homepage": "https://github.com/alexecus/visualice#readme",
+  "bugs": {
+    "url": "https://github.com/alexecus/visualice/issues"
+  },
+  "keywords": [
+    "screenshot",
+    "crawler",
+    "playwright",
+    "ui-states",
+    "visual-catalog",
+    "claude-code",
+    "agent-skill"
+  ],
   "engines": {
     "node": ">=20.12.0"
   },
@@ -84,9 +102,11 @@
     "bin",
     "dist",
     "viewer/dist",
+    "!viewer/dist/data",
     "tests/fixture",
     "config.schema.json",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ]
 }
