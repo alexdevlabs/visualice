@@ -63,6 +63,8 @@ export interface CapturePipelineOptions {
   lock?: boolean;
   /** Reuse an interrupted run's directory and keep the shots it already produced. */
   resume?: string;
+  /** Capture each page's default render only: no UI states, no components. */
+  pagesOnly?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -193,6 +195,31 @@ async function pruneRuns(root: string, keep: number, current: string, log: Log):
   }
 }
 
+/** Only each route's default render, for a pages-only run. */
+export function pagesOnly(model: InputManifest): InputManifest {
+  return {
+    ...model,
+    routes: model.routes.map((r) => ({
+      ...r,
+      states: r.states.filter((s) => s.kind === "default"),
+    })),
+  };
+}
+
+/**
+ * The model a capture works through: routes-file skips subtracted, configured
+ * components added, and with `pagesOnly` everything but the default renders dropped.
+ */
+function captureModel(
+  model: InputManifest,
+  intent: RoutesIntent,
+  config: Config,
+  onlyPages: boolean,
+): InputManifest {
+  const full = withComponents(applyStateSkips(model, intent), config.components);
+  return onlyPages ? pagesOnly(full) : full;
+}
+
 /**
  * Hold the output directory's lock for the duration of `fn`, unless a caller up the
  * stack already holds it (crawl → capture is one run, not two).
@@ -242,11 +269,8 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
   // The routes file subtracts (skip:) before capture, and its unmet requests
   // ([ ] lines) surface as `wanted` — the Explore-mode queue.
   const intent = opts.routesIntent ?? (await loadRoutesIntent(config));
-  const inputManifest = withComponents(
-    applyStateSkips(opts.inputManifest, intent),
-    config.components,
-  );
-  const wanted = computeWanted(opts.inputManifest, intent);
+  const inputManifest = captureModel(opts.inputManifest, intent, config, !!opts.pagesOnly);
+  const wanted = opts.pagesOnly ? [] : computeWanted(opts.inputManifest, intent);
 
   const manifest: Manifest = {
     version: 1,
@@ -300,7 +324,22 @@ export interface CrawlPipelineOptions {
   replay?: boolean;
   /** Continue the newest unfinished run instead of starting a new one. */
   resume?: boolean;
+  /**
+   * Discover and capture pages only, no UI states. Faster; states already in the
+   * cache are kept for the next full crawl rather than dropped.
+   */
+  pagesOnly?: boolean;
   log?: (msg: string) => void;
+}
+
+/** What a crawl would capture, without capturing it (`crawl --dry-run`). */
+export interface CrawlPlan {
+  cachePath: string;
+  routes: { url: string; states: string[] }[];
+  states: number;
+  /** Screenshots the capture would take: each state on each device it applies to. */
+  shots: number;
+  devices: string[];
 }
 
 /**
@@ -319,9 +358,8 @@ async function crawlRun(
   opts: CrawlPipelineOptions,
   outRoot: string,
 ): Promise<CapturePipelineResult> {
-  const { config, baseUrl, replay } = opts;
+  const { config, baseUrl } = opts;
   const log = opts.log ?? (() => {});
-  const cachePath = modelCachePath(outRoot);
 
   let resume: string | undefined;
   if (opts.resume) {
@@ -331,12 +369,62 @@ async function crawlRun(
     else log("nothing to resume — starting a new run");
   }
 
-  const { intent, effectiveConfig, storageState, cached } = await prepareModel(
+  const { inputManifest, intent, storageState } = await crawlModel(opts, outRoot);
+  return capturePipeline({
     config,
+    inputManifest,
     baseUrl,
-    cachePath,
+    storageState,
+    routesIntent: intent,
+    lock: false,
+    resume,
+    pagesOnly: opts.pagesOnly,
     log,
-  );
+  });
+}
+
+/**
+ * Everything a crawl does before it captures: discover (or replay) the site model,
+ * cache it and rewrite the routes file. `crawl --dry-run` stops here and reports
+ * what the capture would take.
+ */
+export async function planCrawl(opts: CrawlPipelineOptions): Promise<CrawlPlan> {
+  const log = opts.log ?? (() => {});
+  const outRoot = path.resolve(opts.config.output.dir);
+  return withLock(outRoot, log, true, async () => {
+    const { inputManifest, intent } = await crawlModel(opts, outRoot);
+    const config = applyHints(opts.config, inputManifest.hints);
+    const model = captureModel(inputManifest, intent, config, !!opts.pagesOnly);
+    const names = config.devices.map((d) => d.name);
+    let shots = 0;
+    for (const r of model.routes) {
+      for (const s of r.states)
+        shots += s.devices ? names.filter((n) => s.devices!.includes(n)).length : names.length;
+    }
+    return {
+      cachePath: modelCachePath(outRoot),
+      routes: model.routes.map((r) => ({ url: r.url, states: r.states.map((s) => s.id) })),
+      states: model.routes.reduce((n, r) => n + r.states.length, 0),
+      shots,
+      devices: names,
+    };
+  });
+}
+
+async function crawlModel(
+  opts: CrawlPipelineOptions,
+  outRoot: string,
+): Promise<{ inputManifest: InputManifest; intent: RoutesIntent; storageState?: string }> {
+  const { config, baseUrl, replay } = opts;
+  const log = opts.log ?? (() => {});
+  const cachePath = modelCachePath(outRoot);
+  const keepStates = !!opts.pagesOnly;
+
+  const prepared = await prepareModel(config, baseUrl, cachePath, log);
+  const { intent, storageState, cached } = prepared;
+  const effectiveConfig = keepStates
+    ? withoutStates(prepared.effectiveConfig)
+    : prepared.effectiveConfig;
   let inputManifest: InputManifest;
   if (replay && cached) {
     log(`replay: reusing cached site model → ${cachePath}`);
@@ -354,7 +442,10 @@ async function crawlRun(
         limit: { only: added, takenIds: cached.routes.map((r) => r.id) },
         existing: cached,
       });
-      inputManifest = { ...mergeManifests(cached, found), site: cached.site ?? found.site };
+      inputManifest = {
+        ...mergeManifests(cached, found, { keepStates }),
+        site: cached.site ?? found.site,
+      };
       await saveJson(cachePath, inputManifest);
     }
   } else {
@@ -365,21 +456,23 @@ async function crawlRun(
       cached,
       cachePath,
       log,
+      keepStates,
     );
   }
 
   await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
+  return { inputManifest, intent, storageState };
+}
 
-  return capturePipeline({
-    config,
-    inputManifest,
-    baseUrl,
-    storageState,
-    routesIntent: intent,
-    lock: false,
-    resume,
-    log,
-  });
+/** The config for a pages-only discovery: routes, no state probing. */
+function withoutStates(config: Config): Config {
+  return {
+    ...config,
+    discovery: {
+      ...config.discovery,
+      interactions: { ...config.discovery.interactions, auto: false },
+    },
+  };
 }
 
 /** What every model-building run starts from: routes-file intent, session, cache. */
@@ -405,6 +498,7 @@ async function rediscover(
   cached: InputManifest | undefined,
   cachePath: string,
   log: Log,
+  keepStates = false,
 ): Promise<InputManifest> {
   // Hints cached from earlier runs steer discovery too (skipTriggers), so read
   // them before probing rather than only on the way into capture.
@@ -419,7 +513,7 @@ async function rediscover(
   // states are refreshed, authored (hand-written / Explore-mode) states and hints
   // are always preserved.
   if (cached) {
-    model = mergeManifests(cached, discovered);
+    model = mergeManifests(cached, discovered, { keepStates });
     const authored = model.routes.reduce((n, r) => n + r.states.filter(isAuthored).length, 0);
     log(
       `merged discovery into existing cache → ${cachePath} (${authored} authored state(s) preserved)`,
@@ -439,9 +533,12 @@ async function rediscover(
 export async function discoverOnlyPipeline(opts: {
   config: Config;
   baseUrl: string;
+  /** Routes only: no state probing, and the states already cached are kept. */
+  pagesOnly?: boolean;
   log?: Log;
 }): Promise<{ inputManifest: InputManifest; cachePath: string }> {
   const { config, baseUrl } = opts;
+  const keepStates = !!opts.pagesOnly;
   const log = opts.log ?? (() => {});
   const outRoot = path.resolve(config.output.dir);
   const cachePath = modelCachePath(outRoot);
@@ -453,12 +550,13 @@ export async function discoverOnlyPipeline(opts: {
       log,
     );
     const inputManifest = await rediscover(
-      effectiveConfig,
+      keepStates ? withoutStates(effectiveConfig) : effectiveConfig,
       baseUrl,
       storageState,
       cached,
       cachePath,
       log,
+      keepStates,
     );
     await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
     return { inputManifest, cachePath };

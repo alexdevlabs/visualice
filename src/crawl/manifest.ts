@@ -56,8 +56,13 @@ function mergeRouteStates(cached: RouteNode, fresh: RouteNode): StateNode[] {
  * authored work. Routes are unioned by `url`, keeping cached order then appending new
  * ones; shared routes take fresh metadata but keep authored states. This is what lets a
  * default `crawl` re-discover from scratch yet never lose hand-authored states.
+ * `keepStates` keeps a shared route's cached states as they are (pages-only runs).
  */
-export function mergeManifests(cached: InputManifest, fresh: InputManifest): InputManifest {
+export function mergeManifests(
+  cached: InputManifest,
+  fresh: InputManifest,
+  opts: { keepStates?: boolean } = {},
+): InputManifest {
   const cachedByUrl = new Map(cached.routes.map((r) => [r.url, r]));
   const freshByUrl = new Map(fresh.routes.map((r) => [r.url, r]));
 
@@ -69,7 +74,9 @@ export function mergeManifests(cached: InputManifest, fresh: InputManifest): Inp
     seen.add(url);
     const c = cachedByUrl.get(url);
     const f = freshByUrl.get(url);
-    if (c && f) routes.push({ ...f, states: mergeRouteStates(c, f) });
+    // A pages-only discovery probed no states, so its "none found" says nothing
+    // about the states the cache already has: keep them, auto ones included.
+    if (c && f) routes.push({ ...f, states: opts.keepStates ? c.states : mergeRouteStates(c, f) });
     else routes.push((c ?? f)!);
   }
 

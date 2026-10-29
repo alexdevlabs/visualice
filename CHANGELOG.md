@@ -24,6 +24,20 @@ a zoomable canvas.
 - Other engines (`devices[].browser`: Firefox, WebKit), element-level component shots
   and axe-core accessibility checks.
 
+### CLI
+
+- `crawl --dry-run` lists the pages, states and screenshot count a crawl would take,
+  without capturing. `--no-states` crawls pages only and keeps the states already cached.
+  `--seed=<paths>` adds entry pages, `--site=<name>` picks the site folder a crawl
+  writes to, and `--headed` shows the browser windows.
+- Clearer names, with the old ones still accepted (and a warning): `--target` (was
+  `--base`), `--dir` (was `--out`), `--timeout-ms` (was `--timeout`), `serve
+--screenshot` (was `--shoot`). In the config, `screenshot.fullPage` is now
+  `"screens" | "single" | false` (replacing `fullPage` + `screens`), `maxHeight` limits
+  both modes (default 25000 CSS px; `maxScreens` still works), `thumbnail.midWidth` is
+  `zoomWidth`, and `interactions.auto: false` is the one way to turn states off
+  (`nestDepth: 0` still works).
+
 ### Agentic exploration
 
 - `/visualice-explore` runs one `visualice-explorer` agent per kind of page. Each reads

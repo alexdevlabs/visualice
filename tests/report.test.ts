@@ -82,7 +82,7 @@ describe("renderReport", () => {
     const m = makeManifest();
     m.routes[0].states[0].shots = { desktop: { full: "x.png", clamped: true } };
     expect(renderReport(m)).toContain(
-      "- **Clamped:** 1 shot(s) hit the `screenshot.maxHeight` or `maxScreens` limit and were cropped",
+      "- **Clamped:** 1 shot(s) hit the `screenshot.maxHeight` limit and were cut off",
     );
   });
 });

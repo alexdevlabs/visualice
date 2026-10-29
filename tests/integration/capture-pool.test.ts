@@ -257,7 +257,7 @@ describe("reusing a page after stabilization", () => {
       stabilize: { ...c.stabilize, lazyScroll: true },
       // The lazy-load pass under test only runs for a single full-page render; a
       // screen-by-screen capture does its scrolling while it shoots.
-      screenshot: { ...c.screenshot, screens: false },
+      screenshot: { ...c.screenshot, fullPage: "single" },
     };
   };
 

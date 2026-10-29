@@ -189,7 +189,7 @@
           "properties": {
             "auto": {
               "default": true,
-              "description": "Heuristically probe triggers to discover UI states.",
+              "description": "Probe the page for UI states (menus, modals, tabs, forms). Off captures each page's default render only.",
               "type": "boolean"
             },
             "hover": {
@@ -227,9 +227,9 @@
             },
             "nestDepth": {
               "default": 1,
-              "description": "0 = default render only, 1 = single mutations, >1 = also probe inside opened states (expensive).",
+              "description": "How deep to probe: 1 = states one interaction away, >1 = also probe inside opened states (expensive). Turn states off with `auto: false`.",
               "type": "integer",
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             },
             "siteWideOnce": {
@@ -396,16 +396,14 @@
     },
     "screenshot": {
       "default": {
-        "fullPage": true,
-        "screens": true,
-        "maxScreens": 30,
+        "fullPage": "screens",
         "alsoViewport": false,
         "format": "png",
         "quality": 90,
-        "maxHeight": 20000,
+        "maxHeight": 25000,
         "thumbnail": {
           "width": 480,
-          "midWidth": 1024,
+          "zoomWidth": 1024,
           "format": "webp",
           "quality": 70
         }
@@ -413,21 +411,21 @@
       "type": "object",
       "properties": {
         "fullPage": {
-          "default": true,
-          "description": "Capture the whole scrollable page.",
-          "type": "boolean"
-        },
-        "screens": {
-          "default": true,
-          "description": "Capture a full page the way a user sees it: one screen at a time, scrolling between them, stacked into one image. Fixed banners and modal backdrops then appear on every screen, as they do in the browser. Off renders the page as one tall screen, which draws fixed elements once, mid-page.",
-          "type": "boolean"
-        },
-        "maxScreens": {
-          "default": 30,
-          "description": "Most screens captured per shot when `screens` is on; a longer page is cut off there and flagged. Bounds an infinite-scroll page.",
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
+          "default": "screens",
+          "description": "How a whole page is captured. `screens`: the way a user sees it, one screen at a time, scrolling between them, stacked into one image, so fixed banners and modal backdrops appear on every screen as they do in the browser. `single`: one tall render, which draws fixed elements once, mid-page. `false`: the first screen only.",
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "screens",
+                "single"
+              ]
+            },
+            {
+              "type": "boolean",
+              "const": false
+            }
+          ]
         },
         "alsoViewport": {
           "default": false,
@@ -452,16 +450,22 @@
           "maximum": 100
         },
         "maxHeight": {
-          "default": 20000,
-          "description": "Clamp for full-page shots when `screens` is off, in CSS px; taller pages are cropped to this and flagged. 0 disables the clamp (infinite-scroll pages can then exhaust memory).",
+          "default": 25000,
+          "description": "Longest page captured, in CSS px, in both full-page modes; a longer page is cut off there and flagged. Bounds an infinite-scroll page. 0 disables the limit (such a page can then exhaust memory).",
           "type": "integer",
           "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "maxScreens": {
+          "description": "Deprecated: use `maxHeight`. Still honoured as an extra limit on screens.",
+          "type": "integer",
+          "exclusiveMinimum": 0,
           "maximum": 9007199254740991
         },
         "thumbnail": {
           "default": {
             "width": 480,
-            "midWidth": 1024,
+            "zoomWidth": 1024,
             "format": "webp",
             "quality": 70
           },
@@ -474,9 +478,9 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             },
-            "midWidth": {
+            "zoomWidth": {
               "default": 1024,
-              "description": "Width of a mid-resolution step between the thumbnail and the full image, so zooming doesn't jump straight to a multi-MB PNG. 0 disables it.",
+              "description": "Width of the in-between image the viewer shows while zooming in, between the thumbnail and the full image, so zooming doesn't jump straight to a multi-MB PNG. 0 disables it.",
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991

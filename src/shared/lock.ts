@@ -27,7 +27,7 @@ export class LockedError extends Error {
   constructor(public readonly holder: LockInfo) {
     super(
       `another visualice run is using this directory (pid ${holder.pid} on ${holder.host}, started ${holder.startedAt}).\n` +
-        `Wait for it to finish, or use --out=<dir> for a separate output directory.`,
+        `Wait for it to finish, or use --dir=<dir> for a separate output directory.`,
     );
   }
 }

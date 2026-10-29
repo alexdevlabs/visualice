@@ -19,6 +19,7 @@ import {
 export { addedLines, changedKeys } from "./snapshot";
 import { classifyChange, collectCandidates } from "./discover-states";
 import { sentToLogin } from "./capture";
+import { launchOptions } from "../shared/launch";
 
 /**
  * `visualice probe`: one page, one recipe, and a report of what happened — the
@@ -299,7 +300,7 @@ export async function probePage(
   useTestIdAttribute(config.testIdAttribute);
   const device = pickDevice(config, opts.device);
   const engines = { chromium, firefox, webkit };
-  const browser = await engines[device.browser ?? "chromium"].launch();
+  const browser = await engines[device.browser ?? "chromium"].launch(launchOptions());
   try {
     const context = await browser.newContext(
       deviceContextOptions(config, device, opts.storageState),

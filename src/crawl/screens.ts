@@ -12,7 +12,10 @@ import type { Locator, Page } from "playwright";
  */
 
 export interface ScreensOptions {
-  maxScreens: number;
+  /** Stop once this much of the page (CSS px from the top) is covered; 0 = no limit. */
+  maxHeight: number;
+  /** Deprecated extra limit on the number of screens. */
+  maxScreens?: number;
   /** Settle time after each scroll, before the next screen is taken. */
   settleMs: number;
   type: "png" | "jpeg";
@@ -32,7 +35,7 @@ export interface Screens {
   stops?: { y: number; top: number; bottom: number }[];
   /** The window's height in CSS px, which `stops` are measured against. */
   viewportHeight?: number;
-  /** The page went on past `maxScreens`. */
+  /** The page went on past `maxHeight` (or `maxScreens`). */
   clamped: boolean;
 }
 
@@ -198,7 +201,11 @@ export async function captureScreens(page: Page, opts: ScreensOptions): Promise<
       const stop = await measure(page);
       stops.push(stop);
       if (stop.pos >= stop.max - 1) break;
-      if (frames.length >= opts.maxScreens) {
+      const covered = stop.pos + stop.height;
+      if (
+        (opts.maxHeight > 0 && covered >= opts.maxHeight) ||
+        (opts.maxScreens !== undefined && frames.length >= opts.maxScreens)
+      ) {
         clamped = true;
         break;
       }

@@ -65,7 +65,12 @@ const ScopeSchema = z.object({
 });
 
 const InteractionsSchema = z.object({
-  auto: z.boolean().default(true).describe("Heuristically probe triggers to discover UI states."),
+  auto: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Probe the page for UI states (menus, modals, tabs, forms). Off captures each page's default render only.",
+    ),
   hover: z
     .boolean()
     .default(true)
@@ -97,10 +102,10 @@ const InteractionsSchema = z.object({
   nestDepth: z
     .number()
     .int()
-    .nonnegative()
+    .positive()
     .default(1)
     .describe(
-      "0 = default render only, 1 = single mutations, >1 = also probe inside opened states (expensive).",
+      "How deep to probe: 1 = states one interaction away, >1 = also probe inside opened states (expensive). Turn states off with `auto: false`.",
     ),
   siteWideOnce: z
     .boolean()
@@ -152,33 +157,24 @@ const DiscoverySchema = z.object({
 
 const ThumbnailSchema = z.object({
   width: z.number().int().positive().default(480).describe("Thumbnail width in px."),
-  midWidth: z
+  zoomWidth: z
     .number()
     .int()
     .nonnegative()
     .default(1024)
     .describe(
-      "Width of a mid-resolution step between the thumbnail and the full image, so zooming doesn't jump straight to a multi-MB PNG. 0 disables it.",
+      "Width of the in-between image the viewer shows while zooming in, between the thumbnail and the full image, so zooming doesn't jump straight to a multi-MB PNG. 0 disables it.",
     ),
   format: z.enum(["webp", "jpeg", "png"]).default("webp").describe("Thumbnail image format."),
   quality: z.number().int().min(1).max(100).default(70).describe("Thumbnail encoder quality."),
 });
 
 const ScreenshotSchema = z.object({
-  fullPage: z.boolean().default(true).describe("Capture the whole scrollable page."),
-  screens: z
-    .boolean()
-    .default(true)
+  fullPage: z
+    .union([z.enum(["screens", "single"]), z.literal(false)])
+    .default("screens")
     .describe(
-      "Capture a full page the way a user sees it: one screen at a time, scrolling between them, stacked into one image. Fixed banners and modal backdrops then appear on every screen, as they do in the browser. Off renders the page as one tall screen, which draws fixed elements once, mid-page.",
-    ),
-  maxScreens: z
-    .number()
-    .int()
-    .positive()
-    .default(30)
-    .describe(
-      "Most screens captured per shot when `screens` is on; a longer page is cut off there and flagged. Bounds an infinite-scroll page.",
+      "How a whole page is captured. `screens`: the way a user sees it, one screen at a time, scrolling between them, stacked into one image, so fixed banners and modal backdrops appear on every screen as they do in the browser. `single`: one tall render, which draws fixed elements once, mid-page. `false`: the first screen only.",
     ),
   alsoViewport: z
     .boolean()
@@ -196,10 +192,16 @@ const ScreenshotSchema = z.object({
     .number()
     .int()
     .nonnegative()
-    .default(20000)
+    .default(25000)
     .describe(
-      "Clamp for full-page shots when `screens` is off, in CSS px; taller pages are cropped to this and flagged. 0 disables the clamp (infinite-scroll pages can then exhaust memory).",
+      "Longest page captured, in CSS px, in both full-page modes; a longer page is cut off there and flagged. Bounds an infinite-scroll page. 0 disables the limit (such a page can then exhaust memory).",
     ),
+  maxScreens: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Deprecated: use `maxHeight`. Still honoured as an extra limit on screens."),
   thumbnail: ThumbnailSchema.default(ThumbnailSchema.parse({})),
 });
 
@@ -459,5 +461,66 @@ export async function loadConfig(file?: string): Promise<Config> {
     const mod = await import(pathToFileURL(abs).href);
     raw = (mod as { default?: unknown }).default ?? mod;
   }
-  return ConfigSchema.parse(raw);
+  return parseConfig(raw);
+}
+
+type Warn = (msg: string) => void;
+const warnStderr: Warn = (m) => console.error(m);
+
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * Rewrite config keys renamed before 1.0 to their current names, warning once per
+ * key. A pure function of its input: the caller's object is never modified.
+ */
+export function migrateConfig(raw: unknown, warn: Warn = warnStderr): unknown {
+  if (!isObj(raw)) return raw;
+  const out: Record<string, unknown> = { ...raw };
+
+  if (isObj(out.screenshot)) {
+    const shot: Record<string, unknown> = { ...out.screenshot };
+    if (typeof shot.fullPage === "boolean" || "screens" in shot) {
+      const full = shot.fullPage ?? true;
+      const screens = shot.screens ?? true;
+      if ("screens" in shot)
+        warn(
+          'config: screenshot.screens is deprecated — use screenshot.fullPage: "screens" | "single"',
+        );
+      else
+        warn(
+          `config: screenshot.fullPage: ${String(full)} is deprecated — use "screens", "single" or false`,
+        );
+      shot.fullPage = full === false ? false : screens === false ? "single" : "screens";
+      delete shot.screens;
+    }
+    if (shot.maxScreens !== undefined) {
+      warn("config: screenshot.maxScreens is deprecated — use screenshot.maxHeight (CSS px)");
+    }
+    if (isObj(shot.thumbnail) && "midWidth" in shot.thumbnail) {
+      const { midWidth, ...thumb } = shot.thumbnail;
+      warn("config: screenshot.thumbnail.midWidth is renamed — use screenshot.thumbnail.zoomWidth");
+      shot.thumbnail = { zoomWidth: midWidth, ...thumb };
+    }
+    out.screenshot = shot;
+  }
+
+  if (isObj(out.discovery) && isObj(out.discovery.interactions)) {
+    const interactions = out.discovery.interactions;
+    if (interactions.nestDepth === 0) {
+      warn(
+        "config: discovery.interactions.nestDepth: 0 is deprecated — use discovery.interactions.auto: false",
+      );
+      out.discovery = {
+        ...out.discovery,
+        interactions: { ...interactions, auto: false, nestDepth: 1 },
+      };
+    }
+  }
+  return out;
+}
+
+/** Validate a raw config object (after migrating renamed keys) and fill in defaults. */
+export function parseConfig(raw: unknown, warn: Warn = warnStderr): Config {
+  return ConfigSchema.parse(migrateConfig(raw, warn));
 }

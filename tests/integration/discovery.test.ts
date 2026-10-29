@@ -184,11 +184,11 @@ describe("nested state discovery", () => {
     }
   });
 
-  it("captures only the default render at nestDepth 0", async () => {
+  it("captures only the default render with auto off", async () => {
     const { server, dir } = await serveFiles(NESTED_SITE);
     try {
       const m = await discoverPipeline({
-        config: baseConfig({ discovery: { interactions: { nestDepth: 0 } } }),
+        config: baseConfig({ discovery: { interactions: { auto: false } } }),
         baseUrl: server.url,
         log: silent,
       });

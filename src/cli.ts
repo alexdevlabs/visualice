@@ -7,7 +7,14 @@ import { loadConfig, type Config } from "./shared/config";
 import { isCommand, UsageError, applyOverrides, parseFlags, str, type Flags } from "./cli-args";
 import { countStates, loadInputManifest, modelCachePath } from "./crawl/manifest";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
-import { capturePipeline, crawlPipeline, discoverOnlyPipeline } from "./crawl/orchestrator";
+import {
+  capturePipeline,
+  crawlPipeline,
+  discoverOnlyPipeline,
+  planCrawl,
+  type CrawlPlan,
+} from "./crawl/orchestrator";
+import { setHeaded } from "./shared/launch";
 import {
   computeWanted,
   loadRoutesIntent,
@@ -93,7 +100,10 @@ pages + UI states and is regenerated after every crawl (edit it: 'skip:' exclude
 
 Options (flags accept --name=value or --name value):
   --config=<path>      config file (.ts/.js/.json); cwd auto-detection if omitted
-  --base=<url>         base URL (overrides config.target); also the bare [url] arg
+  --target=<url>       site to crawl (overrides config.target); also the bare [url] arg
+  --seed=<paths>       for 'crawl'/'discover': extra entry pages, added to config.seeds (comma-separated)
+  --no-states          for 'crawl'/'discover': pages only, no UI states (faster; cached states are kept)
+  --dry-run            for 'crawl': discover, then list what would be captured instead of capturing it
   --no-save            for 'crawl': don't scaffold a config on first run
   --manifest=<path>    input manifest for 'capture' / 'validate'
   --replay             for 'crawl': reuse cached site model, skip discovery
@@ -101,18 +111,21 @@ Options (flags accept --name=value or --name value):
   --json               print a machine-readable JSON summary to stdout
   --quiet              suppress progress output on stderr
   --fail-on-error      exit 3 if any capture failed
+  --headed             show the browser windows (crawl, discover, capture, auth, probe)
   --max-pages=<n>      override scope.maxPages
   --include=<globs>    override scope.include (comma-separated)
   --exclude=<globs>    override scope.exclude (comma-separated)
   --devices=<names>    capture only these configured devices (comma-separated)
   --concurrency=<n>    override politeness.concurrency
-  --timeout=<ms>       override politeness.timeoutMs
-  --out=<dir>          override output.dir (default .visualice)
-  --site=<name>        for 'serve'/'export': which site (default: this project's, else the last crawled)
+  --timeout-ms=<ms>    override politeness.timeoutMs
+  --dir=<dir>          override output.dir (default .visualice)
+  --site=<name>        the site's folder under <dir>/sites/: which one 'serve'/'export' open
+                       (default: this project's, else the last crawled); where a crawl writes
+                       (overrides output.site)
   --run=<id>           for 'serve'/'export': which run of that site (default: its latest)
   --port=<n>           for 'serve'/'fixture': fixed port (default: random)
   --open               for 'serve'/'fixture': open in your browser
-  --shoot=<file>       for 'serve': headless-screenshot the viewer to a file, then exit
+  --screenshot=<file>  for 'serve': headless-screenshot the viewer to a file, then exit
   --no-fix             for 'doctor': report problems without repairing them
   --recipe=<json|@file> for 'probe': steps to run on the page (a JSON array)
   --state=<id>         for 'probe': run the cached recipe of this page's state
@@ -120,6 +133,9 @@ Options (flags accept --name=value or --name value):
   --shot=<file>        for 'probe': write a viewport screenshot (CSS px) after the recipe
   --inventory          for 'probe': with a recipe, also inventory the page it leaves
   --all-devices        for 'probe': also run the recipe on every configured device
+
+Renamed (still accepted, with a warning): --base → --target, --shoot → --screenshot,
+--out → --dir, --timeout → --timeout-ms.
 
 Exit codes: 0 ok · 1 error · 2 usage · 3 capture failures (with --fail-on-error)
 
@@ -165,8 +181,8 @@ async function cmdCapture(flags: Flags): Promise<void> {
   const config = await loadConfigWithOverrides(flags);
   const manifestPath = str(flags, "manifest");
   if (!manifestPath) throw new UsageError("capture requires --manifest=<path>");
-  const baseUrl = str(flags, "base") ?? config.target;
-  if (!baseUrl) throw new UsageError("no base URL: pass --base=<url> or set target in config");
+  const baseUrl = str(flags, "target") ?? config.target;
+  if (!baseUrl) throw new UsageError("no target URL: pass --target=<url> or set target in config");
 
   const inputManifest = await loadInputManifest(manifestPath);
   const { runDir, manifest } = await capturePipeline({ config, inputManifest, baseUrl, log });
@@ -402,11 +418,11 @@ async function cmdServe(flags: Flags): Promise<void> {
     ? `${server.url}/?${new URLSearchParams({ site, run: runId }).toString()}`
     : server.url;
 
-  const shoot = str(flags, "shoot");
-  if (shoot !== undefined) {
-    await shootViewer(url, shoot);
+  const screenshot = str(flags, "screenshot");
+  if (screenshot !== undefined) {
+    await shootViewer(url, screenshot);
     await server.close();
-    log(`wrote ${shoot}`);
+    log(`wrote ${screenshot}`);
     return;
   }
 
@@ -442,7 +458,7 @@ async function scaffoldProject(target: string | undefined, log: Log): Promise<st
 
 async function cmdInit(flags: Flags): Promise<void> {
   const log = makeLog(flags);
-  const target = str(flags, "base");
+  const target = str(flags, "target");
   const file = path.resolve("visualice.config.json");
   if ((await pathExists(file)) && flags.force !== true) {
     throw new UsageError(`${file} already exists — pass --force to overwrite`);
@@ -457,24 +473,61 @@ async function cmdCrawl(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const configPath = await resolveConfigPath(flags);
   const config = applyOverrides(await loadConfig(configPath), flags);
-  const baseUrl = str(flags, "base") ?? config.target;
+  const baseUrl = str(flags, "target") ?? config.target;
   if (!baseUrl)
     throw new UsageError(
       "no base URL: pass a url (visualice crawl <url>) or run 'visualice init <url>'",
     );
   // First crawl in a fresh project: persist the target so `visualice crawl` alone
-  // works from now on. --no-save opts out.
-  if (!configPath && str(flags, "base") && flags["no-save"] !== true) {
+  // works from now on. --no-save opts out, and a dry run only looks.
+  if (
+    !configPath &&
+    str(flags, "target") &&
+    flags["no-save"] !== true &&
+    flags["dry-run"] !== true
+  ) {
     await scaffoldProject(baseUrl, log);
+  }
+  const pagesOnly = flags["no-states"] === true;
+  if (flags["dry-run"] === true) {
+    if (flags.resume === true) throw new UsageError("pass --dry-run or --resume, not both");
+    const plan = await planCrawl({
+      config,
+      baseUrl,
+      replay: flags.replay === true,
+      pagesOnly,
+      log,
+    });
+    reportPlan(plan, flags, log);
+    return;
   }
   const { runDir, manifest } = await crawlPipeline({
     config,
     baseUrl,
     replay: flags.replay === true,
     resume: flags.resume === true,
+    pagesOnly,
     log,
   });
   reportDone(runDir, manifest, flags, log);
+}
+
+/** `crawl --dry-run`: what would be captured. JSON on stdout when asked. */
+function reportPlan(plan: CrawlPlan, flags: Flags, log: Log): void {
+  if (flags.json === true) {
+    console.log(JSON.stringify({ dryRun: true, ...plan }));
+    return;
+  }
+  log("");
+  for (const r of plan.routes) {
+    const extra = r.states.filter((id) => id !== "default");
+    console.log(`${r.url}${extra.length ? `  (+${extra.length}: ${extra.join(", ")})` : ""}`);
+  }
+  log(
+    `dry run — ${plan.routes.length} page(s), ${plan.states} state(s), ` +
+      `${plan.shots} screenshot(s) across ${plan.devices.join(", ")}; nothing captured`,
+  );
+  log(`  model : ${plan.cachePath}`);
 }
 
 async function cmdRoutes(flags: Flags): Promise<void> {
@@ -516,9 +569,14 @@ async function cmdAuth(flags: Flags): Promise<void> {
 async function cmdDiscover(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
-  const baseUrl = str(flags, "base") ?? config.target;
-  if (!baseUrl) throw new UsageError("no base URL: pass --base=<url> or set target in config");
-  const { inputManifest, cachePath } = await discoverOnlyPipeline({ config, baseUrl, log });
+  const baseUrl = str(flags, "target") ?? config.target;
+  if (!baseUrl) throw new UsageError("no target URL: pass --target=<url> or set target in config");
+  const { inputManifest, cachePath } = await discoverOnlyPipeline({
+    config,
+    baseUrl,
+    pagesOnly: flags["no-states"] === true,
+    log,
+  });
   const states = countStates(inputManifest.routes);
   if (flags.json === true) {
     console.log(JSON.stringify({ cachePath, routes: inputManifest.routes.length, states }));
@@ -539,7 +597,7 @@ async function cmdAuthor(flags: Flags): Promise<void> {
   }
   const files = await listAuthoredFiles(str(flags, "from") ?? path.join(outRoot, "explore"));
   const authored = await Promise.all(files.map(readAuthoredFile));
-  const baseUrl = str(flags, "base") ?? config.target ?? "http://localhost";
+  const baseUrl = str(flags, "target") ?? config.target ?? "http://localhost";
   const canonical = (p: string) => {
     try {
       return canonicalPath(new URL(p, baseUrl), config.scope.hashRoutes);
@@ -620,8 +678,8 @@ async function readRecipeFlag(value: string): Promise<RecipeStep[]> {
 async function cmdProbe(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
-  const baseUrl = str(flags, "base") ?? config.target;
-  if (!baseUrl) throw new UsageError("no base URL: pass --base=<url> or set target in config");
+  const baseUrl = str(flags, "target") ?? config.target;
+  if (!baseUrl) throw new UsageError("no target URL: pass --target=<url> or set target in config");
   const page = str(flags, "page");
   if (!page) throw new UsageError("which page? visualice probe <path> [--recipe=…]");
   const recipeFlag = str(flags, "recipe");
@@ -789,6 +847,7 @@ async function main(): Promise<void> {
     return;
   }
   const flags = parseFlags(cmd, rest);
+  setHeaded(flags.headed === true);
   switch (cmd) {
     case "init":
       return cmdInit(flags);

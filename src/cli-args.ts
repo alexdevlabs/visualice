@@ -13,15 +13,14 @@ type FlagType = "string" | "boolean";
 /** Every flag the CLI knows, with its arity. */
 const FLAG_TYPES: Record<string, FlagType> = {
   config: "string",
-  base: "string",
+  target: "string",
   manifest: "string",
   replay: "boolean",
   resume: "boolean",
   run: "string",
-  site: "string",
   port: "string",
   open: "boolean",
-  shoot: "string",
+  screenshot: "string",
   force: "boolean",
   json: "boolean",
   quiet: "boolean",
@@ -31,8 +30,13 @@ const FLAG_TYPES: Record<string, FlagType> = {
   exclude: "string",
   devices: "string",
   concurrency: "string",
-  timeout: "string",
-  out: "string",
+  "timeout-ms": "string",
+  dir: "string",
+  site: "string",
+  seed: "string",
+  "no-states": "boolean",
+  headed: "boolean",
+  "dry-run": "boolean",
   "no-save": "boolean",
   "no-fix": "boolean",
   dest: "string",
@@ -46,31 +50,47 @@ const FLAG_TYPES: Record<string, FlagType> = {
   "all-devices": "boolean",
 };
 
+/**
+ * Flags renamed before 1.0, mapped to their current names. They still work, with a
+ * warning, so scripts and CI written against the old names don't break.
+ */
+const RENAMED: Record<string, string> = {
+  base: "target",
+  shoot: "screenshot",
+  out: "dir",
+  timeout: "timeout-ms",
+};
+
 /** Commands that accept one bare positional, mapped onto a flag (crawl <url>). */
 const POSITIONAL: Record<string, string> = {
-  crawl: "base",
-  discover: "base",
-  init: "base",
+  crawl: "target",
+  discover: "target",
+  init: "target",
   export: "dest",
   probe: "page",
   author: "from",
 };
 
 const OVERRIDE_FLAGS = [
+  "site",
   "max-pages",
   "include",
   "exclude",
   "devices",
   "concurrency",
-  "timeout",
-  "out",
+  "timeout-ms",
+  "dir",
+  "headed",
 ] as const;
 
 /** Which flags each command accepts; anything else is an error, not a silent no-op. */
 export const COMMAND_FLAGS: Record<string, string[]> = {
   crawl: [
     "config",
-    "base",
+    "target",
+    "seed",
+    "no-states",
+    "dry-run",
     "replay",
     "resume",
     "json",
@@ -79,22 +99,22 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
     "no-save",
     ...OVERRIDE_FLAGS,
   ],
-  discover: ["config", "base", "json", "quiet", ...OVERRIDE_FLAGS],
-  capture: ["config", "base", "manifest", "json", "quiet", "fail-on-error", ...OVERRIDE_FLAGS],
-  init: ["base", "force", "quiet"],
-  routes: ["config", "json", "quiet", "out"],
-  auth: ["config", "force", "quiet"],
-  validate: ["config", "manifest", "json", "quiet", "out"],
-  serve: ["config", "site", "run", "port", "open", "shoot", "quiet", "out"],
+  discover: ["config", "target", "seed", "no-states", "json", "quiet", ...OVERRIDE_FLAGS],
+  capture: ["config", "target", "manifest", "json", "quiet", "fail-on-error", ...OVERRIDE_FLAGS],
+  init: ["target", "force", "quiet"],
+  routes: ["config", "json", "quiet", "dir"],
+  auth: ["config", "force", "headed", "quiet"],
+  validate: ["config", "manifest", "json", "quiet", "dir"],
+  serve: ["config", "site", "run", "port", "open", "screenshot", "quiet", "dir"],
   fixture: ["port", "open", "quiet"],
   demo: ["config", "json", "quiet", "fail-on-error"],
   "demo-crawl": ["config", "replay", "json", "quiet", "fail-on-error"],
   doctor: ["json", "quiet", "no-fix"],
-  export: ["config", "site", "run", "dest", "json", "quiet", "out"],
-  author: ["config", "base", "from", "json", "quiet", "out"],
+  export: ["config", "site", "run", "dest", "json", "quiet", "dir"],
+  author: ["config", "target", "from", "json", "quiet", "dir"],
   probe: [
     "config",
-    "base",
+    "target",
     "page",
     "recipe",
     "state",
@@ -102,8 +122,9 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
     "shot",
     "inventory",
     "all-devices",
+    "headed",
     "quiet",
-    "out",
+    "dir",
   ],
 };
 
@@ -125,9 +146,14 @@ function own<T>(table: Record<string, T>, key: string): T | undefined {
 /**
  * Parse `--flag=value`, `--flag value` and bare `--flag` forms, strictly: unknown
  * flags, missing values and values on boolean flags all throw instead of being
- * silently dropped (an agent's typo'd flag must fail loudly).
+ * silently dropped (an agent's typo'd flag must fail loudly). A renamed flag is
+ * read as its new name, with a warning through `warn`.
  */
-export function parseFlags(cmd: string, argv: string[]): Flags {
+export function parseFlags(
+  cmd: string,
+  argv: string[],
+  warn: (msg: string) => void = (m) => console.error(m),
+): Flags {
   const allowed = own(COMMAND_FLAGS, cmd) ?? [];
   const flags: Flags = {};
   for (let i = 0; i < argv.length; i++) {
@@ -141,10 +167,13 @@ export function parseFlags(cmd: string, argv: string[]): Flags {
       throw new UsageError(`unexpected argument "${token}" — flags look like --name=value`);
     }
     const eq = token.indexOf("=");
-    const name = eq >= 0 ? token.slice(2, eq) : token.slice(2);
+    const given = eq >= 0 ? token.slice(2, eq) : token.slice(2);
+    const renamed = own(RENAMED, given);
+    const name = renamed && allowed.includes(renamed) ? renamed : given;
+    if (name !== given) warn(`--${given} is deprecated — use --${name}`);
     const type = own(FLAG_TYPES, name);
     if (!type || !allowed.includes(name)) {
-      throw new UsageError(`unknown flag --${name} for '${cmd}' (see 'visualice help')`);
+      throw new UsageError(`unknown flag --${given} for '${cmd}' (see 'visualice help')`);
     }
     if (type === "boolean") {
       if (eq >= 0) throw new UsageError(`--${name} takes no value`);
@@ -198,10 +227,23 @@ export function applyOverrides(config: Config, flags: Flags): Config {
   if (exclude !== undefined) out.scope.exclude = csv(exclude);
   const concurrency = intFlag(flags, "concurrency");
   if (concurrency !== undefined) out.politeness.concurrency = concurrency;
-  const timeout = intFlag(flags, "timeout");
+  const timeout = intFlag(flags, "timeout-ms");
   if (timeout !== undefined) out.politeness.timeoutMs = timeout;
-  const dir = str(flags, "out");
+  const dir = str(flags, "dir");
   if (dir !== undefined) out.output.dir = dir;
+  const site = str(flags, "site");
+  if (site !== undefined) {
+    if (!site.trim() || /[\\/]|^\.\.?$/.test(site)) {
+      throw new UsageError(`--site must be a plain folder name (got "${site}")`);
+    }
+    out.output.site = site;
+  }
+  const seed = str(flags, "seed");
+  if (seed !== undefined) {
+    const paths = csv(seed);
+    if (!paths.length) throw new UsageError("--seed needs at least one path or URL");
+    out.seeds = [...config.seeds, ...paths.filter((p) => !config.seeds.includes(p))];
+  }
   const devices = str(flags, "devices");
   if (devices !== undefined) {
     const names = csv(devices);

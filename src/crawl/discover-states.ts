@@ -522,10 +522,10 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
  * Probe candidate triggers and record the ones that produce a real UI mutation
  * as replayable states.
  *
- * `discovery.interactions.nestDepth` controls how deep this goes: 0 captures the
- * default render only, 1 (the default) captures single mutations, and >1 also
- * probes *inside* each opened state — a filter panel within an open modal, say —
- * recording the combined click sequence as one recipe. Nesting multiplies work,
+ * `discovery.interactions.auto: false` records the default render only. Otherwise
+ * `nestDepth` controls how deep probing goes: 1 (the default) captures single
+ * mutations, and >1 also probes *inside* each opened state — a filter panel within
+ * an open modal, say — recording the combined click sequence as one recipe. Nesting multiplies work,
  * so `maxPerPage` still caps the total states per route.
  */
 export async function discoverStates(
@@ -537,7 +537,7 @@ export async function discoverStates(
 ): Promise<StateNode[]> {
   const states: StateNode[] = [defaultState()];
   const interactions = config.discovery.interactions;
-  if (!interactions.auto || interactions.nestDepth < 1) return states;
+  if (!interactions.auto) return states;
 
   const waitUntil = config.stabilize.waitStrategy;
   const page = await context.newPage();

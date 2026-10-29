@@ -39,7 +39,7 @@ describe("screenshot safety", () => {
     const out = await tempDir("safety");
     try {
       const clamped = await capturePipeline({
-        config: config(out, { screenshot: { screens: false, maxHeight: 1000 } }),
+        config: config(out, { screenshot: { fullPage: "single", maxHeight: 1000 } }),
         inputManifest: single(),
         baseUrl: server.url,
         log: silent,
@@ -50,7 +50,7 @@ describe("screenshot safety", () => {
 
       // Without the clamp the same page produces the full 9000px shot.
       const full = await capturePipeline({
-        config: config(out, { screenshot: { screens: false, maxHeight: 0 } }),
+        config: config(out, { screenshot: { fullPage: "single", maxHeight: 0 } }),
         inputManifest: single(),
         baseUrl: server.url,
         log: silent,
@@ -65,12 +65,13 @@ describe("screenshot safety", () => {
     }
   }, 120_000);
 
-  it("stops an unbounded page at maxScreens and flags the shot", async () => {
+  it("stops an unbounded page at maxHeight, screen by screen, and flags the shot", async () => {
     const { server, dir: siteDir } = await serveFiles({ "index.html": TALL });
     const out = await tempDir("safety");
     try {
       const result = await capturePipeline({
-        config: config(out, { screenshot: { maxScreens: 3 } }),
+        // Screens cover 300, 560 and 820px of the page; the third reaches the limit.
+        config: config(out, { screenshot: { maxHeight: 800 } }),
         inputManifest: single(),
         baseUrl: server.url,
         log: silent,
@@ -104,6 +105,7 @@ describe("screenshot safety", () => {
     const out = await tempDir("safety");
     try {
       const result = await capturePipeline({
+        // The deprecated screen count still limits a shot.
         config: config(out, { screenshot: { maxScreens: 3 } }),
         inputManifest: single(),
         baseUrl: server.url,

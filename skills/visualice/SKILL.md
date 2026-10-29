@@ -113,7 +113,7 @@ password-protected staging: [`references/auth.md`](references/auth.md).
   the whole crawl for one flaky shot — fix or mask the cause.
 - Open the viewer: `visualice serve --open` (`--site=<name>` for another site in the
   output directory, `--run=<id>` for a specific run instead of the latest,
-  `--shoot=out.png` to grab a headless screenshot of the viewer itself). Shots are
+  `--screenshot=out.png` to grab a headless screenshot of the viewer itself). Shots are
   grouped by route, a row per state and a column per device. The mode switch draws
   each shot as **Screen** (the captured screens, one card each), **Continuous** (the
   screens joined, pinned bars shown once) or **Scroll** (one scrollable screen per

@@ -22,7 +22,7 @@ const config: VisualiceConfig = {
   ],
 
   screenshot: {
-    fullPage: true,
+    fullPage: "screens",
     alsoViewport: true,
     format: "png",
     thumbnail: { width: 480, format: "webp", quality: 70 },

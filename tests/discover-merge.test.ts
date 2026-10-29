@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { keepSiteWideOnce, mergeMobileStates } from "../src/crawl/discover";
 import { siteKeyFor } from "../src/crawl/discover-states";
+import { mergeManifests } from "../src/crawl/manifest";
+import { pagesOnly } from "../src/crawl/orchestrator";
 import type { RouteNode, StateNode } from "../src/shared/types";
 
 const state = (id: string, signature?: string): StateNode => ({
@@ -114,5 +116,28 @@ describe("keepSiteWideOnce", () => {
     const routes = [at("/new", keyed("menu", "k1"), keyed("own", "k9"))];
     expect(keepSiteWideOnce(routes, [at("/", keyed("menu", "k1"))])).toBe(1);
     expect(routes[0].states.map((s) => s.id)).toEqual(["own"]);
+  });
+});
+
+describe("pages-only runs", () => {
+  const def = { ...state("default"), kind: "default" as const };
+  const model = (...states: StateNode[]) => ({ routes: [{ ...route(...states), title: "old" }] });
+
+  it("keep the cached states a states-free discovery didn't look for", () => {
+    const cached = model(def, state("menu-open"), { ...state("drawer"), source: "authored" });
+    const fresh = { routes: [{ ...route(def), title: "new" }] };
+    const kept = mergeManifests(cached, fresh, { keepStates: true });
+    expect(kept.routes[0].states.map((s) => s.id)).toEqual(["default", "menu-open", "drawer"]);
+    expect(kept.routes[0].title).toBe("new");
+    // A normal merge replaces the auto states with what the fresh pass found.
+    expect(mergeManifests(cached, fresh).routes[0].states.map((s) => s.id)).toEqual([
+      "drawer",
+      "default",
+    ]);
+  });
+
+  it("capture only each page's default render", () => {
+    const only = pagesOnly(model(def, state("menu-open")));
+    expect(only.routes[0].states.map((s) => s.id)).toEqual(["default"]);
   });
 });

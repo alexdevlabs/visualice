@@ -4,7 +4,7 @@ import { ConfigSchema } from "../src/shared/config";
 
 describe("parseFlags", () => {
   it("parses --flag=value", () => {
-    expect(parseFlags("crawl", ["--base=https://x.dev"])).toEqual({ base: "https://x.dev" });
+    expect(parseFlags("crawl", ["--target=https://x.dev"])).toEqual({ target: "https://x.dev" });
   });
 
   it("parses --flag value (space form)", () => {
@@ -33,10 +33,10 @@ describe("parseFlags", () => {
     expect(() => parseFlags("crawl", ["--replay=yes"])).toThrow(/--replay takes no value/);
   });
 
-  it("maps one bare positional to --base for crawl/discover/init", () => {
-    expect(parseFlags("crawl", ["https://x.dev"])).toEqual({ base: "https://x.dev" });
+  it("maps one bare positional to --target for crawl/discover/init", () => {
+    expect(parseFlags("crawl", ["https://x.dev"])).toEqual({ target: "https://x.dev" });
     expect(parseFlags("init", ["https://x.dev", "--quiet"])).toEqual({
-      base: "https://x.dev",
+      target: "https://x.dev",
       quiet: true,
     });
   });
@@ -74,11 +74,53 @@ describe("parseFlags", () => {
   });
 
   it("mixes forms", () => {
-    expect(parseFlags("crawl", ["--base", "https://x.dev", "--max-pages=5", "--quiet"])).toEqual({
-      base: "https://x.dev",
+    expect(parseFlags("crawl", ["--target", "https://x.dev", "--max-pages=5", "--quiet"])).toEqual({
+      target: "https://x.dev",
       "max-pages": "5",
       quiet: true,
     });
+  });
+
+  it("reads renamed flags as their new names, with a warning", () => {
+    const warnings: string[] = [];
+    const warn = (m: string) => warnings.push(m);
+    expect(
+      parseFlags("crawl", ["--base=https://x.dev", "--timeout=5000", "--out", "o"], warn),
+    ).toEqual({ target: "https://x.dev", "timeout-ms": "5000", dir: "o" });
+    expect(parseFlags("serve", ["--shoot=v.png"], warn)).toEqual({ screenshot: "v.png" });
+    expect(warnings).toEqual([
+      "--base is deprecated — use --target",
+      "--timeout is deprecated — use --timeout-ms",
+      "--out is deprecated — use --dir",
+      "--shoot is deprecated — use --screenshot",
+    ]);
+  });
+
+  it("still rejects a renamed flag on a command whose new name it doesn't take", () => {
+    expect(() => parseFlags("doctor", ["--out=o"], () => {})).toThrow(/unknown flag --out/);
+  });
+
+  it("takes the new crawl flags", () => {
+    expect(
+      parseFlags("crawl", [
+        "--seed=/a,/b",
+        "--no-states",
+        "--dry-run",
+        "--headed",
+        "--site=staging",
+      ]),
+    ).toEqual({
+      seed: "/a,/b",
+      "no-states": true,
+      "dry-run": true,
+      headed: true,
+      site: "staging",
+    });
+    expect(parseFlags("discover", ["--no-states", "--seed", "/a"])).toEqual({
+      "no-states": true,
+      seed: "/a",
+    });
+    expect(() => parseFlags("discover", ["--dry-run"])).toThrow(/unknown flag --dry-run/);
   });
 });
 
@@ -116,8 +158,8 @@ describe("applyOverrides", () => {
     const out = applyOverrides(base(), {
       "max-pages": "9",
       concurrency: "2",
-      timeout: "5000",
-      out: "/tmp/vc",
+      "timeout-ms": "5000",
+      dir: "/tmp/vc",
     });
     expect(out.scope.maxPages).toBe(9);
     expect(out.politeness.concurrency).toBe(2);
@@ -146,6 +188,19 @@ describe("applyOverrides", () => {
     expect(() => applyOverrides(base(), { devices: "desktop,tv" })).toThrow(
       /unknown device\(s\) tv — configured: desktop, mobile/,
     );
+  });
+
+  it("names the site folder a crawl writes to", () => {
+    expect(applyOverrides(base(), { site: "staging" }).output.site).toBe("staging");
+    for (const bad of ["a/b", "..", " ", "a\\b"]) {
+      expect(() => applyOverrides(base(), { site: bad }), bad).toThrow(/plain folder name/);
+    }
+  });
+
+  it("adds --seed pages to the configured seeds without repeating them", () => {
+    const config = ConfigSchema.parse({ seeds: ["/a"] });
+    expect(applyOverrides(config, { seed: "/a, /b,/c" }).seeds).toEqual(["/a", "/b", "/c"]);
+    expect(() => applyOverrides(config, { seed: " , " })).toThrow(/at least one/);
   });
 
   it("rejects non-integer numeric overrides", () => {

@@ -32,40 +32,50 @@ the dedicated script where one exists, e.g. `npm run crawl -- <args>`).
 Flags accept `--name=value` or `--name value`; only the flags relevant to a given
 command are accepted by it.
 
-| Flag                     | Applies to           | Meaning                                                                |
-| ------------------------ | -------------------- | ---------------------------------------------------------------------- |
-| `--config=<path>`        | most                 | Config file (`.ts`/`.js`/`.json`); cwd auto-detection if omitted       |
-| `--base=<url>`           | most                 | Base URL (overrides `config.target`); same as the bare `[url]` arg     |
-| `--no-save`              | `crawl`              | Don't scaffold a config on first run                                   |
-| `--manifest=<path>`      | `capture`/`validate` | Input manifest path                                                    |
-| `--replay`               | `crawl`              | Reuse the cached site model, skip discovery                            |
-| `--resume`               | `crawl`              | Continue the newest interrupted run, keeping its shots                 |
-| `--json`                 | most                 | Print a machine-readable JSON summary to stdout                        |
-| `--quiet`                | most                 | Suppress progress output on stderr                                     |
-| `--fail-on-error`        | capture cmds         | Exit 3 if any capture failed                                           |
-| `--max-pages=<n>`        | crawl cmds           | Override `scope.maxPages`                                              |
-| `--include=<globs>`      | crawl cmds           | Override `scope.include` (comma-separated)                             |
-| `--exclude=<globs>`      | crawl cmds           | Override `scope.exclude` (comma-separated)                             |
-| `--devices=<names>`      | crawl cmds           | Capture only these configured devices (comma-separated)                |
-| `--concurrency=<n>`      | crawl cmds           | Override `politeness.concurrency`                                      |
-| `--timeout=<ms>`         | crawl cmds           | Override `politeness.timeoutMs`                                        |
-| `--out=<dir>`            | most                 | Override `output.dir` (default `.visualice`)                           |
-| `--site=<name>`          | `serve`/`export`     | Which site (default: this project's, else the last crawled)            |
-| `--run=<id>`             | `serve`/`export`     | Which run of that site (default: its latest)                           |
-| `--port=<n>`             | `serve`/`fixture`    | Fixed port (default: random)                                           |
-| `--open`                 | `serve`/`fixture`    | Open in your browser                                                   |
-| `--shoot=<file>`         | `serve`              | Headless-screenshot the viewer to a file, then exit                    |
-| `--force`                | `auth`/`init`        | Re-run the login despite a fresh session; `init`: overwrite config     |
-| `--no-fix`               | `doctor`             | Report problems without repairing them                                 |
-| `--recipe=<json\|@file>` | `probe`              | Steps to run on the page (a JSON array, or `@file.json`)               |
-| `--state=<id>`           | `probe`              | Run the cached recipe of one of the page's states                      |
-| `--device=<name>`        | `probe`              | Probe as this configured device (default: the first)                   |
-| `--shot=<file>`          | `probe`              | Write a viewport screenshot (CSS px) after the recipe                  |
-| `--inventory`            | `probe`              | With a recipe: also inventory the page the recipe left                 |
-| `--all-devices`          | `probe`              | Also run the recipe on every configured device; `devices` reports each |
+| Flag                     | Applies to                   | Meaning                                                                                                                                                                  |
+| ------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--config=<path>`        | most                         | Config file (`.ts`/`.js`/`.json`); cwd auto-detection if omitted                                                                                                         |
+| `--target=<url>`         | most                         | Site to crawl (overrides `config.target`); same as the bare `[url]` arg                                                                                                  |
+| `--seed=<paths>`         | `crawl`/`discover`           | Extra entry pages, added to `config.seeds` (comma-separated)                                                                                                             |
+| `--no-states`            | `crawl`/`discover`           | Pages only, no UI states: faster, and the states already cached are kept                                                                                                 |
+| `--dry-run`              | `crawl`                      | Discover, then list what would be captured (pages, states, shot count)                                                                                                   |
+| `--no-save`              | `crawl`                      | Don't scaffold a config on first run                                                                                                                                     |
+| `--manifest=<path>`      | `capture`/`validate`         | Input manifest path                                                                                                                                                      |
+| `--replay`               | `crawl`                      | Reuse the cached site model, skip discovery                                                                                                                              |
+| `--resume`               | `crawl`                      | Continue the newest interrupted run, keeping its shots                                                                                                                   |
+| `--json`                 | most                         | Print a machine-readable JSON summary to stdout                                                                                                                          |
+| `--quiet`                | most                         | Suppress progress output on stderr                                                                                                                                       |
+| `--fail-on-error`        | capture cmds                 | Exit 3 if any capture failed                                                                                                                                             |
+| `--headed`               | crawl cmds, `auth`, `probe`  | Show the browser windows (watching a login recipe or a probe)                                                                                                            |
+| `--max-pages=<n>`        | crawl cmds                   | Override `scope.maxPages`                                                                                                                                                |
+| `--include=<globs>`      | crawl cmds                   | Override `scope.include` (comma-separated)                                                                                                                               |
+| `--exclude=<globs>`      | crawl cmds                   | Override `scope.exclude` (comma-separated)                                                                                                                               |
+| `--devices=<names>`      | crawl cmds                   | Capture only these configured devices (comma-separated)                                                                                                                  |
+| `--concurrency=<n>`      | crawl cmds                   | Override `politeness.concurrency`                                                                                                                                        |
+| `--timeout-ms=<ms>`      | crawl cmds                   | Override `politeness.timeoutMs`                                                                                                                                          |
+| `--dir=<dir>`            | most                         | Override `output.dir` (default `.visualice`)                                                                                                                             |
+| `--site=<name>`          | crawl cmds, `serve`/`export` | The site's folder under `<dir>/sites/`: where a crawl writes (overrides `output.site`); which one `serve`/`export` open (default: this project's, else the last crawled) |
+| `--run=<id>`             | `serve`/`export`             | Which run of that site (default: its latest)                                                                                                                             |
+| `--port=<n>`             | `serve`/`fixture`            | Fixed port (default: random)                                                                                                                                             |
+| `--open`                 | `serve`/`fixture`            | Open in your browser                                                                                                                                                     |
+| `--screenshot=<file>`    | `serve`                      | Headless-screenshot the viewer to a file, then exit                                                                                                                      |
+| `--force`                | `auth`/`init`                | Re-run the login despite a fresh session; `init`: overwrite config                                                                                                       |
+| `--no-fix`               | `doctor`                     | Report problems without repairing them                                                                                                                                   |
+| `--recipe=<json\|@file>` | `probe`                      | Steps to run on the page (a JSON array, or `@file.json`)                                                                                                                 |
+| `--state=<id>`           | `probe`                      | Run the cached recipe of one of the page's states                                                                                                                        |
+| `--device=<name>`        | `probe`                      | Probe as this configured device (default: the first)                                                                                                                     |
+| `--shot=<file>`          | `probe`                      | Write a viewport screenshot (CSS px) after the recipe                                                                                                                    |
+| `--inventory`            | `probe`                      | With a recipe: also inventory the page the recipe left                                                                                                                   |
+| `--all-devices`          | `probe`                      | Also run the recipe on every configured device; `devices` reports each                                                                                                   |
 
 _crawl cmds_ = `crawl`, `discover` and `capture`; _capture cmds_ = `crawl`, `capture`, `demo`
 and `demo-crawl`.
+
+Renamed flags still work, with a warning on stderr: `--base` → `--target`, `--shoot` →
+`--screenshot`, `--out` → `--dir`, `--timeout` → `--timeout-ms`. Renamed config keys load
+the same way: `screenshot.fullPage: true` + `screens` → `fullPage: "screens" | "single"`,
+`screenshot.thumbnail.midWidth` → `zoomWidth`, `discovery.interactions.nestDepth: 0` →
+`auto: false`; `screenshot.maxScreens` is still honoured, `maxHeight` is its replacement.
 
 ## Exit codes
 

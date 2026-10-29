@@ -11,6 +11,7 @@ import { locatorFor, useTestIdAttribute } from "../shared/selectors";
 import { mapPool } from "../shared/pool";
 import { uniqueId } from "../shared/url";
 import { countStates } from "./manifest";
+import { launchOptions } from "../shared/launch";
 
 export interface DiscoverOptions {
   config: Config;
@@ -128,7 +129,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
   const log = opts.log ?? (() => {});
   const interactions = config.discovery.interactions;
   useTestIdAttribute(config.testIdAttribute);
-  const browser = await chromium.launch();
+  const browser = await chromium.launch(launchOptions());
 
   const newDiscoveryContext = async (device?: Device): Promise<BrowserContext> => {
     const context = await browser.newContext({
@@ -165,12 +166,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
     await context.close();
 
     const mobileDevices = config.devices.filter((d) => d.mobile);
-    if (
-      config.discovery.mobileStates &&
-      mobileDevices.length &&
-      interactions.auto &&
-      interactions.nestDepth >= 1
-    ) {
+    if (config.discovery.mobileStates && mobileDevices.length && interactions.auto) {
       const probeDevice = mobileDevices[0];
       log(`probing mobile-only states (${probeDevice.name} viewport)…`);
       const mobileContext = await newDiscoveryContext(probeDevice);

@@ -94,9 +94,9 @@ describe("makeThumb", () => {
 
   it("uses the width override for the mid tier instead of the thumbnail width", async () => {
     const file = dest("mid.webp");
-    await makeThumb(await page(2880, 2160, 400), file, THUMB, THUMB.midWidth);
+    await makeThumb(await page(2880, 2160, 400), file, THUMB, THUMB.zoomWidth);
     const meta = await sharp(file).metadata();
-    expect(meta.width).toBe(THUMB.midWidth);
+    expect(meta.width).toBe(THUMB.zoomWidth);
     expect(meta.width).not.toBe(THUMB.width);
   });
 });

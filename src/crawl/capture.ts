@@ -25,6 +25,7 @@ import { pathExists } from "../shared/fsx";
 import { mapPoolWithResource, sleep } from "../shared/pool";
 import { countStates } from "./manifest";
 import { checkAccessibility, rollupViolations, type AccessibilityViolation } from "./accessibility";
+import { launchOptions } from "../shared/launch";
 
 export interface CaptureOptions {
   config: Config;
@@ -351,7 +352,8 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // Taking a page a screen at a time scrolls it the way a user would, which wakes
   // lazy content on its own — the separate scroll-to-the-bottom-and-back pass would
   // only be a second, earlier scroll through the same page.
-  const screens = !state.element && config.screenshot.fullPage && config.screenshot.screens;
+  const fullPage = config.screenshot.fullPage !== false;
+  const screens = !state.element && config.screenshot.fullPage === "screens";
   const stabilize = screens ? { ...config.stabilize, lazyScroll: false } : config.stabilize;
   await stabilizePage(page, stabilize, ctx.log, { keepScroll });
 
@@ -400,12 +402,13 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   const metaPath = path.join(dir, `${device.name}.json`);
 
   const clip =
-    !element && config.screenshot.fullPage && !screens
+    !element && fullPage && !screens
       ? await fullPageClip(page, config.screenshot.maxHeight)
       : undefined;
 
   const taken = screens
     ? await captureScreens(page, {
+        maxHeight: config.screenshot.maxHeight,
         maxScreens: config.screenshot.maxScreens,
         settleMs: config.stabilize.extraDelayMs,
         type: shotType,
@@ -426,7 +429,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
       : await page.screenshot({
           // `clip` alone is bounded by the viewport; it only reaches further down the
           // page when fullPage is set too.
-          fullPage: config.screenshot.fullPage,
+          fullPage,
           clip,
           mask: mask.length ? mask : undefined,
           type: shotType,
@@ -439,9 +442,9 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
 
   // A mid tier only earns its bytes when the full image is meaningfully wider than
   // it — otherwise the viewer would download two near-identical images.
-  const midWidth = config.screenshot.thumbnail.midWidth;
-  const wantsMid = midWidth > 0 && (dims.width ?? 0) > midWidth * 1.2;
-  if (wantsMid) await makeThumb(buf, midPath, config.screenshot.thumbnail, midWidth);
+  const zoomWidth = config.screenshot.thumbnail.zoomWidth;
+  const wantsMid = zoomWidth > 0 && (dims.width ?? 0) > zoomWidth * 1.2;
+  if (wantsMid) await makeThumb(buf, midPath, config.screenshot.thumbnail, zoomWidth);
 
   const ref: ShotRef = {
     full: rel(fullPath),
@@ -466,7 +469,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   if (config.screenshot.alsoViewport && !element) {
     const viewportPath = path.join(dir, `${device.name}.viewport.${ext}`);
     // Crop the viewport out of the full buffer instead of taking a second screenshot.
-    if (config.screenshot.fullPage && dims.width && dims.height) {
+    if (fullPage && dims.width && dims.height) {
       const cropH = Math.min(Math.round(device.height * device.dpr), dims.height);
       await writeViewportCrop(buf, viewportPath, ext, config.screenshot.quality, dims.width, cropH);
     } else {
@@ -570,7 +573,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
     const running = launched.get(name);
     if (running) return running;
     try {
-      const browser = await engines[name].launch();
+      const browser = await engines[name].launch(launchOptions());
       launched.set(name, browser);
       return browser;
     } catch (e) {

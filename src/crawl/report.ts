@@ -38,7 +38,7 @@ export function renderReport(m: Manifest): string {
   ).length;
   if (clamped) {
     lines.push(
-      `- **Clamped:** ${clamped} shot(s) hit the \`screenshot.maxHeight\` or \`maxScreens\` limit and were cropped`,
+      `- **Clamped:** ${clamped} shot(s) hit the \`screenshot.maxHeight\` limit and were cut off`,
     );
   }
   lines.push("");
