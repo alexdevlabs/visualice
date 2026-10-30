@@ -458,10 +458,39 @@ export async function loadConfig(file?: string): Promise<Config> {
   if (abs.endsWith(".json")) {
     raw = JSON.parse(await fs.readFile(abs, "utf8"));
   } else {
-    const mod = await import(pathToFileURL(abs).href);
+    const mod = await importConfig(abs);
     raw = (mod as { default?: unknown }).default ?? mod;
   }
   return parseConfig(raw);
+}
+
+/** A config file that can't be loaded, for a reason the message fully explains. */
+export class ConfigLoadError extends Error {}
+
+/**
+ * Import a `.js`/`.ts` config. Node runs `.ts` itself from 22.18 by stripping the
+ * types, which also means syntax that needs compiling (an `enum`, a `namespace`)
+ * fails; both failures get a message that says what to do instead of a stack trace.
+ */
+async function importConfig(abs: string): Promise<unknown> {
+  try {
+    return await import(pathToFileURL(abs).href);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ERR_UNKNOWN_FILE_EXTENSION" && /\.[cm]?ts$/.test(abs)) {
+      throw new ConfigLoadError(
+        `can't load ${path.basename(abs)}: Node ${process.versions.node} doesn't run TypeScript ` +
+          `files (22.18 or newer does). Upgrade Node, or use visualice.config.json.`,
+      );
+    }
+    if (code === "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX") {
+      throw new ConfigLoadError(
+        `can't load ${path.basename(abs)}: ${(e as Error).message.split("\n")[0]} — Node only ` +
+          `strips types, so use plain objects and unions instead of enums or namespaces.`,
+      );
+    }
+    throw e;
+  }
 }
 
 type Warn = (msg: string) => void;

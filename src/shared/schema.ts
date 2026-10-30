@@ -25,7 +25,7 @@ const render = (schema: Record<string, unknown>): string => `${JSON.stringify(sc
  */
 export function configJsonSchema(): Record<string, unknown> {
   return jsonSchema(ConfigSchema, {
-    $id: "https://visualice.dev/config.schema.json",
+    $id: "https://unpkg.com/visualice/config.schema.json",
     title: "Visualice config",
     description:
       "Configuration for a visualice crawl. Every field is optional; omitted fields fall back to the defaults in src/shared/config.ts.",
@@ -44,7 +44,7 @@ export function renderConfigJsonSchema(): string {
  */
 export function manifestJsonSchema(): Record<string, unknown> {
   return jsonSchema(InputManifestSchema, {
-    $id: "https://visualice.dev/manifest.schema.json",
+    $id: "https://unpkg.com/visualice/manifest.schema.json",
     title: "Visualice crawl manifest",
     description:
       "A site model: routes, their UI states, and the replayable recipes that reach them. Written by discovery, hand-edited in Explore mode, replayed by capture.",

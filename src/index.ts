@@ -13,7 +13,7 @@
  *
  * The package ships built ESM plus type declarations in `dist/` (`npm run build`,
  * run automatically on publish), so consumers need no TypeScript toolchain of their
- * own. Node 20.12+.
+ * own. Node 22.18+.
  */
 
 export { loadConfig, ConfigSchema, DeviceSchema } from "./shared/config";

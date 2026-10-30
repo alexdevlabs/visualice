@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://visualice.dev/config.schema.json",
+  "$id": "https://unpkg.com/visualice/config.schema.json",
   "title": "Visualice config",
   "description": "Configuration for a visualice crawl. Every field is optional; omitted fields fall back to the defaults in src/shared/config.ts.",
   "type": "object",

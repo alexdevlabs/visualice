@@ -23,10 +23,10 @@
     "agent-skill"
   ],
   "engines": {
-    "node": ">=20.12.0"
+    "node": ">=22.18.0"
   },
   "bin": {
-    "visualice": "bin/visualice.mjs"
+    "visualice": "cli/visualice.mjs"
   },
   "types": "./dist/types/index.d.ts",
   "exports": {
@@ -34,7 +34,9 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./config.schema.json": "./config.schema.json"
+    "./config.schema.json": "./config.schema.json",
+    "./manifest.schema.json": "./manifest.schema.json",
+    "./package.json": "./package.json"
   },
   "scripts": {
     "vc": "tsx src/cli.ts",
@@ -99,12 +101,13 @@
     "vitest": "^3.0.0"
   },
   "files": [
-    "bin",
+    "cli",
     "dist",
     "viewer/dist",
     "!viewer/dist/data",
     "tests/fixture",
     "config.schema.json",
+    "manifest.schema.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

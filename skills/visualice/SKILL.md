@@ -11,10 +11,11 @@ is normally automatic; you (Claude) step in for auth and for states the heuristi
 
 ## 1. Locate & preflight
 
-Prefer an installed CLI: `npm i -g visualice`, or run it ad hoc with `npx visualice <cmd>`
-— both work from any directory, no repo checkout needed. In a source checkout of this
-repo itself, use the equivalent npm scripts instead: `npm run vc -- <cmd>` for anything
-below, `npm run crawl -- <args>` for crawls.
+Use `visualice` when it is on the PATH (`npm i -g visualice`); otherwise run it with
+`npx -y visualice@0.1.0 <cmd>`, the CLI version this skill was written for. Both work
+from any directory, no repo checkout needed. In a source checkout of this repo itself,
+use the npm scripts instead: `npm run vc -- <cmd>` for anything below, `npm run crawl --
+<args>` for crawls. The commands below say `visualice`; substitute whichever applies.
 
 Before the first crawl in a project, run `visualice doctor` — an idempotent preflight
 that checks Node/Playwright chromium/sharp/the viewer build and self-heals what it
@@ -52,7 +53,9 @@ template: `scope.samples: { "/product/*": 3 }` keeps the first three and skips t
 whatever their ids (sites that re-seed their data change ids — a sample survives
 that, an id list doesn't). Site-wide chrome (a header dropdown, a chat widget) is
 captured once, on the first page it was found on. One-off tweaks don't need config
-edits — flags like `--max-pages=<n> --include=<globs> --devices=<names>` override.
+edits — flags like `--max-pages=<n> --include=<globs> --devices=<names>` override,
+`--seed=/a,/b` adds entry pages discovery can't reach by links, and `--no-states`
+captures pages only (fast; the states already in the cache are kept).
 Always add `--json` and `--quiet` when running non-interactively, and `--fail-on-error`
 when a failed capture should fail the command (exit 3).
 
@@ -64,9 +67,12 @@ A run is `routes × states × devices` screenshots, and each full-page shot is r
 
 A 200-route site with 3 states each and 2 devices is ~1,200 shots — well over a
 gigabyte and many minutes of crawling. Before pointing visualice at anything you
-haven't scoped, run `visualice discover <url> --json` first: it maps routes and
-states **without taking a single screenshot**, and its counts are the real estimate.
-Then narrow with `--max-pages` / `--include` / `--devices` and confirm with the user.
+haven't scoped, run `visualice crawl <url> --dry-run --json`: it discovers routes and
+states **without taking a single screenshot**. The JSON has the exact `shots` count, the
+`states` total, the `devices`, and `routes` (each page's `url` and its state ids).
+Then narrow with `--max-pages` / `--include` / `--devices` / `--no-states` and confirm
+with the user. A dry run writes the cache, so the
+real crawl that follows can be `--replay`.
 
 `output.keepRuns` (default 5) prunes older runs of each site automatically, so
 `.visualice/` holds roughly five runs' worth per site. To reclaim space sooner, lower
@@ -144,7 +150,7 @@ Full flag reference: [`references/cli.md`](references/cli.md).
 
 ## Guardrails
 
-- Before a large crawl, estimate it with `visualice discover` (§2) and confirm the
+- Before a large crawl, estimate it with `visualice crawl --dry-run` (§2) and confirm the
   scope — don't spend an hour and a gigabyte of someone's disk without asking.
 - A hash-routed SPA (`#/about`) is crawled as one route per view by default; if a
   site uses fragments purely as in-page anchors and the crawl is forking on them, set

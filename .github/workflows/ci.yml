@@ -19,17 +19,15 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: [22]
+        node: ["22.18"]
         include:
           # Windows is the point of this matrix: symlink creation (src/shared/fsx.ts,
           # src/crawl/runs.ts) and the `open`-based browser shim behave differently
-          # there than on POSIX, and neither is exercised by macOS/Linux alone. We
-          # don't also need windows x node-20 — the node-version axis and the OS axis
-          # are independent concerns, so one extra leg (oldest supported engine, on
-          # the OS we already trust) is enough to cover both without a full cross
-          # product of CI minutes.
+          # there than on POSIX, and neither is exercised by macOS/Linux alone. The
+          # Node axis is independent of the OS one, so one extra leg covers it: the
+          # current LTS (24) next to the oldest supported release (22.18), on Linux only.
           - os: ubuntu-latest
-            node: 20
+            node: 24
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,10 +46,10 @@ jobs:
       # Runs once, not once per matrix leg, since the report would just be
       # identical noise duplicated across OS/node combinations.
       - name: Coverage report
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22.18'
         run: npm run test:coverage
       - name: Upload coverage report
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22.18'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
@@ -59,10 +57,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # Bin smoke test: exercises the *packaged* entry point (bin/visualice.mjs),
+      # Bin smoke test: exercises the *packaged* entry point (cli/visualice.mjs),
       # not `tsx src/cli.ts`, on every matrix leg — this is what would have caught a
       # Windows-only path or shebang problem in the published CLI. `npm run build`
-      # produces dist/cli.js so bin/visualice.mjs runs the built path instead of
+      # produces dist/cli.js so cli/visualice.mjs runs the built path instead of
       # falling back to tsx.
       - run: npm run build
       - name: bin smoke test — --help / --version
@@ -72,8 +70,8 @@ jobs:
         # default `-e` stops the step at the first failing line on every OS.
         shell: bash
         run: |
-          node bin/visualice.mjs --help
-          node bin/visualice.mjs --version
+          node cli/visualice.mjs --help
+          node cli/visualice.mjs --version
       - name: bin smoke test — doctor --json --no-fix
         # Use bash explicitly (Windows runners ship Git Bash) so this script is
         # identical on every OS instead of forking into a separate pwsh version.
@@ -88,7 +86,7 @@ jobs:
           # than 0 (all checks passed) or 1 (some checks failed, reported cleanly) —
           # e.g. an uncaught exception or a signal — which would be an actual bug.
           set +e
-          node bin/visualice.mjs doctor --json --no-fix
+          node cli/visualice.mjs doctor --json --no-fix
           code=$?
           set -e
           echo "doctor exited with code $code"

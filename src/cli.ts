@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
-import { loadConfig, type Config } from "./shared/config";
+import { ConfigLoadError, loadConfig, type Config } from "./shared/config";
 import { isCommand, UsageError, applyOverrides, parseFlags, str, type Flags } from "./cli-args";
 import { countStates, loadInputManifest, modelCachePath } from "./crawl/manifest";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
@@ -23,6 +23,7 @@ import {
 } from "./crawl/routes-file";
 import { ensureStorageState } from "./crawl/auth";
 import { pathExists } from "./shared/fsx";
+import { nodeBinCommand } from "./shared/node-bin";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
 import { formatDoctor, runDoctor } from "./doctor";
@@ -106,7 +107,7 @@ Options (flags accept --name=value or --name value):
   --dry-run            for 'crawl': discover, then list what would be captured instead of capturing it
   --no-save            for 'crawl': don't scaffold a config on first run
   --manifest=<path>    input manifest for 'capture' / 'validate'
-  --replay             for 'crawl': reuse cached site model, skip discovery
+  --replay             for 'crawl'/'demo-crawl': reuse cached site model, skip discovery
   --resume             for 'crawl': continue the newest interrupted run
   --json               print a machine-readable JSON summary to stdout
   --quiet              suppress progress output on stderr
@@ -120,8 +121,8 @@ Options (flags accept --name=value or --name value):
   --timeout-ms=<ms>    override politeness.timeoutMs
   --dir=<dir>          override output.dir (default .visualice)
   --site=<name>        the site's folder under <dir>/sites/: which one 'serve'/'export' open
-                       (default: this project's, else the last crawled); where a crawl writes
-                       (overrides output.site)
+                       (default: this project's, else the last crawled); where 'crawl',
+                       'discover' and 'capture' write (overrides output.site)
   --run=<id>           for 'serve'/'export': which run of that site (default: its latest)
   --port=<n>           for 'serve'/'fixture': fixed port (default: random)
   --open               for 'serve'/'fixture': open in your browser
@@ -236,8 +237,11 @@ async function ensureViewerBuilt(viewerDist: string, log: Log): Promise<void> {
     );
   }
   log("building viewer (first run)…");
+  const build = nodeBinCommand("vite", ["build", "viewer"], PROJECT_ROOT);
+  if (!build)
+    throw new Error("the viewer isn't built and vite isn't installed — run 'npm install'");
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("npx", ["vite", "build", "viewer"], {
+    const child = spawn(...build, {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
     });
@@ -271,7 +275,14 @@ async function shootViewer(url: string, outFile: string): Promise<void> {
       deviceScaleFactor: 2,
     });
     await page.goto(url, { waitUntil: "networkidle" });
-    await page.waitForTimeout(800);
+    // The boot loader holds for a couple of seconds and then fades: wait until it's
+    // gone, or the screenshot is of the loader, not the canvas.
+    await page
+      .getByRole("status", { name: "Loading" })
+      .waitFor({ state: "detached", timeout: 15_000 })
+      .catch(() => {});
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(500);
     await page.screenshot({ path: outFile });
   } finally {
     await browser.close();
@@ -437,8 +448,10 @@ async function cmdServe(flags: Flags): Promise<void> {
 /** Write the minimal project config + make sure `.visualice/` is gitignored. */
 async function scaffoldProject(target: string | undefined, log: Log): Promise<string> {
   const file = path.resolve("visualice.config.json");
+  // A URL, not node_modules/…: a global or npx install has no local copy to point at.
+  // Pinned to this version, so the editor checks against the keys this CLI reads.
   const body = {
-    $schema: "node_modules/visualice/config.schema.json",
+    $schema: `https://unpkg.com/visualice@${await readVersion()}/config.schema.json`,
     ...(target ? { target } : {}),
   };
   await fs.writeFile(file, JSON.stringify(body, null, 2) + "\n");
@@ -812,11 +825,15 @@ function cmdDemo(flags: Flags): Promise<void> {
   });
 }
 
-async function printVersion(): Promise<void> {
+async function readVersion(): Promise<string> {
   const pkg = JSON.parse(await fs.readFile(path.join(PROJECT_ROOT, "package.json"), "utf8")) as {
     version: string;
   };
-  console.log(pkg.version);
+  return pkg.version;
+}
+
+async function printVersion(): Promise<void> {
+  console.log(await readVersion());
 }
 
 /**
@@ -886,6 +903,10 @@ main().catch((e) => {
   if (e instanceof UsageError) {
     console.error(e.message);
     process.exit(2);
+  }
+  if (e instanceof ConfigLoadError) {
+    console.error(e.message);
+    process.exit(1);
   }
   console.error(e instanceof Error ? (e.stack ?? e.message) : e);
   process.exit(1);

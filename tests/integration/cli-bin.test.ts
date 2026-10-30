@@ -39,7 +39,7 @@ interface Plan {
   devices: string[];
 }
 const REPO = path.resolve(import.meta.dirname, "..", "..");
-const BIN = path.join(REPO, "bin", "visualice.mjs");
+const BIN = path.join(REPO, "cli", "visualice.mjs");
 
 /**
  * The distribution contract: the `bin` entry runs from *any* working directory and
@@ -82,6 +82,9 @@ describe("visualice bin", () => {
       await run(["init", "https://example.com", "--quiet"], dir);
       const config = JSON.parse(await fs.readFile(path.join(dir, "visualice.config.json"), "utf8"));
       expect(config.target).toBe("https://example.com");
+      // A URL that resolves for a global or npx install too, pinned to this version.
+      const { version } = JSON.parse(await fs.readFile(path.join(REPO, "package.json"), "utf8"));
+      expect(config.$schema).toBe(`https://unpkg.com/visualice@${version}/config.schema.json`);
       expect(await fs.readFile(path.join(dir, ".gitignore"), "utf8")).toContain(".visualice/");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
@@ -146,6 +149,29 @@ describe("visualice bin", () => {
       expect(await exists(path.join(dir, ".visualice", "crawl-map.cache.json"))).toBe(true);
       expect(await exists(path.join(dir, ".visualice", "sites"))).toBe(false);
       expect(await exists(path.join(dir, "visualice.config.json"))).toBe(false);
+    } finally {
+      await server.close();
+      await fs.rm(siteDir, { recursive: true, force: true });
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("picks up a typed visualice.config.ts from the cwd", async () => {
+    const dir = await tempDir("bin");
+    const { server, dir: siteDir } = await serveFiles(SITE);
+    try {
+      // Type annotations and an interface: what Node's type stripping has to handle.
+      await fs.writeFile(
+        path.join(dir, "visualice.config.ts"),
+        `interface Device { name: string; width: number; height: number }
+const phone: Device = { name: "phone", width: 390, height: 844 };
+export default { target: ${JSON.stringify(server.url)}, devices: [phone] as Device[] };
+`,
+      );
+      const { stdout } = await run(["crawl", "--dry-run", "--json", "--quiet"], dir);
+      const plan = JSON.parse(stdout) as Plan;
+      expect(plan.devices).toEqual(["phone"]);
+      expect(plan.routes.map((r) => r.url)).toContain("/");
     } finally {
       await server.close();
       await fs.rm(siteDir, { recursive: true, force: true });

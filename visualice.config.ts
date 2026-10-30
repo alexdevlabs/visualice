@@ -37,15 +37,16 @@ const config: VisualiceConfig = {
   },
 
   // Authenticated crawls: run the login recipe once, reuse the saved session.
-  // Secrets come from env (${VC_USER} / ${VC_PASS}) — never hardcode them.
+  // Secrets come from env (${VC_USER} / ${VC_PASS}) — never hardcode them. Target the
+  // form's own fields by test id: a label like "Email" often matches a newsletter field too.
   // auth: {
   //   storageStatePath: ".visualice/auth.json",
   //   login: {
   //     url: "/login",
   //     steps: [
-  //       { action: "fill", target: { label: "Email" }, value: "${VC_USER}" },
-  //       { action: "fill", target: { label: "Password" }, value: "${VC_PASS}" },
-  //       { action: "click", target: { role: "button", name: "Sign in" } },
+  //       { action: "fill", target: { testId: "email" }, value: "${VC_USER}" },
+  //       { action: "fill", target: { testId: "password" }, value: "${VC_PASS}" },
+  //       { action: "click", target: { testId: "login-submit" } },
   //       { action: "waitFor", url: "**/dashboard" },
   //     ],
   //   },

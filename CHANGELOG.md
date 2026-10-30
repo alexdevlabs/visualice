@@ -31,8 +31,8 @@ a zoomable canvas.
   `--seed=<paths>` adds entry pages, `--site=<name>` picks the site folder a crawl
   writes to, and `--headed` shows the browser windows.
 - Clearer names, with the old ones still accepted (and a warning): `--target` (was
-  `--base`), `--dir` (was `--out`), `--timeout-ms` (was `--timeout`), `serve
---screenshot` (was `--shoot`). In the config, `screenshot.fullPage` is now
+  `--base`), `--dir` (was `--out`), `--timeout-ms` (was `--timeout`),
+  `serve --screenshot` (was `--shoot`). In the config, `screenshot.fullPage` is now
   `"screens" | "single" | false` (replacing `fullPage` + `screens`), `maxHeight` limits
   both modes (default 25000 CSS px; `maxScreens` still works), `thumbnail.midWidth` is
   `zoomWidth`, and `interactions.auto: false` is the one way to turn states off
@@ -62,7 +62,15 @@ a zoomable canvas.
 
 - An npm package (`npx visualice`) with `visualice doctor` as a self-healing
   preflight, and a Claude Code plugin with the `visualice` skill, the explorer agent and
-  three commands.
+  three commands. The skill runs the CLI pinned to its own version
+  (`npx -y visualice@0.1.0`).
+- `AGENTS.md` points other agents (Codex, Cursor, Gemini CLI) at the skill, with a
+  by-hand version of Explore mode.
+- Needs Node 22.18 or newer, which runs a `visualice.config.ts` natively; older Node
+  gets a clear message instead of a stack trace. Works on Windows: `doctor`'s repairs
+  run without `npx`.
+- `init` points the config's `$schema` at a versioned unpkg URL, so editors find it for
+  global and npx installs too.
 
 ## Known limitations
 

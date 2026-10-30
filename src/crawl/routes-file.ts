@@ -9,7 +9,7 @@ import { isAuthored } from "./manifest";
 // two-level markdown list where only two tokens are load-bearing — the route path
 // and the state id. It is parsed tolerantly before a run (intent: seeds, skips,
 // wanted states) and regenerated deterministically after (the cache stays the
-// mechanical truth; this file is the intent truth). See PLAN.md §9.
+// mechanical truth; this file is the intent truth).
 
 export interface RoutesFileState {
   id: string;

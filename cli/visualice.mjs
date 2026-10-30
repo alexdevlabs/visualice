@@ -4,6 +4,7 @@
 // hasn't been built. The built path must not need tsx — it's a devDependency.
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,7 +38,17 @@ if (existsSync(built) && !stale) {
     console.error("visualice: no dist/cli.js and no src/cli.ts — the install is incomplete.");
     process.exit(1);
   }
-  const child = spawn("npx", ["tsx", cli, ...process.argv.slice(2)], {
+  // `node <tsx's cli>` rather than `npx tsx`: Windows can't spawn npx without a shell.
+  let tsx;
+  try {
+    tsx = createRequire(join(root, "package.json")).resolve("tsx/cli");
+  } catch {
+    console.error(
+      "visualice: no dist/cli.js, and tsx isn't installed to run the sources — run 'npm install'.",
+    );
+    process.exit(1);
+  }
+  const child = spawn(process.execPath, [tsx, cli, ...process.argv.slice(2)], {
     stdio: "inherit",
     cwd: process.cwd(),
   });

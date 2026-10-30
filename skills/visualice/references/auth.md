@@ -28,6 +28,10 @@ auth: {
 - Put the sign-out control in `hints.skipTriggers` (see
   [`explore-mode.md`](explore-mode.md)), or discovery may click it and log the crawl out.
 - Secrets come from env (`${VC_USER}`, `${VC_PASS}`) — never hardcode or commit them.
+  Export them, or copy `.env.example` to a gitignored `.env` in the working directory
+  (real env vars win over it). The config snapshot written into each run's
+  `crawl-map.json` keeps the placeholders and redacts anything else in a credential
+  field (basic-auth, secret-looking headers, `fill` values in the login recipe).
 - Add `verify: { url: "**/dashboard" }` (and/or a `selector`) to the login block — the
   engine then refuses to save a logged-out session when the login silently fails.
 - `visualice auth` runs the recipe and saves `auth.json`; `crawl` reuses it automatically
@@ -39,5 +43,7 @@ auth: {
   login even if the saved session looks fresh. Name the cookie whenever the site's
   session is shorter than 12h (Sauce Demo's lasts 10 minutes): otherwise a lapsed
   session is reused, and every protected page fails with "landed on the login page".
+- A login that fails is easiest to debug by watching it: `visualice auth --force --headed`
+  shows the browser window while the recipe runs.
 - Password-protected staging: set `http.httpCredentials` / `http.extraHTTPHeaders`
   (values may use `${ENV_VAR}`) and `http.ignoreHTTPSErrors` for self-signed TLS.

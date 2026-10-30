@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://visualice.dev/manifest.schema.json",
+  "$id": "https://unpkg.com/visualice/manifest.schema.json",
   "title": "Visualice crawl manifest",
   "description": "A site model: routes, their UI states, and the replayable recipes that reach them. Written by discovery, hand-edited in Explore mode, replayed by capture.",
   "type": "object",

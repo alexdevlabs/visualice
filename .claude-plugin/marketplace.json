@@ -3,6 +3,9 @@
   "owner": {
     "name": "Alexecus"
   },
+  "metadata": {
+    "description": "visualice: capture every page and UI state of a site across devices, and browse them on a zoomable canvas."
+  },
   "plugins": [
     {
       "name": "visualice",

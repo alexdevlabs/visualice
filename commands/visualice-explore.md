@@ -3,7 +3,7 @@ description: Have explorer agents find and author the UI states visualice's auto
 argument-hint: [pages or focus, e.g. "/checkout*" or "signed-in states"]
 ---
 
-Explore the site in this project with `visualice-explorer` agents, one per kind of
+Explore the site in this project with `visualice:visualice-explorer` agents (the plugin's explorer), one per kind of
 page, then capture what they found. `$ARGUMENTS` narrows it (a path glob, or a
 focus like "forms and errors"); empty means the whole site.
 
@@ -31,11 +31,11 @@ dispatching if there are more than ~8 types or any such writes.
 
 ## 3. Dispatch explorers in parallel
 
-One `visualice-explorer` agent per type, all in a single message (at most 6 at a
+One `visualice:visualice-explorer` agent per type, all in a single message (at most 6 at a
 time; queue the rest). Give each:
 
 - page type, representative page(s), the other pages of the type
-- the CLI invocation (`npx visualice`, or `npm run vc --` in a visualice checkout)
+- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.1.0`, or `npm run vc --` in a visualice checkout)
   and the project directory to run it from
 - output file `.visualice/explore/<type-slug>.json` and a shots dir
   (`.visualice/explore/shots/`)

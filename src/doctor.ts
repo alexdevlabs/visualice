@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { satisfies } from "./shared/version";
 import { pathExists } from "./shared/fsx";
+import { nodeBinCommand } from "./shared/node-bin";
 
 /**
  * Preflight: everything that has to be true before a crawl can work, checked in
@@ -57,7 +58,7 @@ async function readEnginesNode(projectRoot: string): Promise<string | undefined>
 
 async function checkNode(opts: DoctorOptions): Promise<DoctorCheck> {
   const current = opts.nodeVersion ?? process.version;
-  const range = (await readEnginesNode(opts.projectRoot)) ?? ">=20.12.0";
+  const range = (await readEnginesNode(opts.projectRoot)) ?? ">=22.18.0";
   const ok = satisfies(current, range);
   return {
     name: "node",
@@ -95,7 +96,8 @@ async function checkChromium(opts: DoctorOptions): Promise<DoctorCheck> {
   }
 
   opts.log?.("installing chromium (one-time, ~100MB)…");
-  const code = await run("npx", ["playwright", "install", "chromium"], opts.projectRoot);
+  const install = nodeBinCommand("playwright", ["install", "chromium"], opts.projectRoot);
+  const code = install ? await run(...install, opts.projectRoot) : 127;
   const nowThere = existsSync(executablePath) || code === 0;
   return {
     name: "chromium",
@@ -144,7 +146,8 @@ async function checkViewer(opts: DoctorOptions): Promise<DoctorCheck> {
   }
 
   opts.log?.("building the viewer…");
-  const code = await run("npx", ["vite", "build", "viewer"], opts.projectRoot);
+  const build = nodeBinCommand("vite", ["build", "viewer"], opts.projectRoot);
+  const code = build ? await run(...build, opts.projectRoot) : 127;
   const built = await pathExists(dist);
   return {
     name: "viewer",
