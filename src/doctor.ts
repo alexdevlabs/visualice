@@ -37,10 +37,13 @@ export interface DoctorOptions {
   nodeVersion?: string;
 }
 
-/** Run a command to completion, resolving to its exit code (127 if it never started). */
+/**
+ * Run a command to completion, resolving to its exit code (127 if it never started).
+ * Its output goes to stderr: it's progress, and stdout belongs to `doctor --json`.
+ */
 function run(cmd: string, args: string[], cwd: string): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, stdio: "inherit" });
+    const child = spawn(cmd, args, { cwd, stdio: ["inherit", 2, 2] });
     child.on("error", () => resolve(127));
     child.on("exit", (code) => resolve(code ?? 1));
   });

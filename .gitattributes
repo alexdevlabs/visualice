@@ -1,0 +1,6 @@
+# LF everywhere, Windows checkouts included: prettier --check expects it.
+* text=auto eol=lf
+
+*.png binary
+*.webp binary
+*.woff2 binary
