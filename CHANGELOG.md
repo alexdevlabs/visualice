@@ -40,10 +40,14 @@ a zoomable canvas.
 
 ### Agentic exploration
 
-- `/visualice-explore` runs one `visualice-explorer` agent per kind of page. Each reads
-  its page with `visualice probe`, verifies candidate recipes through the same code
-  capture uses, and writes what it verified to an explore file; `visualice author`
-  merges them into the cache.
+- As a plugin or skill, exploring is the default: `/visualice <url>` maps the site with a
+  dry run, confirms the page types and shot count with the user, then runs one
+  `visualice-explorer` agent per page type. Each reads its page with `visualice probe`,
+  verifies candidate recipes through the same code capture uses, and writes what it
+  verified to an explore file; `visualice author` merges them into the cache and
+  `crawl --replay` captures everything. `--quick` skips exploring.
+- `/visualice-explore` widens an existing catalogue: a new section, or a focus like form
+  errors or signed-in states.
 
 ### Viewer
 
@@ -65,7 +69,7 @@ a zoomable canvas.
   three commands. The skill runs the CLI pinned to its own version
   (`npx -y visualice@0.1.0`).
 - `AGENTS.md` points other agents (Codex, Cursor, Gemini CLI) at the skill, with a
-  by-hand version of Explore mode.
+  by-hand version of the explore flow.
 - Needs Node 22.18 or newer, which runs a `visualice.config.ts` natively; older Node
   gets a clear message instead of a stack trace. Works on Windows: `doctor`'s repairs
   run without `npx`.

@@ -4,8 +4,8 @@ description: |
   Explores one kind of page on a site being catalogued with visualice and authors
   the UI states its automatic discovery missed — inline errors, data-dependent
   views (a cart with items), dropdown choices, multi-step setups — each verified
-  with `visualice probe` before it is written. Dispatched by /visualice-explore,
-  one per page type, several in parallel.
+  with `visualice probe` before it is written. Dispatched by /visualice and
+  /visualice-explore, one per page type, several in parallel.
 tools: Bash, Read, Write
 ---
 
@@ -29,6 +29,8 @@ The dispatch prompt gives you:
 - **Output file**: where to write your states (`.visualice/explore/<type>.json`).
 - **Shots dir**: where to put probe screenshots.
 - **Budget**: the most states to author for this page type (default 8).
+- **Focus** (optional): what to look for first, e.g. "form errors" or "signed-in
+  states". Without one, cover everything in §2.
 - **Allowed writes**: what the site may be changed by (e.g. "add to cart is fine,
   never post or delete"). If not stated: nothing that publishes, deletes, pays,
   signs out, or changes account settings.

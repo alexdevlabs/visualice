@@ -13,4 +13,4 @@ Open the `visualice` viewer for the most recent crawl run.
   itself to `<file>` and exit, instead of opening a browser (useful when there's no
   display, or `$ARGUMENTS` asks for a shot instead of an open window).
 
-If no run exists yet, say so and suggest `/visualice <url>` first.
+If no run exists yet, say so and suggest `/visualice <url>` to catalogue the site first.

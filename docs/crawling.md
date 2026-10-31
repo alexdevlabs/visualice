@@ -82,6 +82,12 @@ and `--fail-on-error` exits 3 when any capture failed. Exit codes: 0 ok · 1 err
 (`politeness.retries`), then recorded per-shot in the manifest and listed in a
 **Failures** section of the report.
 
+To recapture an agent-built catalogue in CI, CI needs the site model the agents wrote
+into: `.visualice/crawl-map.cache.json`. Commit it with `git add -f` (it sits in the
+gitignored folder; once tracked, git keeps it) or restore it from a CI cache, then run
+`visualice crawl --replay --json --quiet --fail-on-error`. Without it, `--replay` falls
+back to a full discovery and the explored states are missing.
+
 ## Output
 
 Output lands under the configured output directory (default `.visualice/`), one folder

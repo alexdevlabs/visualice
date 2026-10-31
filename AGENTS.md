@@ -14,19 +14,21 @@ using visualice on a project or working on this repo.
 - Run non-interactively with `--json --quiet`: a command given `--json` prints one JSON
   summary on stdout (`probe` always does), progress goes to stderr, and exit codes are
   0 ok, 1 error, 2 usage, 3 capture failures (with `--fail-on-error`).
-- Before a big crawl, `visualice crawl <url> --dry-run --json` counts the screenshots
-  without taking any. Confirm the scope with the user.
+- The default flow is explore, not just crawl: map the site with
+  `visualice crawl <url> --dry-run --json`, group its pages into page types, confirm the
+  plan with the user, explore each type, then capture with `visualice crawl --replay`.
+  A plain `visualice crawl <url>` is the quick path, for when the user asks for one.
 - Read `visualice.routes.md` to orient, not the cache JSON. Edit it to steer the crawl
   (`- /path` seeds a page, `skip:` excludes, `- [ ] id` requests a state).
-- `/visualice-explore` and the `visualice-explorer` agent are Claude Code extras.
-  Elsewhere, do the same by hand for each page type:
+- In Claude Code, `/visualice` runs that flow with one `visualice-explorer` agent per
+  page type. Elsewhere, explore each page type yourself, one after another:
   1. `visualice probe <page>` for the page's inventory.
   2. `visualice probe <page> --recipe='[…]' --shot=x.png` until the shot shows the state.
   3. Write the states to `.visualice/explore/<type>.json`.
   4. `visualice author`, then `visualice crawl --replay`.
 
   The steps and file format are in
-  [`references/explore-mode.md`](skills/visualice/references/explore-mode.md) ("By hand").
+  [`references/explore-mode.md`](skills/visualice/references/explore-mode.md).
 
 - Only crawl sites the user owns or is authorized to test.
 

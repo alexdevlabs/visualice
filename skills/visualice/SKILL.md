@@ -1,13 +1,15 @@
 ---
 name: visualice
-description: Crawl a website and capture every page and UI state (modals, menus, drawers, accordions, tabs) across device profiles, then browse the screenshots on a zoomable canvas. Use when the user wants to screenshot/snapshot a whole site, visually crawl it, audit UI across breakpoints, capture all pages and interactive states, build a visual catalog of a web app, or "see every screen" of a site.
+description: Catalogue a website visually — explore every page and UI state (menus, modals, form errors, a cart with items, signed-in views, multi-step flows), capture each across device profiles, then browse the screenshots on a zoomable canvas. Use when the user wants to screenshot/snapshot a whole site, visually crawl it, audit UI across breakpoints, capture all pages and interactive states, build a visual catalog of a web app, or "see every screen" of a site.
 ---
 
 # Visualice
 
-Drive the `visualice` tool to screenshot an entire site — every route and every
-interactive UI state — across device profiles, then open a zoomable viewer. Discovery
-is normally automatic; you (Claude) step in for auth and for states the heuristics miss.
+Catalogue an entire site — every route and every UI state worth reviewing — across
+device profiles, then open it in a zoomable viewer. The heuristics map the site, you
+explore it like a QA reviewer (form errors, a cart with items, signed-in views,
+multi-step flows), and the `visualice` engine captures every state from the recipes
+you verified, so the catalogue reruns without you.
 
 ## 1. Locate & preflight
 
@@ -44,7 +46,7 @@ Steer the crawl by editing the routes file:
   Deleting a line is NOT an exclusion (it gets re-added); `skip:` is the tombstone.
 - `- [ ] state-id — description` — request a state that has no recipe yet. Unmet
   requests surface as `wanted` in `--json` and a `## Wanted` report section — that
-  is your Explore-mode work queue (§3, detail in
+  is a work queue for exploring (§3, detail in
   [`references/explore-mode.md`](references/explore-mode.md)).
 
 For large sites, confirm scope with the user and set `scope.include`/`exclude` globs,
@@ -80,21 +82,18 @@ real crawl that follows can be `--replay`.
 machine-owned and gitignored. Keep `crawl-map.cache.json`: deleting it forces a full
 rediscovery and loses any Explore-mode states authored into it.
 
-## 3. Choose a mode
+## 3. Choose the path
 
-1. **Replay** — a `.visualice/crawl-map.cache.json` already exists and the site is
-   unchanged. Fast, deterministic, no rediscovery: `visualice crawl <url> --replay`
-2. **Auto** — first crawl of a public site built from standard components:
-   `visualice crawl <url>` (heuristic discovery + capture)
-3. **Explore (agentic)** — the site needs login, or has states the heuristics miss
-   (inline errors, data-dependent views like a cart with items, dropdown choices,
-   multi-step flows). `visualice probe` shows you a page's inventory and verifies a
-   recipe before you keep it; `/visualice-explore` runs explorer agents over the whole
-   site in parallel. Read [`references/explore-mode.md`](references/explore-mode.md)
-   before starting.
-
-Prefer Replay once a site has been mapped. Use Auto for the first pass, then escalate
-to Explore only for the gaps.
+1. **Explore — the default.** No `.visualice/crawl-map.cache.json` yet, so the site
+   hasn't been mapped: map it with a dry run, plan the page types with the user,
+   explore each type, then capture with `--replay`. Read
+   [`references/explore-mode.md`](references/explore-mode.md) and follow it.
+2. **Replay or extend.** The site is mapped. To recapture, run
+   `visualice crawl --replay --json --quiet`. For new pages, `wanted` lines, or a focus the user names, explore
+   just those page types first (explore-mode.md, "Later runs").
+3. **Quick.** Only when the user asks for it ("quick", "just screenshot it", pages only)
+   or you're scripting CI: `visualice crawl <url> --json --quiet` runs the heuristics
+   and captures in one go, with no exploring. Mention that exploring would find more.
 
 ## 4. Auth (when the site requires login)
 
@@ -158,4 +157,7 @@ Full flag reference: [`references/cli.md`](references/cli.md).
 - Only crawl sites the user owns or is authorized to test. Stay on the target origin and
   honor the user's scope; respect `politeness` (concurrency, delays, robots).
 - Keep secrets in env, never in the manifest, screenshots, or commits.
-- The cached model makes re-runs cheap — once a site is mapped, default to `--replay`.
+- Exploring can change data on the site: confirm the allowed writes in the plan, and
+  by default never publish, delete, pay, sign out or change account settings.
+- The cached model makes re-runs cheap — once a site is mapped, default to `--replay`
+  and explore only what's new.
