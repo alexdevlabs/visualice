@@ -2,6 +2,11 @@ import sharp from "sharp";
 import { promises as fs } from "node:fs";
 import type { Config } from "../shared/config";
 
+// sharp's cache keeps the files it read open. On Windows an open file can't be deleted,
+// so pruning old runs or deleting a site would fail with EBUSY. Each shot is read
+// about once anyway; keep the memory cache, drop the open files.
+sharp.cache({ files: 0 });
+
 type Thumb = Config["screenshot"]["thumbnail"];
 type Format = "png" | "jpeg" | "webp";
 
