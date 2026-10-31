@@ -23,7 +23,7 @@ them all on one zoomable canvas.
 Needs Node 22.18 or newer.
 
 ```
-/plugin marketplace add alexecus/visualice
+/plugin marketplace add alexdevlabs/visualice
 /plugin install visualice@visualice
 ```
 

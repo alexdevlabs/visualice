@@ -7,8 +7,8 @@
     "name": "Alexecus",
     "url": "https://github.com/alexecus"
   },
-  "homepage": "https://github.com/alexecus/visualice#readme",
-  "repository": "https://github.com/alexecus/visualice",
+  "homepage": "https://github.com/alexdevlabs/visualice#readme",
+  "repository": "https://github.com/alexdevlabs/visualice",
   "license": "MIT",
   "keywords": ["screenshot", "crawler", "playwright", "ui-testing", "web-crawler", "visual-catalog"]
 }

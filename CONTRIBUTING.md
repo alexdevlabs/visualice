@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. Bugs and ideas go in [issues](https://github.com/alexecus/visualice/issues);
+Thanks for helping. Bugs and ideas go in [issues](https://github.com/alexdevlabs/visualice/issues);
 security problems go through [`SECURITY.md`](SECURITY.md) instead. For a change bigger than
 a fix, open an issue first so we can agree on the shape.
 

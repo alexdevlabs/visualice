@@ -7,11 +7,11 @@
   "author": "Alexecus",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alexecus/visualice.git"
+    "url": "git+https://github.com/alexdevlabs/visualice.git"
   },
-  "homepage": "https://github.com/alexecus/visualice#readme",
+  "homepage": "https://github.com/alexdevlabs/visualice#readme",
   "bugs": {
-    "url": "https://github.com/alexecus/visualice/issues"
+    "url": "https://github.com/alexdevlabs/visualice/issues"
   },
   "keywords": [
     "screenshot",

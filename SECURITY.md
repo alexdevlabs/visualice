@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report security issues privately, through GitHub's
-[private vulnerability reporting](https://github.com/alexecus/visualice/security/advisories/new),
+[private vulnerability reporting](https://github.com/alexdevlabs/visualice/security/advisories/new),
 not in a public issue. Include what you found, how to reproduce it, and the version
 (`visualice --version`). You'll get a reply within a week.
 
