@@ -27,7 +27,7 @@ Needs Node 22.18 or newer.
 /plugin install visualice@visualice
 ```
 
-Then run `/visualice https://your.site`, or ask Claude to "catalogue every screen of
+Then run `/visualice https://your.site`, or just ask Claude to "run visualice on
 https://your.site". It maps the site, shows you the plan (the kinds of page, how many
 screenshots, anything exploring would change on the site) and asks once, explores each
 kind of page in parallel, captures everything, and `/visualice-view` opens the result.
