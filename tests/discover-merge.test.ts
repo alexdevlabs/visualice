@@ -41,6 +41,40 @@ describe("mergeMobileStates", () => {
     expect(r.states).toHaveLength(2);
   });
 
+  it("drops mobile states with the same recipe as a desktop state, whatever their signature", () => {
+    const open = [{ action: "click" as const, target: { testId: "accordion-trigger-1" } }];
+    const r = route(state("default", "base"), { ...state("accordion-faq", "sig-a"), recipe: open });
+    mergeMobileStates(
+      r,
+      [{ ...state("accordion-faq", "sig-a-mid-animation"), recipe: open }],
+      ["mobile"],
+    );
+    expect(r.states.map((s) => s.id)).toEqual(["default", "accordion-faq"]);
+  });
+
+  it("keeps a mobile state whose recipe matches a desktop-only state", () => {
+    const open = [{ action: "click" as const, target: { testId: "faq-1" } }];
+    const desktopOnly = { ...state("accordion-faq", "sig-a"), recipe: open, devices: ["desktop"] };
+    const r = route(state("default", "base"), desktopOnly);
+    mergeMobileStates(r, [{ ...state("accordion-faq", "sig-b"), recipe: open }], ["mobile"]);
+    expect(r.states.map((s) => s.id)).toEqual(["default", "accordion-faq", "accordion-faq-2"]);
+    expect(r.states[2].devices).toEqual(["mobile"]);
+  });
+
+  it("adds one mobile state for two with the same recipe", () => {
+    const open = [{ action: "click" as const, target: { testId: "menu" } }];
+    const r = route(state("default", "base"));
+    mergeMobileStates(
+      r,
+      [
+        { ...state("menu-open", "sig-a"), recipe: open },
+        { ...state("menu-open-again", "sig-a-mid-animation"), recipe: open },
+      ],
+      ["mobile"],
+    );
+    expect(r.states.map((s) => s.id)).toEqual(["default", "menu-open"]);
+  });
+
   it("uniquifies colliding ids from the mobile pass", () => {
     const r = route(state("default", "base"), state("menu-open", "sig-a"));
     mergeMobileStates(r, [state("menu-open", "sig-different")], ["mobile"]);

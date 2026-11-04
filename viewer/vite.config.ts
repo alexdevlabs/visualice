@@ -28,6 +28,7 @@ function fontLicenses(pkgs: string[]): Plugin {
 }
 
 // `base: "./"` keeps asset URLs relative so the build works under any mount point.
+// public/ (gitignored) only holds a run for `npm run viewer:dev`: never ship it.
 export default defineConfig({
   base: "./",
   plugins: [
@@ -35,5 +36,5 @@ export default defineConfig({
     tailwindcss(),
     fontLicenses(["@fontsource/figtree", "@fontsource/ibm-plex-mono"]),
   ],
-  build: { outDir: "dist", emptyOutDir: true },
+  build: { outDir: "dist", emptyOutDir: true, copyPublicDir: false },
 });

@@ -56,7 +56,12 @@ export async function exportRun(opts: ExportOptions): Promise<ExportResult> {
   await fs.mkdir(dest, { recursive: true });
   await fs.writeFile(path.join(dest, ".visualice-export"), `${opts.runId}\n`);
 
-  await fs.cp(opts.viewerDist, dest, { recursive: true });
+  // Not the viewer's own data/: a dev build can carry another run there, and the
+  // export's data/ is this run alone.
+  await fs.cp(opts.viewerDist, dest, {
+    recursive: true,
+    filter: (src) => path.relative(opts.viewerDist, src).split(path.sep)[0] !== "data",
+  });
   // `dereference`: the run may be reached through the `latest` symlink.
   await fs.cp(opts.runDir, path.join(dest, "data"), { recursive: true, dereference: true });
   await fs.rm(path.join(dest, "data", ".incomplete"), { force: true });

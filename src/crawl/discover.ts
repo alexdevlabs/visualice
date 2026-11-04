@@ -104,10 +104,23 @@ export function mergeMobileStates(
   mobileDeviceNames: string[],
 ): void {
   const knownSigs = new Set(route.states.map((s) => s.signature).filter(Boolean));
+  // The same steps are the same state, whatever the signature says: a signature can
+  // differ between the two passes (an accordion caught mid-animation). Only a desktop
+  // state that captures on every device covers it; one already limited to desktop
+  // (its trigger is hidden at phone width) doesn't.
+  const recipeKey = (s: StateNode) => (s.recipe.length ? JSON.stringify(s.recipe) : "");
+  const knownRecipes = new Set(
+    route.states
+      .filter((s) => !s.devices)
+      .map(recipeKey)
+      .filter(Boolean),
+  );
   for (const state of mobileStates) {
     if (state.id === "default") continue; // every viewport has one; keep the desktop's
     if (state.signature && knownSigs.has(state.signature)) continue;
+    if (knownRecipes.has(recipeKey(state))) continue;
     if (state.signature) knownSigs.add(state.signature);
+    if (recipeKey(state)) knownRecipes.add(recipeKey(state));
     state.id = uniqueId(
       state.id,
       route.states.map((s) => s.id),

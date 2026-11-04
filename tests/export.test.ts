@@ -67,6 +67,17 @@ describe("exportRun", () => {
     expect(await exists("site/runs")).toBe(false);
   });
 
+  it("leaves out a run the viewer build carries in its own data/", async () => {
+    await scaffold();
+    // What a build of the viewer with dev data in viewer/public/ used to contain.
+    await write("viewer/data/viewer-data.json", "other");
+    await write("viewer/data/screenshots/rentals/default/desktop.png", "other");
+    await run();
+    expect(await fs.readFile(path.join(tmp, "site/data/viewer-data.json"), "utf8")).toBe("{}");
+    expect(await exists("site/data/screenshots/rentals")).toBe(false);
+    expect(await exists("site/data/screenshots/home/default/desktop.png")).toBe(true);
+  });
+
   it("overwrites its own previous export but never someone else's directory", async () => {
     await scaffold();
     await run();
