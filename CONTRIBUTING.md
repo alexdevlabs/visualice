@@ -38,7 +38,7 @@ fixture's in `tests/fixture-src/tailwind.input.css`.
 
 ## Tests
 
-The 487 unit tests are pure and fast. The 80 browser-driven tests in `tests/integration/`
+The 497 unit tests are pure and fast. The 80 browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `cli/`
@@ -51,6 +51,22 @@ CI runs the checks on Linux and Windows, on Node 22.18 and 24. Windows is the po
 matrix, since symlink creation and the `open`-based browser shim behave differently there. Pushing a `v*` tag runs
 `release.yml`, which verifies the tag matches `package.json`, reruns everything and publishes
 to npm (`prepack` builds the tarball).
+
+## The docs site
+
+The site at https://alexdevlabs.github.io/visualice/ is the repo's own Markdown (`docs/`,
+`skills/visualice/references/`, this file and the changelog) plus `site/` for the home
+and getting-started pages. `site/.vitepress/config.mts` maps each file to its page; a new
+doc needs a line there and in the sidebar.
+
+```bash
+npm run site          # build it all, then serve it at http://localhost:4173/visualice/
+npm run site:dev      # the docs only, with hot reload
+```
+
+The build also makes the live demo: it crawls the fixture blog, exports the viewer to
+`/demo/` and copies the blog to `/demo-site/`. `.github/workflows/pages.yml` builds and
+deploys it on every push to `main`.
 
 ## Conventions
 

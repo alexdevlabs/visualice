@@ -105,6 +105,7 @@ export function parseViewerData(raw: unknown): ViewerData {
     site: {
       baseUrl: isString(site.baseUrl) ? site.baseUrl : "",
       origin: isString(site.origin) ? site.origin : "",
+      liveBase: isString(site.liveBase) ? site.liveBase : undefined,
       title: isString(site.title) ? site.title : undefined,
       runId: isString(site.runId) ? site.runId : "unknown",
       generatedAt: isString(site.generatedAt) ? site.generatedAt : "",

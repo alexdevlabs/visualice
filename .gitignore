@@ -12,3 +12,9 @@ visualice.routes.md
 visualice.config.json
 .playwright-mcp/
 viewer/public/
+
+# docs site build output (npm run site)
+site/.vitepress/dist/
+site/.vitepress/cache/
+site/.vitepress/.demo/
+site/public/

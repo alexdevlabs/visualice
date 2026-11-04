@@ -16,6 +16,9 @@ them all on one zoomable canvas.
 - **Shows what users see.** Pages are captured one screen at a time, as a user scrolls, so
   sticky headers, cookie bars and modal backdrops look the way they really do.
 
+**[Live demo](https://alexdevlabs.github.io/visualice/demo/)** ·
+[Docs](https://alexdevlabs.github.io/visualice/)
+
 ![The visualice viewer: the home page of a demo site, with its search, subscribe and menu states on desktop and mobile](assets/viewer.webp)
 
 ## Get started with Claude Code

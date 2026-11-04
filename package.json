@@ -9,7 +9,7 @@
     "type": "git",
     "url": "git+https://github.com/alexdevlabs/visualice.git"
   },
-  "homepage": "https://github.com/alexdevlabs/visualice#readme",
+  "homepage": "https://alexdevlabs.github.io/visualice/",
   "bugs": {
     "url": "https://github.com/alexdevlabs/visualice/issues"
   },
@@ -56,6 +56,10 @@
     "schema": "tsx scripts/gen-schema.ts",
     "viewer:build": "vite build viewer",
     "viewer:dev": "vite viewer",
+    "site": "tsx scripts/site.ts",
+    "site:dev": "tsx scripts/site.ts dev",
+    "site:build": "tsx scripts/site.ts build",
+    "site:preview": "tsx scripts/site.ts preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p viewer/tsconfig.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -98,6 +102,7 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0",
     "vite": "^6.0.7",
+    "vitepress": "^1.6.4",
     "vitest": "^3.0.0"
   },
   "files": [

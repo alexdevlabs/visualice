@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ViewerData, ViewerTile } from "./types";
+import { liveUrl } from "./format";
 import { Icon } from "./ui";
 
 /** The panel's version: a grid of tiles, an icon over each name. */
@@ -70,10 +71,10 @@ export function ShotActions({
           {bar && <span className="mx-1 h-5 w-px shrink-0 bg-line" aria-hidden="true" />}
         </>
       )}
-      {data.site.baseUrl && (
+      {(data.site.liveBase || data.site.baseUrl) && (
         <a
           className={plain}
-          href={new URL(tile.routeUrl, data.site.baseUrl).href}
+          href={liveUrl(tile.routeUrl, data.site)}
           target="_blank"
           rel="noreferrer"
         >

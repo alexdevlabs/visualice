@@ -1,0 +1,172 @@
+/* The banner's palette and the viewer's fonts. --vc-* are the site's own tokens. */
+:root {
+  --vp-font-family-base: "Figtree", -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --vp-font-family-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --vc-paper: #f4f2ec;
+  --vc-paper-2: #fbfaf6;
+  --vc-canvas: #ebe7dd;
+  --vc-dot: #d6cfbf;
+  --vc-tile: #ffffff;
+  --vc-tile-line: #ddd7ca;
+  --vc-bar: #ece8de;
+  --vc-bar-strong: #ddd7ca;
+  --vc-hot: #f6c9bd;
+  --vc-hot-soft: #fbe4dd;
+  --vc-accent: #e8492a;
+  --vc-ink: #16161a;
+  --vc-ink-hover: #2c2c33;
+  --vc-on-ink: #f4f2ec;
+  --vc-line-strong: #cfc9bb;
+  --vc-bug: #16161a;
+
+  /* Text-sized accent: the banner orange is too light to read at body size. */
+  --vp-c-brand-1: #b8341a;
+  --vp-c-brand-2: #9c2b14;
+  --vp-c-brand-3: #b8341a;
+  --vp-c-brand-soft: rgba(232, 73, 42, 0.12);
+
+  --vp-c-bg: #fbfaf6;
+  --vp-c-bg-alt: #f4f2ec;
+  --vp-c-bg-soft: #f1eee6;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-text-1: #16161a;
+  --vp-c-text-2: #5d5a54;
+  --vp-c-text-3: #6b675f;
+  --vp-c-divider: #e7e2d6;
+  --vp-c-gutter: #e7e2d6;
+
+  --vp-code-bg: #efece4;
+  --vp-code-color: #16161a;
+  --vp-code-block-bg: #16161a;
+  --vp-code-block-color: #f4f2ec;
+  --vp-code-block-divider-color: #26262c;
+  --vp-code-copy-code-bg: #26262c;
+  --vp-code-copy-code-hover-bg: #2c2c33;
+  --vp-code-lang-color: #a9a59c;
+}
+
+.dark {
+  --vc-paper: #16161a;
+  --vc-paper-2: #1b1b20;
+  --vc-canvas: #1d1d22;
+  --vc-dot: #2e2e36;
+  --vc-tile: #24242a;
+  --vc-tile-line: #33333b;
+  --vc-bar: #2e2e36;
+  --vc-bar-strong: #3a3a42;
+  --vc-hot: #7a3324;
+  --vc-hot-soft: #4a2219;
+  --vc-accent: #f26b4c;
+  --vc-ink: #f4f2ec;
+  --vc-ink-hover: #ffffff;
+  --vc-on-ink: #16161a;
+  --vc-line-strong: #3a3a42;
+  --vc-bug: #f4f2ec;
+
+  --vp-c-brand-1: #ff8a6e;
+  --vp-c-brand-2: #ffa58e;
+  --vp-c-brand-3: #f26b4c;
+  --vp-c-brand-soft: rgba(242, 107, 76, 0.16);
+
+  --vp-c-bg: #16161a;
+  --vp-c-bg-alt: #121215;
+  --vp-c-bg-soft: #1d1d22;
+  --vp-c-bg-elv: #1d1d22;
+  --vp-c-text-1: #f4f2ec;
+  --vp-c-text-2: #a9a59c;
+  --vp-c-text-3: #8b877e;
+  --vp-c-divider: #2c2c33;
+  --vp-c-gutter: #0d0d10;
+
+  --vp-code-bg: #24242a;
+  --vp-code-color: #f4f2ec;
+  --vp-code-block-bg: #0d0d10;
+}
+
+/* Home: one ground from the nav down. */
+.vh-page {
+  --vp-nav-bg-color: var(--vc-paper);
+  --vp-c-bg: var(--vc-paper);
+}
+.vh-page .vh-claims {
+  background: var(--vc-paper-2);
+}
+
+/* Nav */
+.VPNavBarTitle .title {
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.VPNavBarTitle .logo {
+  border-radius: 8px;
+}
+
+/* Sidebar: mono group labels, a pill with a dot for the current page. */
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+.VPSidebarItem .indicator {
+  display: none;
+}
+.VPSidebarItem.level-1 > .item {
+  margin-left: -10px;
+  padding-left: 10px;
+  border-radius: 8px;
+}
+.VPSidebarItem.level-1 > .item:hover {
+  background: var(--vp-c-bg-soft);
+}
+.VPSidebarItem.level-1.is-active > .item {
+  background: var(--vp-c-bg-soft);
+}
+.VPSidebar .VPSidebarItem.level-1.is-active.is-link > .item .link > .text {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+}
+.VPSidebar .VPSidebarItem.level-1.is-active.is-link > .item .link > .text::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 9px 1px 0;
+  border-radius: 50%;
+  background: var(--vc-accent);
+  vertical-align: middle;
+}
+
+/* Docs content */
+.vp-doc h1 {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.vp-doc h2 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.vp-doc :not(pre) > code {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.vp-doc div[class*="language-"] {
+  border-radius: 12px;
+}
+.vp-doc .custom-block {
+  border: 0;
+  border-radius: 12px;
+}
+.VPDocAsideOutline .outline-title {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}

@@ -12,5 +12,5 @@
     "verbatimModuleSyntax": false,
     "types": ["node"]
   },
-  "include": ["src", "tests", "visualice.config.ts"]
+  "include": ["src", "tests", "scripts", "site/.vitepress", "visualice.config.ts"]
 }

@@ -171,6 +171,12 @@ export interface RouteNode {
 export interface SiteInfo {
   baseUrl: string;
   origin: string;
+  /**
+   * Where the live pages are, when not at `baseUrl`'s origin: routes resolve under it
+   * ("/about" → `<liveBase>/about`). For a catalogue of a copy served at a subpath, like
+   * the docs site's demo. Never written by a crawl.
+   */
+  liveBase?: string;
   title?: string;
   framework?: string;
   runId: string;
