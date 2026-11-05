@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { withBase } from "vitepress";
+import ClaimArt from "./ClaimArt.vue";
 
 /**
  * The home page: a split hero with the viewer's grid (a row per state, a column per
@@ -125,6 +126,27 @@ onBeforeUnmount(() => {
   stop();
 });
 
+// The three steps of the install section, for the Claude Code plugin.
+const steps = [
+  { title: "Add the marketplace", command: "/plugin marketplace add alexdevlabs/visualice" },
+  { title: "Install the plugin", command: "/plugin install visualice@visualice" },
+  { title: "Ask for your site", command: "run visualice on https://your.site" },
+];
+
+// The install step whose command was just copied, for a moment.
+const copied = ref<number | null>(null);
+let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+async function copy(text: string, i: number) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    return; // no clipboard access (an insecure origin, a denied permission): leave it be
+  }
+  copied.value = i;
+  clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => (copied.value = null), 1600);
+}
+
 // A row per state (default, menu open, form error, cart with items), a column per device.
 const rows = [
   { id: "default", tiles: ["page", "page", "page"] },
@@ -138,10 +160,10 @@ const rows = [
   <div class="vh">
     <section class="vh-hero">
       <div class="vh-copy">
-        <h1>Every page and UI state of your site, on every device.</h1>
+        <h1>See every screen of your site at once.</h1>
         <p class="vh-lede">
-          A row per state, a column per device. Your agent explores the site and the engine fills in
-          the grid, so you can review it all at a glance.
+          Every page, every state, every device, on one canvas you can zoom through. Spot the broken
+          one before your users do.
         </p>
         <div class="vh-actions">
           <a class="vh-btn vh-btn-primary" :href="withBase('/guide/getting-started')"
@@ -151,7 +173,6 @@ const rows = [
             >See the live demo</a
           >
         </div>
-        <p class="vh-install">npm i -g visualice &nbsp;·&nbsp; or the Claude Code plugin</p>
       </div>
 
       <div ref="grid" class="vh-grid" aria-hidden="true">
@@ -191,9 +212,47 @@ const rows = [
       </div>
     </section>
 
+    <section class="vh-wrap vh-install" aria-labelledby="vh-install-h">
+      <div class="vh-install-head">
+        <span class="vh-eyebrow">Install</span>
+        <h2 id="vh-install-h">Running in Claude Code in three steps.</h2>
+      </div>
+      <ol class="vh-steps">
+        <li v-for="(step, i) in steps" :key="i" :class="{ 'vh-step-last': i === steps.length - 1 }">
+          <span class="vh-step-n" aria-hidden="true">{{ i + 1 }}</span>
+          <h3>{{ step.title }}</h3>
+          <div class="vh-cmd">
+            <code>{{ step.command }}</code>
+            <button
+              type="button"
+              class="vh-copy-btn"
+              :aria-label="copied === i ? 'Copied' : `Copy: ${step.command}`"
+              @click="copy(step.command, i)"
+            >
+              <svg v-if="copied === i" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="12" height="12" rx="2.5" />
+                <path
+                  d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"
+                />
+              </svg>
+            </button>
+          </div>
+        </li>
+      </ol>
+      <p class="vh-install-cli">
+        Not using Claude Code? <code>npm i -g visualice</code> (Node 22.18+), then
+        <code>visualice crawl https://your.site</code> ·
+        <a :href="withBase('/guide/getting-started')">Getting started →</a>
+      </p>
+    </section>
+
     <section class="vh-claims">
       <div class="vh-wrap vh-claims-grid">
         <div>
+          <ClaimArt kind="explore" />
           <h2>Explores like a QA reviewer</h2>
           <p>
             The crawler maps pages and the obvious states. An agent then works through each kind of
@@ -201,6 +260,7 @@ const rows = [
           </p>
         </div>
         <div>
+          <ClaimArt kind="replay" />
           <h2>Repeatable without the agent</h2>
           <p>
             Each state is a recipe the engine replays, so reruns are identical and CI can recapture
@@ -208,6 +268,7 @@ const rows = [
           </p>
         </div>
         <div>
+          <ClaimArt kind="screens" />
           <h2>Shows what users see</h2>
           <p>
             Pages are captured one screen at a time, as a user scrolls, so sticky headers and
@@ -225,24 +286,50 @@ const rows = [
         >
       </div>
       <a :href="demo" target="_blank" rel="noopener" class="vh-shot-link">
-        <img
-          :src="withBase('/viewer.webp')"
-          alt="The visualice viewer with a demo blog's states on desktop and mobile"
-          width="2400"
-          height="1500"
-        />
+        <picture>
+          <!-- With reduced motion, a still of the viewer instead of the zoom loop. -->
+          <source media="(prefers-reduced-motion: reduce)" :srcset="withBase('/viewer.webp')" />
+          <img
+            :src="withBase('/viewer-zoom.webp')"
+            alt="The visualice viewer zooming from a demo blog's whole catalogue into one page and back out"
+            width="1200"
+            height="750"
+            loading="lazy"
+            decoding="async"
+          />
+        </picture>
       </a>
-      <div class="vh-code-grid">
-        <pre><span class="vh-dim"># Claude Code</span>
-/plugin marketplace add alexdevlabs/visualice
-/plugin install visualice@visualice
-/visualice https://your.site</pre>
-        <pre><span class="vh-dim"># any terminal</span>
-npm i -g visualice
-visualice crawl https://your.site
-visualice serve --open</pre>
-      </div>
     </section>
+
+    <footer class="vh-footer">
+      <div class="vh-wrap vh-footer-row">
+        <a class="vh-footer-brand" :href="withBase('/')">
+          <img :src="withBase('/mark.svg')" alt="" width="22" height="22" />
+          <span>visualice</span>
+        </a>
+        <nav class="vh-footer-links" aria-label="Footer">
+          <a :href="withBase('/guide/getting-started')">Docs</a>
+          <a :href="demo" target="_blank" rel="noopener">Live demo</a>
+          <a :href="withBase('/changelog')">Changelog</a>
+          <a :href="withBase('/contributing')">Contributing</a>
+        </nav>
+        <div class="vh-footer-icons">
+          <a href="https://github.com/alexdevlabs/visualice" aria-label="GitHub">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 0-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.2.5-2.3 1.3-3.1-.2-.4-.6-1.6 0-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.7 1.6.2 2.9.1 3.2.8.8 1.3 1.9 1.3 3.1 0 4.8-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"
+              />
+            </svg>
+          </a>
+          <a href="https://www.npmjs.com/package/visualice" aria-label="npm">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2 2h20v20H2zM5.5 5.5v13h6.5V8.5h3.5v10h3V5.5z" />
+            </svg>
+          </a>
+        </div>
+      </div>
+      <p class="vh-wrap vh-footer-note">MIT licensed · Only crawl sites you own or may test.</p>
+    </footer>
   </div>
 </template>
 
@@ -286,9 +373,9 @@ visualice serve --open</pre>
   gap: 24px;
 }
 .vh h1 {
-  font-size: clamp(40px, 5.4vw, 68px);
-  line-height: 1.02;
-  letter-spacing: -0.035em;
+  font-size: clamp(38px, 4.6vw, 58px);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
   font-weight: 800;
 }
 .vh-lede {
@@ -333,13 +420,6 @@ visualice serve --open</pre>
   border-color: var(--vp-c-text-1);
   color: var(--vp-c-text-1);
 }
-.vh-install {
-  margin: 6px 0 0;
-  font-family: var(--vp-font-family-mono);
-  font-size: 13px;
-  color: var(--vp-c-text-2);
-}
-
 /* The grid, with the crawler on top */
 .vh-grid {
   position: relative;
@@ -482,6 +562,149 @@ visualice serve --open</pre>
   }
 }
 
+/* Install: three steps for the plugin, one line for the CLI */
+.vh-install {
+  padding-top: 8px;
+  padding-bottom: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+.vh-install-head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vh-eyebrow {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vp-c-brand-1);
+}
+.vh-install h2 {
+  font-size: clamp(26px, 2.6vw, 32px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+.vh-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.vh-steps li {
+  margin: 0;
+  min-width: 0;
+  background: var(--vc-paper-2);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.vh-steps li.vh-step-last {
+  border-color: var(--vc-accent);
+}
+.vh-step-n {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--vc-ink);
+  color: var(--vc-on-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+}
+.vh-step-last .vh-step-n {
+  background: var(--vc-accent);
+  color: #16161a;
+}
+.vh-steps h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--vp-c-text-1);
+}
+.vh-cmd {
+  position: relative;
+}
+.vh-steps code {
+  display: block;
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  background: #16161a;
+  color: #f4f2ec;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  padding: 12px 48px 12px 14px;
+  overflow-wrap: anywhere;
+}
+.vh-copy-btn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #8b877e;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.vh-copy-btn:hover {
+  color: #f4f2ec;
+  background: rgba(244, 242, 236, 0.08);
+}
+.vh-copy-btn:focus-visible {
+  outline: 2px solid var(--vc-accent);
+  outline-offset: -2px;
+}
+.vh-copy-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.vh-install-cli {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--vp-c-text-2);
+}
+.vh-install-cli code {
+  font-family: var(--vp-font-family-mono);
+  font-size: 13.5px;
+  background: var(--vp-code-bg);
+  color: var(--vp-code-color);
+  border-radius: 6px;
+  padding: 3px 7px;
+}
+.vh-install-cli a {
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--vp-c-brand-1);
+}
+
 /* Claims */
 .vh-claims {
   background: var(--vp-c-bg);
@@ -497,9 +720,9 @@ visualice serve --open</pre>
 }
 .vh-claims h2 {
   margin-bottom: 12px;
-  font-size: 26px;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
   font-weight: 700;
 }
 .vh-claims p {
@@ -526,10 +749,14 @@ visualice serve --open</pre>
 }
 .vh-shot-head h2 {
   max-width: 640px;
-  font-size: clamp(30px, 4vw, 44px);
-  line-height: 1.1;
-  letter-spacing: -0.025em;
-  font-weight: 800;
+  font-size: clamp(26px, 2.6vw, 32px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+.vh-shot-link,
+.vh-shot-link picture {
+  display: block;
 }
 .vh-shot-link img {
   display: block;
@@ -539,24 +766,69 @@ visualice serve --open</pre>
   border: 1px solid var(--vc-tile-line);
   box-shadow: 0 30px 60px -24px rgba(22, 22, 26, 0.25);
 }
-.vh-code-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 16px;
+/* Footer: one row, on the nav's lighter paper */
+.vh-footer {
+  background: var(--vc-paper-2);
+  border-top: 1px solid var(--vp-c-divider);
 }
-.vh-code-grid pre {
-  margin: 0;
-  font-family: var(--vp-font-family-mono);
-  font-size: 13.5px;
-  line-height: 1.8;
-  background: #16161a;
-  color: #f4f2ec;
-  border-radius: 14px;
-  padding: 18px 20px;
-  overflow-x: auto;
+.vh-footer-row {
+  padding-top: 20px;
+  padding-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 32px;
 }
-.vh-dim {
-  color: #8b877e;
+.vh-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+}
+.vh-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+}
+.vh-footer-links a {
+  padding: 12px 0;
+  font-size: 14px;
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+}
+.vh-footer-links a:hover,
+.vh-footer-brand:hover {
+  color: var(--vp-c-brand-1);
+}
+.vh-footer-icons {
+  display: flex;
+  margin-left: auto;
+}
+.vh-footer-icons a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  color: var(--vp-c-text-2);
+}
+.vh-footer-icons a:hover {
+  color: var(--vp-c-text-1);
+}
+.vh-footer-icons svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+.vh-footer-note {
+  margin: 0 auto;
+  padding-bottom: 24px;
+  font-size: 13px;
+  color: var(--vp-c-text-3);
 }
 
 @media (max-width: 640px) {

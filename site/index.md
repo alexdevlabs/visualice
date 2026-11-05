@@ -4,7 +4,7 @@ pageClass: vh-page
 sidebar: false
 aside: false
 title: visualice
-titleTemplate: Every page and UI state of your site, on every device
+titleTemplate: See every screen of your site at once
 ---
 
 <Home />

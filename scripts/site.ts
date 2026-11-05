@@ -53,6 +53,8 @@ async function prepare(): Promise<void> {
     ["assets/logo/visualice-app-icon.svg", "mark.svg"],
     ["assets/logo/visualice-favicon.svg", "favicon.svg"],
     ["assets/viewer.webp", "viewer.webp"],
+    ["assets/viewer-zoom.webp", "viewer-zoom.webp"],
+    ["assets/og.png", "og.png"],
   ];
   for (const [from, to] of copies) await fs.copyFile(path.join(ROOT, from), path.join(PUBLIC, to));
 }

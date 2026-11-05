@@ -12,6 +12,7 @@ export default tseslint.config(
     // (and the fixture authoring sources — HTML-in-template-literals).
     ignores: [
       "**/dist/**",
+      "site/.vitepress/cache/**",
       "node_modules/**",
       "coverage/**",
       ".visualice/**",

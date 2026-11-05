@@ -92,6 +92,10 @@
 .vh-page .vh-claims {
   background: var(--vc-paper-2);
 }
+/* The home page draws its own footer (Home.vue). */
+.vh-page .VPFooter {
+  display: none;
+}
 
 /* Nav */
 .VPNavBarTitle .title {

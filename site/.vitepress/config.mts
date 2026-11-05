@@ -8,6 +8,7 @@ import { defineConfig, type MarkdownRenderer } from "vitepress";
  */
 
 const REPO = "https://github.com/alexdevlabs/visualice";
+const DESCRIPTION = "See every screen of your site at once.";
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
 /** Source file (repo-relative) → page. Everything else in the repo isn't a page. */
@@ -55,7 +56,7 @@ function repoLinks(md: MarkdownRenderer) {
 
 export default defineConfig({
   title: "visualice",
-  description: "Every page and UI state of your site, on every device.",
+  description: DESCRIPTION,
   base: "/visualice/",
   srcDir: "..",
   // The repo's other Markdown (dot-folders like .visualice/ are skipped already).
@@ -83,7 +84,22 @@ export default defineConfig({
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: "/visualice/favicon.svg" }],
     ["meta", { name: "theme-color", content: "#e8492a" }],
+    // The card a shared link shows (assets/og.png, copied in by scripts/site.ts).
+    ["meta", { property: "og:type", content: "website" }],
+    ["meta", { property: "og:site_name", content: "visualice" }],
+    ["meta", { property: "og:image", content: "https://alexdevlabs.github.io/visualice/og.png" }],
+    ["meta", { property: "og:image:width", content: "1200" }],
+    ["meta", { property: "og:image:height", content: "630" }],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
+  // og:title and og:description follow each page's own title and description.
+  transformPageData(page) {
+    page.frontmatter.head ??= [];
+    page.frontmatter.head.push(
+      ["meta", { property: "og:title", content: page.title || "visualice" }],
+      ["meta", { property: "og:description", content: page.description || DESCRIPTION }],
+    );
+  },
   // srcDir is the repo root, so say where the site's own public files are.
   vite: { publicDir: path.join(ROOT, "site", "public") },
   markdown: {
