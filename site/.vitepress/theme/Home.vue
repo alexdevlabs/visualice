@@ -305,7 +305,7 @@ const rows = [
       <div class="vh-wrap vh-footer-row">
         <a class="vh-footer-brand" :href="withBase('/')">
           <img :src="withBase('/mark.svg')" alt="" width="22" height="22" />
-          <span>visualice</span>
+          <span>visua<span class="vh-lice">lice</span></span>
         </a>
         <nav class="vh-footer-links" aria-label="Footer">
           <a :href="withBase('/guide/getting-started')">Docs</a>

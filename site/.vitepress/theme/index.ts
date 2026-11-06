@@ -1,3 +1,4 @@
+import { h } from "vue";
 import DefaultTheme from "vitepress/theme";
 import type { Theme } from "vitepress";
 import "@fontsource/figtree/latin-400.css";
@@ -12,6 +13,12 @@ import "./style.css";
 
 export default {
   extends: DefaultTheme,
+  // The wordmark, with "lice" in the accent like the viewer's lockup (siteTitle is off).
+  Layout: () =>
+    h(DefaultTheme.Layout, null, {
+      "nav-bar-title-after": () =>
+        h("span", { class: "vc-wordmark" }, ["visua", h("span", "lice")]),
+    }),
   enhanceApp({ app }) {
     app.component("Home", Home);
   },

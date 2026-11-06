@@ -29,7 +29,7 @@
     <path stroke="#f4f2ec" stroke-width="3.5" stroke-linecap="round" fill="none" d="M27.5 14 L23.5 8 M36.5 14 L40.5 8"/>
     <circle cx="32" cy="42" r="17" fill="#f4f2ec"/><circle cx="32" cy="20" r="8.5" fill="#e8492a"/>
   </g></g>
-  <text x="338" y="200" font-family="Figtree, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="76" font-weight="700" letter-spacing="-1.5" fill="#f4f2ec">visualice</text>
+  <text x="338" y="200" font-family="Figtree, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="76" font-weight="700" letter-spacing="-1.5" fill="#f4f2ec">visua<tspan fill="#e8492a">lice</tspan></text>
   <text x="341" y="246" font-family="Figtree, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="26" fill="#a9a59c">Every page and UI state of your site, on every device.</text>
   <rect x="341" y="278" width="132" height="40" rx="20" fill="#e8492a" fill-opacity="0.08" stroke="#e8492a" stroke-opacity="0.38"/>
     <circle cx="361" cy="298" r="4.5" fill="#e8492a"/>

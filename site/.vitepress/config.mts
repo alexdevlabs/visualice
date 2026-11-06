@@ -109,6 +109,7 @@ export default defineConfig({
   },
   themeConfig: {
     logo: { src: "/mark.svg", alt: "" },
+    siteTitle: false, // drawn by the theme's Layout, with "lice" in the accent
     nav: [
       { text: "Guide", link: "/guide/getting-started", activeMatch: "/guide/" },
       { text: "Live demo", link: "/demo/", target: "_blank", rel: "noopener" },

@@ -127,7 +127,7 @@ function banner(name: "light" | "dark"): string {
     ${canvas(t)}
   </g>
   ${icon(112, 112, 176, t)}
-  <text x="338" y="200" font-family="${FONT}" font-size="76" font-weight="700" letter-spacing="-1.5" fill="${t.ink}">visualice</text>
+  <text x="338" y="200" font-family="${FONT}" font-size="76" font-weight="700" letter-spacing="-1.5" fill="${t.ink}">visua<tspan fill="${ACCENT}">lice</tspan></text>
   <text x="341" y="246" font-family="${FONT}" font-size="26" fill="${t.dim}">Every page and UI state of your site, on every device.</text>
   ${chips(341, 278, t)}
 </svg>

@@ -103,6 +103,10 @@
   font-size: 19px;
   letter-spacing: -0.02em;
 }
+.vc-wordmark > span,
+.vh-lice {
+  color: var(--vc-accent);
+}
 .VPNavBarTitle .logo {
   border-radius: 8px;
 }
