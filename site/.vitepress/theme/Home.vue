@@ -162,8 +162,8 @@ const rows = [
       <div class="vh-copy">
         <h1>See every screen of your site at once.</h1>
         <p class="vh-lede">
-          Every page, every state, every device, on one canvas you can zoom through. Spot the broken
-          one before your users do.
+          Every page and every state, on every device, laid out on one canvas you can zoom through.
+          Spot the broken one before your users do.
         </p>
         <div class="vh-actions">
           <a class="vh-btn vh-btn-primary" :href="withBase('/guide/getting-started')"
