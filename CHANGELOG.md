@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.1
+
+### Fixes
+
+- A state found twice, once at desktop and again at the mobile viewport, no longer shows
+  up as two mobile states.
+- `visualice export` never carries the viewer's development data into an export.
+- The plugin, skill and explorer agent run this version of the CLI
+  (`npx -y visualice@0.1.1`).
+
+### Viewer
+
+- The details panel's **Live page** link can point at a hosted copy of a site instead of
+  the address it was crawled from (`site.liveBase` in a run's data), as the docs site's
+  live demo does.
+
+### Project
+
+- Docs site and live demo: [alexdevlabs.github.io/visualice](https://alexdevlabs.github.io/visualice/),
+  now the package's homepage.
+
 ## 0.1.0 — first release
 
 Crawl a website, capture every page and UI state across devices, and browse the shots on

@@ -1,13 +1,13 @@
 {
   "name": "visualice",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Crawl a website, capture every page and UI state (modals, menus, drawers, accordions, tabs) across device profiles, and browse the screenshots on a zoomable canvas.",
   "icon": "assets/logo/visualice-app-icon-1024.png",
   "author": {
     "name": "Alexecus",
     "url": "https://github.com/alexecus"
   },
-  "homepage": "https://github.com/alexdevlabs/visualice#readme",
+  "homepage": "https://alexdevlabs.github.io/visualice/",
   "repository": "https://github.com/alexdevlabs/visualice",
   "license": "MIT",
   "keywords": ["screenshot", "crawler", "playwright", "ui-testing", "web-crawler", "visual-catalog"]

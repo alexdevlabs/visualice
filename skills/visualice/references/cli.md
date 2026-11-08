@@ -1,7 +1,7 @@
 # CLI reference
 
 Complete command and flag surface for the `visualice` binary. Installed globally
-(`npm i -g visualice`) or run ad hoc with `npx -y visualice@0.1.0 <cmd>`, both work from
+(`npm i -g visualice`) or run ad hoc with `npx -y visualice@0.1.1 <cmd>`, both work from
 any directory. In a source checkout of this repo, use `npm run vc -- <cmd>` instead (or
 the dedicated script where one exists, e.g. `npm run crawl -- <args>`).
 

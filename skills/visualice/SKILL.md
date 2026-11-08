@@ -14,7 +14,7 @@ you verified, so the catalogue reruns without you.
 ## 1. Locate & preflight
 
 Use `visualice` when it is on the PATH (`npm i -g visualice`); otherwise run it with
-`npx -y visualice@0.1.0 <cmd>`, the CLI version this skill was written for. Both work
+`npx -y visualice@0.1.1 <cmd>`, the CLI version this skill was written for. Both work
 from any directory, no repo checkout needed. In a source checkout of this repo itself,
 use the npm scripts instead: `npm run vc -- <cmd>` for anything below, `npm run crawl --
 <args>` for crawls. The commands below say `visualice`; substitute whichever applies.
