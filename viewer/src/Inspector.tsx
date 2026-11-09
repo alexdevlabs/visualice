@@ -4,6 +4,7 @@ import type { Device, ViewerData, ViewerTile } from "./types";
 import { runLabel } from "./format";
 import { routePath } from "./layout";
 import { ShotActions } from "./ShotActions";
+import { Compare, type CompareRuns } from "./Compare";
 import { Caption, cx, deviceIcon, Icon, KindTag } from "./ui";
 
 interface Props {
@@ -23,7 +24,11 @@ interface Props {
   position?: { index: number; total: number };
   /** Open this shot full screen. */
   onFullScreen?: () => void;
+  /** Other versions of the site, to compare this shot with. */
+  compare?: CompareRuns;
 }
+
+const short = (commit: string) => commit.slice(0, 7);
 
 /** The label/value grid the details (and the shortcuts popover) use. */
 export const DL = "grid gap-x-3 gap-y-2 text-[12.5px] [&>dd]:wrap-anywhere [&>dt]:text-dim";
@@ -52,6 +57,7 @@ export function Inspector({
   onClosed,
   position,
   onFullScreen,
+  compare,
 }: Props) {
   const device: Device | undefined = data.devices.find((d) => d.name === tile.device);
 
@@ -219,6 +225,34 @@ export function Inspector({
           )}
         </ul>
 
+        {tile.carried ? (
+          <section className={SECTION} aria-label="Carried over">
+            <Caption>Carried over</Caption>
+            <p className="m-0 text-[12.5px] text-dim">
+              Not shot in this version: nothing that changed touched this page, so the shot from{" "}
+              <span className="text-fg">{runLabel(tile.carried.runId)} UTC</span>
+              {tile.carried.commit && (
+                <>
+                  {" "}
+                  (commit <code className="text-fg">{short(tile.carried.commit)}</code>)
+                </>
+              )}{" "}
+              was kept.
+            </p>
+          </section>
+        ) : tile.updated ? (
+          <section className={SECTION} aria-label="Updated">
+            <Caption>Updated in this version</Caption>
+            <p className="m-0 text-[12.5px] text-dim">
+              Shot again because this page changed
+              {data.partial?.carriedFrom ? (
+                <> since {runLabel(data.partial.carriedFrom)} UTC</>
+              ) : null}
+              ; pages nothing touched were carried over.
+            </p>
+          </section>
+        ) : null}
+
         {tile.a11y ? (
           <section className={SECTION} aria-label="Accessibility">
             <div className="flex items-center gap-2">
@@ -262,6 +296,9 @@ export function Inspector({
             )}
           </section>
         ) : null}
+        {compare && compare.runs.length > 0 && (
+          <Compare tile={tile} base={base} compare={compare} />
+        )}
       </div>
       {/* Pinned to the foot, where the hand ends up after reading. */}
       <div className="grid shrink-0 grid-cols-5 gap-1.5 border-t border-line px-4 py-3.5">
@@ -274,7 +311,17 @@ export function Inspector({
         />
       </div>
       <div className="flex shrink-0 items-center justify-between gap-3 border-t border-line px-4 py-3 text-[12px] text-dim">
-        <span>Captured {runLabel(data.site.runId)} UTC</span>
+        <span className="truncate">
+          Captured {runLabel(tile.carried?.runId ?? data.site.runId)} UTC
+          {(tile.carried ? tile.carried.commit : data.source?.commit) && (
+            <>
+              {" · "}
+              <code title={tile.carried?.commit ?? data.source?.commit}>
+                {short((tile.carried ? tile.carried.commit : data.source?.commit)!)}
+              </code>
+            </>
+          )}
+        </span>
         {position && (
           <span className="tabular-nums">
             Shot {position.index} of {position.total}

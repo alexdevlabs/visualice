@@ -71,6 +71,17 @@ back to it. A card's trash button deletes the site and all its runs from disk af
 confirmation; the site `serve` was started on can't be deleted (409) while that server
 runs.
 
+### Partial runs and comparing versions
+
+A partial run (`crawl --only`, see [updating after code changes](../skills/visualice/references/update-mode.md))
+shoots the pages that changed and carries the rest over. Its shots carry an **updated**
+tag on the canvas; a carried shot's details panel says so, with the run and commit it
+was really taken in. The details panel's footer shows the commit a shot came from.
+
+**Compare with another version**, in the details panel, puts the same shot from another
+run of the site beside this one (the previous version by default). A shot that was
+carried over unchanged says so instead of looking like a coincidence.
+
 ## Share a run
 
 ```bash

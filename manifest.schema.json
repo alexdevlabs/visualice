@@ -740,6 +740,24 @@
                       },
                       "error": {
                         "type": "string"
+                      },
+                      "carried": {
+                        "description": "Copied from an earlier run by a partial crawl (`--only`), not shot by this one.",
+                        "type": "object",
+                        "properties": {
+                          "runId": {
+                            "type": "string"
+                          },
+                          "commit": {
+                            "type": "string"
+                          },
+                          "capturedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "runId"
+                        ]
                       }
                     }
                   }

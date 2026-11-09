@@ -17,6 +17,7 @@ const PAGES: Record<string, string> = {
   "site/guide/getting-started.md": "guide/getting-started.md",
   "skills/visualice/references/explore-mode.md": "guide/explore.md",
   "docs/crawling.md": "guide/crawling.md",
+  "skills/visualice/references/update-mode.md": "guide/updating.md",
   "docs/configuration.md": "guide/configuration.md",
   "skills/visualice/references/auth.md": "guide/auth.md",
   "docs/viewer.md": "guide/viewer.md",
@@ -127,6 +128,7 @@ export default defineConfig({
         text: "Guide",
         items: [
           { text: "Crawling", link: "/guide/crawling" },
+          { text: "Updating after code changes", link: "/guide/updating" },
           { text: "Configuration", link: "/guide/configuration" },
           { text: "Logging in", link: "/guide/auth" },
           { text: "The viewer", link: "/guide/viewer" },

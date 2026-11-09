@@ -88,10 +88,18 @@ rediscovery and loses any Explore-mode states authored into it.
    hasn't been mapped: map it with a dry run, plan the page types with the user,
    explore each type, then capture with `--replay`. Read
    [`references/explore-mode.md`](references/explore-mode.md) and follow it.
-2. **Replay or extend.** The site is mapped. To recapture, run
+2. **Update after code changes.** The site is mapped and the project is a git repo
+   whose code changed since the last crawl. Run `visualice changes --json`: it diffs
+   against the commit the catalogue was shot from (recorded in the routes file) and
+   says whether nothing, some pages, or everything needs reshooting. Work out the
+   affected pages, ask the user whether to rerun just those or everything, then run
+   `visualice crawl --replay --only=<pages>`, which carries every other page over from
+   the last run. Read [`references/update-mode.md`](references/update-mode.md) and
+   follow it.
+3. **Replay or extend.** The site is mapped. To recapture, run
    `visualice crawl --replay --json --quiet`. For new pages, `wanted` lines, or a focus the user names, explore
    just those page types first (explore-mode.md, "Later runs").
-3. **Quick.** Only when the user asks for it ("quick", "just screenshot it", pages only)
+4. **Quick.** Only when the user asks for it ("quick", "just screenshot it", pages only)
    or you're scripting CI: `visualice crawl <url> --json --quiet` runs the heuristics
    and captures in one go, with no exploring. Mention that exploring would find more.
 
@@ -161,3 +169,6 @@ Full flag reference: [`references/cli.md`](references/cli.md).
   by default never publish, delete, pay, sign out or change account settings.
 - The cached model makes re-runs cheap — once a site is mapped, default to `--replay`
   and explore only what's new.
+- After code changes, never reshoot part of a catalogue without asking: lay out what
+  `visualice changes` found and the pages you traced, and let the user choose between
+  those pages and a full run. When in doubt, recommend the full run.

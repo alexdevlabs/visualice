@@ -985,6 +985,15 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           closing={!selected}
           onClosed={() => setDetailed(null)}
           onFullScreen={openFull}
+          compare={
+            siteEntry && shownSite && shownRun && siteEntry.runs.length > 1
+              ? {
+                  runs: siteEntry.runs.filter((r) => r !== shownRun),
+                  baseFor: (r) => runBase(shownSite, r),
+                  current: shownRun,
+                }
+              : undefined
+          }
           position={
             detailedIndex >= 0
               ? { index: detailedIndex + 1, total: layout.placed.length }

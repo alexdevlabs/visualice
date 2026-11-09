@@ -17,6 +17,10 @@ visualice crawl --resume           # continue the newest interrupted run, keepin
 visualice crawl --dry-run          # discover, then list what would be captured; capture nothing
 visualice crawl --no-states        # pages only, no UI states (fast; cached states are kept)
 
+# after code changes (the routes file records the commit each crawl shot):
+visualice changes                  # what changed since, and whether some pages or all need reshooting
+visualice crawl --replay --only=/pricing,/blog/**   # reshoot those; carry every other page over
+
 # other commands:
 visualice discover https://your.site   # discovery only, no screenshots
 visualice init https://your.site       # scaffold the config without crawling

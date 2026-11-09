@@ -898,6 +898,7 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
           {tile.stateLabel}
         </span>
         <TileBadge>{tile.device}</TileBadge>
+        {tile.updated && <TileBadge accent>updated</TileBadge>}
         {place.screen && (
           <span className="font-mono text-[10px] leading-[15px] text-dim">
             {`${place.screen.at} / ${place.screen.of}`}
@@ -917,6 +918,11 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
           {tile.stateLabel}
         </span>
         {/* With room for one line only, warnings still show beside the name. */}
+        {place.compact && tile.updated ? (
+          <span className="shrink-0">
+            <TileBadge accent>updated</TileBadge>
+          </span>
+        ) : null}
         {place.compact && tile.a11y ? (
           <span className="shrink-0">
             <TileBadge warn>{`a11y ${tile.a11y}`}</TileBadge>
@@ -926,6 +932,7 @@ function TileCaption({ p, place }: { p: Placed; place: CaptionPlace }) {
       {!place.compact && (
         <div className="flex items-center gap-1 overflow-hidden">
           {/* Short of room, the kind gives way first: the warnings matter more. */}
+          {tile.updated && <TileBadge accent>updated</TileBadge>}
           <TileBadge yields>{tile.stateKind}</TileBadge>
           <TileBadge>{tile.device}</TileBadge>
           {p.page ? (
@@ -970,10 +977,13 @@ function DeviceCaption({ p, t, device }: { p: Placed; t: Transform; device?: Dev
 function TileBadge({
   children,
   warn,
+  accent,
   yields,
 }: {
   children: string;
   warn?: boolean;
+  /** Shot by this (partial) run, where the rest was carried over. */
+  accent?: boolean;
   /** The one that gives up its room when there isn't enough; the others keep theirs. */
   yields?: boolean;
 }) {
@@ -983,7 +993,11 @@ function TileBadge({
       className={cx(
         "truncate rounded-[4px] border bg-chip px-1 font-mono text-[10px] leading-[15px] whitespace-nowrap",
         yields ? "min-w-[2.5ch]" : "shrink-0",
-        warn ? "border-amber-line text-amber" : "border-line-strong text-dim",
+        warn
+          ? "border-amber-line text-amber"
+          : accent
+            ? "border-accent-line bg-accent-soft font-semibold text-accent"
+            : "border-line-strong text-dim",
       )}
     >
       {children}

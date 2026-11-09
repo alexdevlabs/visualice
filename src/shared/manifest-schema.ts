@@ -93,6 +93,14 @@ export const ShotRefSchema = z.object({
     .optional(),
   a11y: z.number().optional(),
   error: z.string().optional(),
+  carried: z
+    .object({
+      runId: z.string(),
+      commit: z.string().optional(),
+      capturedAt: z.string().optional(),
+    })
+    .optional()
+    .describe("Copied from an earlier run by a partial crawl (`--only`), not shot by this one."),
 });
 
 export const StateNodeSchema = z.object({

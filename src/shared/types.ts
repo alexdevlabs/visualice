@@ -98,6 +98,43 @@ export interface ShotRef {
   /** Accessibility rules this state broke, when `checks.accessibility` is on. */
   a11y?: number;
   error?: string; // capture was attempted but failed (after retries); no image written
+  /**
+   * Not shot by this run: copied from an earlier one by a partial crawl (`--only`),
+   * because nothing that changed touched this page. Says where it really comes from.
+   */
+  carried?: CarriedFrom;
+}
+
+/** The run (and commit) a carried-over shot was really taken in. */
+export interface CarriedFrom {
+  runId: string;
+  /** The commit that run was shot from, when it recorded one. */
+  commit?: string;
+  capturedAt?: string;
+}
+
+/**
+ * The code a run was shot from: the git commit checked out in the project. Written to
+ * the routes file and each run's manifest; `visualice changes` diffs against it.
+ */
+export interface SourceInfo {
+  /** Full commit hash of HEAD. */
+  commit: string;
+  branch?: string;
+  /** The commit's committer date (ISO 8601). */
+  committedAt?: string;
+  /** Files with uncommitted changes at capture time (0 = a clean tree). */
+  dirty: number;
+  /** Which files those were (capped). */
+  dirtyFiles?: string[];
+  /** When the run captured (ISO 8601). */
+  capturedAt: string;
+  /** The URL that was shot. */
+  target?: string;
+  /** A hash of the visualice config file, so a settings change since is noticed. */
+  config?: string;
+  /** The target was served from this machine, so HEAD is known to be what was shot. */
+  local?: boolean;
 }
 
 /** One route×state×device capture that failed after all retries. */
@@ -186,6 +223,13 @@ export interface SiteInfo {
 export interface Manifest {
   version: number;
   site: SiteInfo;
+  /** The commit the run was shot from, when the project is a git repository. */
+  source?: SourceInfo;
+  /**
+   * A partial run (`crawl --only`): the routes it shot, and the run every other
+   * route's shots were carried over from.
+   */
+  partial?: { only: string[]; carriedFrom?: string };
   configSnapshot?: unknown;
   devices: Device[];
   auth?: { method: string; notes?: string };
@@ -195,6 +239,8 @@ export interface Manifest {
     states: number;
     shots: number;
     failed: number;
+    /** Shots copied from an earlier run instead of shot (partial runs). */
+    carried?: number;
     durationMs: number;
     failures: CaptureFailure[];
     /** Routes-file requests still unmet after this run (the Explore-mode queue). */
@@ -257,10 +303,18 @@ export interface ViewerTile {
   a11y?: number;
   /** Capture failed after retries; the tile is a placeholder carrying the reason. */
   error?: string;
+  /** Copied from an earlier run, not shot by this one; see `ShotRef.carried`. */
+  carried?: CarriedFrom;
+  /** Shot by a partial run, where the other pages' shots were carried over. */
+  updated?: boolean;
 }
 
 export interface ViewerData {
   site: SiteInfo;
+  /** The commit the run was shot from. */
+  source?: SourceInfo;
+  /** Set on a partial run; see `Manifest.partial`. */
+  partial?: Manifest["partial"];
   devices: Device[];
   tiles: ViewerTile[];
   groups: { path: string; routeId: string; title?: string }[];

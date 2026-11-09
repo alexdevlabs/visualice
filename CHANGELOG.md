@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Updating after code changes
+
+- Each crawl records the git commit it shot, on a `visualice-source` line in
+  `visualice.routes.md` and as `source` in the run's `crawl-map.json` (branch, files with
+  uncommitted changes, whether the target was local, a hash of the config).
+- `visualice changes` diffs the project against that commit: the commits and files since,
+  the changes that reach every page (dependencies, global styles, root layouts, header
+  and footer, the config), the pages file-based routing ties changed files to, and the
+  files left for an agent to trace. It gives a verdict (`none`, `partial`, `full`,
+  `unknown`) and the command to run; `--discover` also lists new and removed pages.
+- `crawl --only=<paths>` shoots only those pages (paths or globs) and carries every
+  other page's shots over from the last finished run, as hard links where the disk
+  allows, so the new run is still the whole site. A page the last run can't cover (new,
+  or missing shots) is shot anyway. With `--replay` the named pages' states are
+  discovered again. `--dry-run` shows what would be shot and carried.
+- The skill and `/visualice` follow it: run `changes`, trace the affected pages, ask
+  whether to rerun those or everything, then run it.
+
+### Viewer
+
+- Shots a partial run took carry an **updated** tag; a carried shot's details say which
+  run and commit it was really taken in.
+- **Compare with another version** in the details panel shows the same shot from another
+  run beside this one.
+
 ## 0.1.1
 
 ### Fixes

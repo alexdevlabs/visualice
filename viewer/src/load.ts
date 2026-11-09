@@ -65,6 +65,39 @@ function parseTile(raw: unknown, i: number): ViewerTile {
     meta: isString(raw.meta) ? raw.meta : undefined,
     a11y: typeof raw.a11y === "number" ? raw.a11y : undefined,
     error: isString(raw.error) ? raw.error : undefined,
+    carried: parseCarried(raw.carried),
+    updated: raw.updated === true || undefined,
+  };
+}
+
+/** Where a carried-over shot was really taken; dropped unless it names a run. */
+function parseCarried(raw: unknown): ViewerTile["carried"] {
+  if (!isObject(raw) || !isString(raw.runId)) return undefined;
+  return {
+    runId: raw.runId,
+    commit: isString(raw.commit) ? raw.commit : undefined,
+    capturedAt: isString(raw.capturedAt) ? raw.capturedAt : undefined,
+  };
+}
+
+/** The commit a run was shot from, when it recorded one. */
+function parseSource(raw: unknown): ViewerData["source"] {
+  if (!isObject(raw) || !isString(raw.commit)) return undefined;
+  return {
+    commit: raw.commit,
+    branch: isString(raw.branch) ? raw.branch : undefined,
+    dirty: typeof raw.dirty === "number" ? raw.dirty : 0,
+    capturedAt: isString(raw.capturedAt) ? raw.capturedAt : "",
+    target: isString(raw.target) ? raw.target : undefined,
+    local: typeof raw.local === "boolean" ? raw.local : undefined,
+  };
+}
+
+function parsePartial(raw: unknown): ViewerData["partial"] {
+  if (!isObject(raw) || !Array.isArray(raw.only)) return undefined;
+  return {
+    only: raw.only.filter(isString),
+    carriedFrom: isString(raw.carriedFrom) ? raw.carriedFrom : undefined,
   };
 }
 
@@ -110,6 +143,8 @@ export function parseViewerData(raw: unknown): ViewerData {
       runId: isString(site.runId) ? site.runId : "unknown",
       generatedAt: isString(site.generatedAt) ? site.generatedAt : "",
     },
+    source: parseSource(raw.source),
+    partial: parsePartial(raw.partial),
     devices,
     tiles,
     groups,

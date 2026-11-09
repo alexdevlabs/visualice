@@ -7,25 +7,26 @@ the dedicated script where one exists, e.g. `npm run crawl -- <args>`).
 
 ## Commands
 
-| Command                     | Purpose                                                                   |
-| --------------------------- | ------------------------------------------------------------------------- |
-| `init [url]`                | Scaffold `visualice.config.json` (+ `.gitignore` entry) without crawling  |
-| `crawl [url]`               | Discover routes + UI states, then capture across devices                  |
-| `discover [url]`            | Auto-discover routes + UI states only — no screenshots                    |
-| `routes`                    | Regenerate `visualice.routes.md` from the cached site model               |
-| `validate`                  | Validate a crawl manifest / cached site model                             |
-| `auth [--force]`            | Run the configured login recipe, save storage state                       |
-| `capture --manifest=<path>` | Replay a given manifest's recipes and capture screenshots                 |
-| `demo`                      | Capture the bundled fixture from a hand-written manifest                  |
-| `demo-crawl`                | Full discover → capture run against the bundled fixture                   |
-| `fixture`                   | Serve the bundled fixture blog so you can browse it                       |
-| `doctor [--no-fix]`         | Idempotent preflight: check Node/Playwright/sharp/viewer, self-heal       |
-| `serve`                     | Launch the zoomable results viewer                                        |
-| `export <dir>`              | Write the viewer + a run as a static folder                               |
-| `probe <path>`              | JSON: the page's inventory, or (`--recipe`/`--state`) what a recipe does  |
-| `author [dir\|file]`        | Merge explorer state files (default `.visualice/explore/`) into the cache |
-| `--version`                 | Print the installed version                                               |
-| `help`                      | Print usage                                                               |
+| Command                     | Purpose                                                                    |
+| --------------------------- | -------------------------------------------------------------------------- |
+| `init [url]`                | Scaffold `visualice.config.json` (+ `.gitignore` entry) without crawling   |
+| `crawl [url]`               | Discover routes + UI states, then capture across devices                   |
+| `discover [url]`            | Auto-discover routes + UI states only — no screenshots                     |
+| `routes`                    | Regenerate `visualice.routes.md` from the cached site model                |
+| `validate`                  | Validate a crawl manifest / cached site model                              |
+| `auth [--force]`            | Run the configured login recipe, save storage state                        |
+| `capture --manifest=<path>` | Replay a given manifest's recipes and capture screenshots                  |
+| `demo`                      | Capture the bundled fixture from a hand-written manifest                   |
+| `demo-crawl`                | Full discover → capture run against the bundled fixture                    |
+| `fixture`                   | Serve the bundled fixture blog so you can browse it                        |
+| `doctor [--no-fix]`         | Idempotent preflight: check Node/Playwright/sharp/viewer, self-heal        |
+| `serve`                     | Launch the zoomable results viewer                                         |
+| `export <dir>`              | Write the viewer + a run as a static folder                                |
+| `probe <path>`              | JSON: the page's inventory, or (`--recipe`/`--state`) what a recipe does   |
+| `author [dir\|file]`        | Merge explorer state files (default `.visualice/explore/`) into the cache  |
+| `changes [--discover]`      | JSON/text: what changed in git since the catalogue's commit, and a verdict |
+| `--version`                 | Print the installed version                                                |
+| `help`                      | Print usage                                                                |
 
 ## Flags
 
@@ -43,6 +44,8 @@ command are accepted by it.
 | `--manifest=<path>`      | `capture`/`validate`                | Input manifest path                                                                                                                                                      |
 | `--replay`               | `crawl`/`demo-crawl`                | Reuse the cached site model, skip discovery                                                                                                                              |
 | `--resume`               | `crawl`                             | Continue the newest interrupted run, keeping its shots                                                                                                                   |
+| `--only=<paths>`         | `crawl`                             | Shoot only these pages (paths or globs, comma-separated); every other page's shots are carried over from the last run. With `--replay`, rediscovers their states         |
+| `--discover`             | `changes`                           | Also map the site's pages (no states, nothing written) to list new and removed ones                                                                                      |
 | `--json`                 | most                                | Print a machine-readable JSON summary to stdout                                                                                                                          |
 | `--quiet`                | most                                | Suppress progress output on stderr                                                                                                                                       |
 | `--fail-on-error`        | capture cmds                        | Exit 3 if any capture failed                                                                                                                                             |
