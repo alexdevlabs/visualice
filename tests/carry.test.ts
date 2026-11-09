@@ -9,6 +9,7 @@ import {
   findCarrySource,
   matchesOnly,
   planCarry,
+  safeShotFiles,
   verifyCarry,
 } from "../src/crawl/carry";
 import { markRunIncomplete, runDir } from "../src/crawl/runs";
@@ -239,5 +240,15 @@ describe("--only seeds", () => {
       "/about",
       "/pricing?x=1",
     ]);
+  });
+});
+
+describe("shot paths from an earlier run", () => {
+  it("are carried only when they stay inside the run", () => {
+    expect(safeShotFiles({ full: "screenshots/home/default/desktop.png" })).toBe(true);
+    expect(safeShotFiles({ full: "../../.bashrc" })).toBe(false);
+    expect(safeShotFiles({ full: "screenshots/../../x.png" })).toBe(false);
+    expect(safeShotFiles({ full: "/etc/passwd" })).toBe(false);
+    expect(safeShotFiles({ full: "a.png", thumb: "..\\..\\x.webp" })).toBe(false);
   });
 });

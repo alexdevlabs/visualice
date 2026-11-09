@@ -163,7 +163,9 @@ export async function verifyCarry(
   for (const route of plan.carry) {
     const prev = source.manifest.routes.find((r) => r.url === route.url);
     const files = prev ? carriedFiles(route, prev, devices) : [];
-    const present = await Promise.all(files.map((f) => pathExists(path.join(source.runDir, f))));
+    const present = await Promise.all(
+      files.map((f) => (f ? pathExists(path.join(source.runDir, f)) : false)),
+    );
     if (present.every(Boolean)) {
       out.carry.push(route);
     } else {
@@ -183,7 +185,9 @@ function carriedFiles(route: RouteNode, prev: RouteNode, devices: Device[]): str
     if (!before) continue;
     for (const device of devicesFor(state, devices)) {
       const ref = before.shots[device];
-      if (ref?.full && !ref.error) files.push(...shotFiles(ref));
+      if (!ref?.full || ref.error) continue;
+      if (!safeShotFiles(ref)) return [""]; // never carried: verifyCarry shoots the route
+      files.push(...shotFiles(ref));
     }
   }
   return files;
@@ -194,6 +198,20 @@ function shotFiles(ref: ShotRef): string[] {
   return [ref.full, ref.viewport, ref.thumb, ref.mid, ref.meta].filter(
     (f): f is string => typeof f === "string",
   );
+}
+
+/**
+ * Is every file a shot points at a plain relative path inside its run directory?
+ * The paths come from an earlier run's crawl-map.json, which is only data: one that
+ * names `../` or an absolute path must not make carrying read, replace or delete a
+ * file outside the run.
+ */
+export function safeShotFiles(ref: ShotRef): boolean {
+  return shotFiles(ref).every((rel) => {
+    if (!rel || path.isAbsolute(rel) || path.win32.isAbsolute(rel)) return false;
+    const norm = path.posix.normalize(rel.replace(/\\/g, "/"));
+    return norm !== ".." && !norm.startsWith("../") && !norm.startsWith("/");
+  });
 }
 
 /** Hard-link `from` to `to`, copying instead where links aren't possible. */
@@ -228,6 +246,10 @@ export async function carryRoute(
     for (const device of devicesFor(state, devices)) {
       const ref = before.shots[device];
       if (!ref?.full || ref.error) continue;
+      if (!safeShotFiles(ref)) {
+        state.shots[device] = { error: `run ${source.runId} lists a shot file outside its run` };
+        continue;
+      }
       try {
         for (const rel of shotFiles(ref)) {
           await linkOrCopy(path.join(source.runDir, rel), path.join(runDir, rel));
