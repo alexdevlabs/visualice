@@ -19,6 +19,10 @@ from any directory, no repo checkout needed. In a source checkout of this repo i
 use the npm scripts instead: `npm run vc -- <cmd>` for anything below, `npm run crawl --
 <args>` for crawls. The commands below say `visualice`; substitute whichever applies.
 
+If a command prints `ℹ visualice X is available (you have Y)…` on stderr, tell the user
+once, with the update command it gives (`claude plugin update visualice@visualice`), and
+carry on with the task: don't update anything yourself.
+
 Before the first crawl in a project, run `visualice doctor` — an idempotent preflight
 that checks Node/Playwright chromium/sharp/the viewer build and self-heals what it
 safely can (installs chromium, builds the viewer; `--no-fix` to only report). This

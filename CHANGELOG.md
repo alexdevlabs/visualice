@@ -27,6 +27,15 @@
 - **Compare with another version** in the details panel shows the same shot from another
   run beside this one.
 
+### Update notice
+
+- An installed CLI tells you when a newer visualice is out (checked against npm at most
+  once a day, in the background, never in the way), with the command to update the
+  plugin or the CLI. The skill passes it on. Off with `--quiet`, in CI, or with
+  `VISUALICE_NO_UPDATE_CHECK=1`.
+- The README says how to turn on auto-update for the plugin: a marketplace plugin
+  doesn't update itself unless you do.
+
 ## 0.1.1
 
 ### Fixes

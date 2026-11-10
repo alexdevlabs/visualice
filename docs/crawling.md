@@ -92,6 +92,15 @@ gitignored folder; once tracked, git keeps it) or restore it from a CI cache, th
 `visualice crawl --replay --json --quiet --fail-on-error`. Without it, `--replay` falls
 back to a full discovery and the explored states are missing.
 
+### Update notice
+
+An installed CLI checks npm for a newer visualice at most once a day, in the background,
+and says so on stderr at the start of a later command (`ℹ visualice 0.3.0 is available
+…`). It never delays a command for more than a moment, and a failed lookup is ignored.
+It is off with `--quiet`, in CI (`CI` set), in a source checkout, and with
+`VISUALICE_NO_UPDATE_CHECK=1` (or `NO_UPDATE_NOTIFIER=1`). The last answer is cached in
+`~/.cache/visualice/update-check.json` (`$XDG_CACHE_HOME` when set).
+
 ## Output
 
 Output lands under the configured output directory (default `.visualice/`), one folder

@@ -34,6 +34,7 @@ import {
 } from "./crawl/routes-file";
 import { ensureStorageState } from "./crawl/auth";
 import { pathExists } from "./shared/fsx";
+import { startUpdateCheck, updateCheckDisabled, type UpdateCheck } from "./shared/update-check";
 import { nodeBinCommand } from "./shared/node-bin";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
@@ -94,6 +95,9 @@ Usage:
   visualice changes [opts]    What changed in git since the catalogue was shot, and what to rerun
   visualice serve [opts]      Launch the zoomable results viewer
   visualice --version         Print the version
+
+An installed CLI says on stderr when a newer version is out (checked at most daily);
+VISUALICE_NO_UPDATE_CHECK=1, --quiet or CI turns that off.
 
 Project files: visualice.config.json controls behavior; visualice.routes.md lists
 pages + UI states and is regenerated after every crawl (edit it: 'skip:' excludes,
@@ -1014,6 +1018,34 @@ async function main(): Promise<void> {
   }
   const flags = parseFlags(cmd, rest);
   setHeaded(flags.headed === true);
+  const update = await updateCheck(flags);
+  if (update?.notice) console.error(`ℹ ${update.notice}`);
+  try {
+    await runCommand(cmd, flags);
+  } finally {
+    // Let a background registry lookup save its answer, but never hold a finished
+    // command up for long: an unanswered lookup is simply tried again next time.
+    if (update) await Promise.race([update.refreshed, delay(1500)]);
+  }
+}
+
+/**
+ * The update check, for an installed CLI. A source checkout (this repo, or one
+ * `npm link`ed) is never "behind" in a way worth telling, and `--quiet` asks for silence.
+ */
+async function updateCheck(flags: Flags): Promise<UpdateCheck | undefined> {
+  if (flags.quiet === true || updateCheckDisabled()) return undefined;
+  if (await pathExists(path.join(PROJECT_ROOT, ".git"))) return undefined;
+  try {
+    return await startUpdateCheck(await readVersion());
+  } catch {
+    return undefined;
+  }
+}
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref());
+
+async function runCommand(cmd: string, flags: Flags): Promise<void> {
   switch (cmd) {
     case "init":
       return cmdInit(flags);
