@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { ConfigSchema, type Config } from "../../src/shared/config";
 import { capturePipeline } from "../../src/crawl/orchestrator";
 import type { InputManifest } from "../../src/shared/types";
@@ -58,6 +59,45 @@ describe("screenshot safety", () => {
       const tall = full.manifest.routes[0].states[0].shots.small;
       expect(tall.clamped).toBeUndefined();
       expect(tall.height).toBeGreaterThan(8000);
+    } finally {
+      await server.close();
+      await fs.rm(siteDir, { recursive: true, force: true });
+      await fs.rm(out, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  // The bug: a long page on a high-density phone failed its whole shot with "Processed
+  // image is too large for the WebP format". The full PNG was fine; the viewer's WebP
+  // previews, scaled to a fixed width, came out taller than WebP's 16383px limit.
+  it("shoots a long page on a 3x phone, previews and all, though WebP can't hold it", async () => {
+    const { server, dir: siteDir } = await serveFiles({ "index.html": TALL });
+    const out = await tempDir("safety");
+    try {
+      const result = await capturePipeline({
+        config: config(out, {
+          // 430 CSS px at 3x is 1290px wide (wide enough to get a 1024px preview);
+          // the 9000px page is 27000px tall, so that preview would be 21433px tall.
+          devices: [{ name: "small", width: 430, height: 300, dpr: 3 }],
+          screenshot: { fullPage: "single", maxHeight: 0 },
+        }),
+        inputManifest: single(),
+        baseUrl: server.url,
+        log: silent,
+      });
+      const shot = result.manifest.routes[0].states[0].shots.small;
+      expect(shot.error).toBeUndefined();
+      expect(result.manifest.stats?.failed).toBe(0);
+
+      const size = async (rel: string) => sharp(path.join(result.runDir, rel)).metadata();
+      const full = await size(shot.full!);
+      expect(full.height).toBeGreaterThan(16383); // the full PNG keeps every pixel
+      for (const rel of [shot.thumb!, shot.mid!]) {
+        const m = await size(rel);
+        expect(m.format).toBe("webp");
+        expect(m.height).toBeLessThanOrEqual(16383);
+        // Scaled to fit, not cropped: the whole page, in the same shape.
+        expect(m.width! / m.height!).toBeCloseTo(full.width! / full.height!, 2);
+      }
     } finally {
       await server.close();
       await fs.rm(siteDir, { recursive: true, force: true });

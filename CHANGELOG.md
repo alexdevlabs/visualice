@@ -39,6 +39,13 @@
 - The README says how to turn on auto-update for the plugin: a marketplace plugin
   doesn't update itself unless you do.
 
+### Fixes
+
+- A very long page, above all on a high-density phone, no longer fails its shot with
+  "Processed image is too large for the WebP format": the viewer's preview images are
+  scaled down to fit WebP's 16383px limit, and the full PNG is untouched. With
+  `screenshot.format: "webp"`, a page too tall for WebP now says so and how to fix it.
+
 ## 0.1.1
 
 ### Fixes
