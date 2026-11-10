@@ -34,7 +34,12 @@ import {
 } from "./crawl/routes-file";
 import { ensureStorageState } from "./crawl/auth";
 import { pathExists } from "./shared/fsx";
-import { startUpdateCheck, updateCheckDisabled, type UpdateCheck } from "./shared/update-check";
+import {
+  knownUpdate,
+  startUpdateCheck,
+  updateCheckDisabled,
+  type UpdateCheck,
+} from "./shared/update-check";
 import { nodeBinCommand } from "./shared/node-bin";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
@@ -429,6 +434,14 @@ async function cmdServe(flags: Flags): Promise<void> {
   const viewerDist = path.join(PROJECT_ROOT, "viewer", "dist");
   await ensureViewerBuilt(viewerDist, log);
 
+  // The viewer's update banner, from the same check as the terminal notice. Not in
+  // a --screenshot, which is a picture of the catalogue, not of this install.
+  const version = await readVersion();
+  const update =
+    str(flags, "screenshot") === undefined && (await updatesOn(flags))
+      ? () => knownUpdate(version)
+      : undefined;
+
   const server = await serveViewer({
     runDir: dir,
     viewerDist,
@@ -437,6 +450,7 @@ async function cmdServe(flags: Flags): Promise<void> {
     site,
     runId,
     port: parsePort(flags),
+    update,
   });
 
   // Naming a site or run opens it; otherwise the page decides (the dashboard, when
@@ -1034,13 +1048,18 @@ async function main(): Promise<void> {
  * `npm link`ed) is never "behind" in a way worth telling, and `--quiet` asks for silence.
  */
 async function updateCheck(flags: Flags): Promise<UpdateCheck | undefined> {
-  if (flags.quiet === true || updateCheckDisabled()) return undefined;
-  if (await pathExists(path.join(PROJECT_ROOT, ".git"))) return undefined;
+  if (!(await updatesOn(flags))) return undefined;
   try {
     return await startUpdateCheck(await readVersion());
   } catch {
     return undefined;
   }
+}
+
+/** Is the update check (terminal notice and viewer banner) on for this run? */
+async function updatesOn(flags: Flags): Promise<boolean> {
+  if (flags.quiet === true || updateCheckDisabled()) return false;
+  return !(await pathExists(path.join(PROJECT_ROOT, ".git")));
 }
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref());

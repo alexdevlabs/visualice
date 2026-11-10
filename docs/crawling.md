@@ -101,6 +101,9 @@ It is off with `--quiet`, in CI (`CI` set), in a source checkout, and with
 `VISUALICE_NO_UPDATE_CHECK=1` (or `NO_UPDATE_NOTIFIER=1`). The last answer is cached in
 `~/.cache/visualice/update-check.json` (`$XDG_CACHE_HOME` when set).
 
+`visualice serve` passes the same answer to the viewer, which shows it as a banner with
+the update steps (the viewer never contacts npm itself; an export never shows it).
+
 ## Output
 
 Output lands under the configured output directory (default `.visualice/`), one folder

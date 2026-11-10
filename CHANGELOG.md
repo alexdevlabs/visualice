@@ -33,6 +33,9 @@
   once a day, in the background, never in the way), with the command to update the
   plugin or the CLI. The skill passes it on. Off with `--quiet`, in CI, or with
   `VISUALICE_NO_UPDATE_CHECK=1`.
+- `visualice serve` shows the same news as a banner across the top of the viewer, with
+  the update steps and a copy button for each command. Dismissed, it stays away until
+  the next version; a shared export never shows it.
 - The README says how to turn on auto-update for the plugin: a marketplace plugin
   doesn't update itself unless you do.
 

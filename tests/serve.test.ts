@@ -190,6 +190,33 @@ describe("serveViewer sites and runs", () => {
   });
 });
 
+describe("serveViewer update banner", () => {
+  it("answers /update.json from the update getter, uncached, and {} without one", async () => {
+    expect(await (await fetch(`${server.url}/update.json`)).json()).toEqual({});
+
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-serve-update-"));
+    let latest: string | undefined;
+    const withUpdate = await serveViewer({
+      runDir: dir,
+      viewerDist: dir,
+      update: async () => (latest ? { current: "0.2.0", latest } : undefined),
+    });
+    try {
+      const first = await fetch(`${withUpdate.url}/update.json`);
+      expect(first.headers.get("cache-control")).toBe("no-store");
+      expect(await first.json()).toEqual({});
+      latest = "0.3.0"; // a check that lands while the server runs
+      expect(await (await fetch(`${withUpdate.url}/update.json`)).json()).toEqual({
+        current: "0.2.0",
+        latest: "0.3.0",
+      });
+    } finally {
+      await withUpdate.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("isChild", () => {
   it("accepts a plain name and rejects ones that leave the directory", () => {
     const dir = path.resolve("/out/sites");

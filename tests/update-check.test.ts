@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   cacheFile,
   isNewer,
+  knownUpdate,
   startUpdateCheck,
   updateCheckDisabled,
   updateNotice,
@@ -108,5 +109,20 @@ describe("startUpdateCheck", () => {
     const check = await startUpdateCheck("0.2.0", { file, now: 1, fetchFn: registry("0.2.0").fn });
     expect(check.notice).toBeUndefined();
     await check.refreshed;
+  });
+});
+
+describe("knownUpdate", () => {
+  it("reads the cached answer for the viewer, without asking the registry", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-known-"));
+    const file = path.join(dir, "update-check.json");
+    try {
+      expect(await knownUpdate("0.2.0", file)).toBeUndefined();
+      await fs.writeFile(file, JSON.stringify({ checkedAt: 0, latest: "0.3.0" }));
+      expect(await knownUpdate("0.2.0", file)).toEqual({ current: "0.2.0", latest: "0.3.0" });
+      expect(await knownUpdate("0.3.0", file)).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

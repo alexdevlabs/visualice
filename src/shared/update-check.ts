@@ -67,6 +67,25 @@ async function readCache(file: string): Promise<Cache | undefined> {
   }
 }
 
+/** What the viewer is told: the version running, and the newer one out. */
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+}
+
+/**
+ * The newer version the last check found, if any: what `visualice serve` hands the
+ * viewer for its banner. Only the cache is read, so it costs a file read and never
+ * reaches the network; the CLI's own check keeps the cache fresh.
+ */
+export async function knownUpdate(
+  current: string,
+  file: string = cacheFile(),
+): Promise<UpdateInfo | undefined> {
+  const latest = (await readCache(file))?.latest;
+  return latest && isNewer(latest, current) ? { current, latest } : undefined;
+}
+
 export interface UpdateCheck {
   /** The notice to show now, from the cached answer; undefined when up to date. */
   notice?: string;

@@ -154,6 +154,12 @@ export async function serveViewer(opts: {
   /** Run id shown as current in `/sites.json`. */
   runId?: string;
   port?: number;
+  /**
+   * A newer visualice, if one is out, for the viewer's update banner at
+   * `/update.json`. Asked on every request, so a check that lands while the server
+   * runs shows on the next page load. Omitted: the banner never shows.
+   */
+  update?: () => Promise<{ current: string; latest: string } | undefined>;
 }): Promise<StaticServer> {
   const runDir = path.resolve(opts.runDir);
   const viewerDist = path.resolve(opts.viewerDist);
@@ -208,6 +214,14 @@ export async function serveViewer(opts: {
         // Never cached: the point of the list is to reflect runs added since load.
         res.setHeader("cache-control", "no-store");
         res.end(JSON.stringify(list));
+        return;
+      }
+
+      if (pathname === "/update.json") {
+        const info = opts.update ? await opts.update().catch(() => undefined) : undefined;
+        res.setHeader("content-type", "application/json; charset=utf-8");
+        res.setHeader("cache-control", "no-store");
+        res.end(JSON.stringify(info ?? {}));
         return;
       }
 
