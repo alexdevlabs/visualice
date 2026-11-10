@@ -184,7 +184,9 @@ export function parseSourceLine(line: string): SourceInfo | undefined {
 /** The real path of `p`, resolving through its nearest existing parent when it doesn't exist. */
 function realPath(p: string): string {
   try {
-    return realpathSync(p);
+    // `.native` asks the OS: on Windows it also expands 8.3 short names
+    // (C:\Users\RUNNER~1), which git never reports and the JS version leaves alone.
+    return realpathSync.native(p);
   } catch {
     const parent = path.dirname(p);
     return parent === p ? p : path.join(realPath(parent), path.basename(p));
