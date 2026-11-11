@@ -1,7 +1,7 @@
 import type { Page, Response } from "playwright";
 import type { RecipeStep } from "../shared/types";
 import { locatorFor } from "../shared/selectors";
-import { namesGeneratedId } from "./generated-ids";
+import { idOfSelector, isGeneratedId, namesGeneratedId } from "./generated-ids";
 
 export function resolveUrl(base: string, u: string): string {
   return /^https?:\/\//i.test(u) ? u : new URL(u, base).href;
@@ -53,9 +53,95 @@ export const NETWORK_IDLE_MS = 10_000;
 /** How long a wait for a generated id (from an older recipe) holds before moving on. */
 const GENERATED_ID_WAIT_MS = 1500;
 
+/**
+ * What is open on the page, counted: dialogs and popups, expanded triggers, open
+ * `<details>`, and elements a component library marks open. Compared before and
+ * after a click to tell whether the click opened something, in terms every
+ * framework shares.
+ */
+const countOpen = (page: Page): Promise<number[]> =>
+  page.evaluate(() => {
+    const shown = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+    };
+    const count = (sel: string, visibleOnly: boolean) =>
+      Array.from(document.querySelectorAll(sel)).filter((el) => !visibleOnly || shown(el)).length;
+    return [
+      count(
+        'dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"]',
+        true,
+      ),
+      count('[aria-expanded="true"]', false),
+      count("details[open]", false),
+      count('[data-state="open"],[data-open]', true),
+    ];
+  });
+
+/**
+ * Wait for the element a recipe names by id, or for the click before it to have
+ * opened something: whichever comes first. The id was right when the state was
+ * recorded, but a site can generate it (a counter, React's useId) and give the same
+ * dialog another one on this load; what the click does doesn't change. An id
+ * already known to be generated isn't waited for at all.
+ */
+async function waitForIdOrOpened(
+  page: Page,
+  selector: string,
+  generated: boolean,
+  before: number[],
+  timeout: number | undefined,
+): Promise<void> {
+  const byId = generated
+    ? undefined
+    : page.locator(selector).first().waitFor({ state: "visible", timeout });
+  const opened = page.waitForFunction(
+    (was) => {
+      const shown = (el: Element) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+      };
+      const count = (sel: string, visibleOnly: boolean) =>
+        Array.from(document.querySelectorAll(sel)).filter((el) => !visibleOnly || shown(el)).length;
+      const now = [
+        count(
+          'dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"]',
+          true,
+        ),
+        count('[aria-expanded="true"]', false),
+        count("details[open]", false),
+        count('[data-state="open"],[data-open]', true),
+      ];
+      return now.some((n, i) => n > was[i]);
+    },
+    before,
+    { timeout, polling: 100 },
+  );
+  const waits = byId ? [byId, opened] : [opened];
+  for (const w of waits) w.catch(() => {}); // the loser times out on its own
+  try {
+    await Promise.any(waits);
+  } catch {
+    // Neither: report the id the recipe asked for, as before.
+    await (byId ?? opened);
+  }
+}
+
 /** Replay an ordered list of interaction steps on a page. */
 export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void> {
-  for (const step of steps) {
+  /** What was open just before the step a following id-wait depends on. */
+  let before: number[] | undefined;
+  for (const [i, step] of steps.entries()) {
+    const next = steps[i + 1];
+    if (
+      (step.action === "click" || step.action === "hover" || step.action === "press") &&
+      next?.action === "waitFor" &&
+      next.selector &&
+      (next.state ?? "visible") === "visible" &&
+      idOfSelector(next.selector) !== undefined
+    ) {
+      before = await countOpen(page).catch(() => undefined);
+    }
     switch (step.action) {
       case "navigate":
         await page.goto(new URL(step.url, page.url()).href);
@@ -85,7 +171,10 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
         else await page.keyboard.press(step.key);
         break;
       case "waitFor":
-        if (step.selector && namesGeneratedId(step.selector)) {
+        if (step.selector && before && idOfSelector(step.selector) !== undefined) {
+          const id = idOfSelector(step.selector)!;
+          await waitForIdOrOpened(page, step.selector, isGeneratedId(id), before, step.timeoutMs);
+        } else if (step.selector && namesGeneratedId(step.selector)) {
           // Recorded before generated ids were recognised: the id it names most
           // likely differs on this load. The step before it already did the work,
           // so give the element a moment and carry on instead of failing.
@@ -101,6 +190,7 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
             .waitFor({ state: step.state ?? "visible", timeout: step.timeoutMs });
         else if (step.url) await page.waitForURL(step.url, { timeout: step.timeoutMs });
         else if (step.timeoutMs) await page.waitForTimeout(step.timeoutMs);
+        before = undefined;
         break;
       case "scroll":
         if (step.to === "top") await page.evaluate(() => window.scrollTo(0, 0));

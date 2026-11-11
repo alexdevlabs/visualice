@@ -153,6 +153,24 @@ const DiscoverySchema = z.object({
       "Also probe at the first mobile device's viewport, so mobile-only states (hamburger nav) are discovered; those states capture only on mobile devices.",
     ),
   interactions: InteractionsSchema.default(InteractionsSchema.parse({})),
+  unstableIds: z
+    .array(
+      z.string().refine(
+        (p) => {
+          try {
+            new RegExp(p);
+            return p.length > 0;
+          } catch {
+            return false;
+          }
+        },
+        { message: "not a valid regular expression" },
+      ),
+    )
+    .default([])
+    .describe(
+      "Element ids this site generates at render time, as regular expressions (`^mat-dialog-\\d+$`, `^ember\\d+$`). Such an id is different on the next load, on another device or after another click, so recipes and state signatures never use one. React's useId and common component libraries are known already, and each crawl lists the ones it noticed changing; add those here to keep them.",
+    ),
 });
 
 const ThumbnailSchema = z.object({

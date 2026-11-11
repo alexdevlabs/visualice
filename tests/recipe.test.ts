@@ -132,6 +132,8 @@ describe("applyRecipe", () => {
     const p = fakePage();
     await applyRecipe(p, restored);
     expect(p.calls).toEqual([
+      // What's open before the click, in case the id it waits for has changed.
+      "evaluate()",
       'click(role=button[Open "Search"])',
       'waitFor(css=[id="search-modal"],visible)',
     ]);

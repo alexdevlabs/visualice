@@ -12,6 +12,8 @@ import type { Manifest } from "./types";
  * - `flakyRegions`   → `stabilize.maskSelectors` (paint over what won't hold still)
  * - `stableSelectors`→ `stabilize.waitForSelectors` (don't shoot before these exist)
  * - `skipTriggers`   → `discovery.interactions.denySelectors` (don't probe these)
+ * - `unstableIds`    → `discovery.unstableIds` (ids generated at render time; a
+ *   crawl writes the ones it noticed here, so the next run starts from them)
  *
  * Config wins in the sense that hints only ever *add*: nothing a user wrote is
  * dropped, and applying the same hints twice changes nothing.
@@ -25,8 +27,14 @@ const union = (a: readonly string[], b: readonly string[] = []): string[] => [
 
 export function applyHints(config: Config, hints: Hints): Config {
   if (!hints) return config;
-  const { flakyRegions, stableSelectors, skipTriggers } = hints;
-  if (!flakyRegions?.length && !stableSelectors?.length && !skipTriggers?.length) return config;
+  const { flakyRegions, stableSelectors, skipTriggers, unstableIds } = hints;
+  if (
+    !flakyRegions?.length &&
+    !stableSelectors?.length &&
+    !skipTriggers?.length &&
+    !unstableIds?.length
+  )
+    return config;
 
   return {
     ...config,
@@ -37,6 +45,7 @@ export function applyHints(config: Config, hints: Hints): Config {
     },
     discovery: {
       ...config.discovery,
+      unstableIds: union(config.discovery.unstableIds, unstableIds),
       interactions: {
         ...config.discovery.interactions,
         denySelectors: union(config.discovery.interactions.denySelectors, skipTriggers),
@@ -54,5 +63,8 @@ export function describeHints(hints: Hints): string | undefined {
     parts.push(`${hints.stableSelectors.length} stable selector(s) awaited`);
   }
   if (hints.skipTriggers?.length) parts.push(`${hints.skipTriggers.length} trigger(s) skipped`);
+  if (hints.unstableIds?.length) {
+    parts.push(`${hints.unstableIds.length} generated id pattern(s) avoided`);
+  }
   return parts.length ? `applying site hints: ${parts.join(", ")}` : undefined;
 }

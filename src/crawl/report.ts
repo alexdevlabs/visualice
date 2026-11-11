@@ -74,6 +74,21 @@ export function renderReport(m: Manifest): string {
     lines.push("");
   }
 
+  const generated = m.hints?.unstableIds ?? [];
+  if (generated.length) {
+    lines.push(`## Generated ids`);
+    lines.push("");
+    lines.push(
+      `Ids that changed between two loads of a page, or between two openings of the same`,
+      `dialog, so the site generates them at render time. Recipes and state signatures`,
+      `don't use them. Crawls remember them in the cached model; to keep them for good`,
+      `(and share them with the project), add them to \`discovery.unstableIds\` in the config:`,
+    );
+    lines.push("");
+    for (const p of generated) lines.push(`- \`${p}\``);
+    lines.push("");
+  }
+
   const a11y = m.stats?.accessibility;
   if (a11y) {
     lines.push(`## Accessibility`);

@@ -45,13 +45,21 @@
   "Processed image is too large for the WebP format": the viewer's preview images are
   scaled down to fit WebP's 16383px limit, and the full PNG is untouched. With
   `screenshot.format: "webp"`, a page too tall for WebP now says so and how to fix it.
-- States in React apps no longer time out on capture. Discovery recorded waits, click
-  targets and signatures from ids the app generates at render time (`useId()`'s
-  `_r_6_` / `:r6:` / `«r6»`, and `base-ui-…`, `radix-…`, `headlessui-…`, `mui-…`,
-  `react-select-2-…`), which differ on the next load, on another device, or after
-  another click. It now skips them, so those states also stop going stale between runs.
-  A recipe recorded before still captures: its wait for a generated id gives up after a
-  moment instead of failing the shot.
+- States no longer time out on capture because of ids an app generates at render time
+  (React's `useId()` `_r_6_` / `:r6:` / `«r6»`, `base-ui-…`, `mat-dialog-0`, `ember812`…),
+  which differ on the next load, on another device, or after another click. Discovery
+  recorded waits, click targets and state signatures from them; now it doesn't, so those
+  states also stop going stale between runs:
+  - The common libraries are known already.
+  - Discovery notices the rest itself, whatever the framework: it loads the first page
+    twice and compares ids, and opens a dialog a second time to see whether its id comes
+    back. What it found is listed under **Generated ids** in the report (`unstableIds` in
+    `--json`) and remembered in the cached model.
+  - New `discovery.unstableIds` config: the project's own patterns, as regular
+    expressions. The skill adds what a crawl found there.
+  - A recipe that still waits for an id that changed (one recorded before, or one nobody
+    caught) goes ahead once the click before it has opened something, instead of failing
+    the shot.
 
 ## 0.1.1
 

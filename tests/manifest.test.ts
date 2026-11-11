@@ -22,6 +22,17 @@ const route = (url: string, states: StateNode[], extra: Partial<RouteNode> = {})
 const manifest = (routes: RouteNode[]): InputManifest => ({ routes });
 
 describe("mergeManifests", () => {
+  it("keeps the generated-id patterns every run learned", () => {
+    const cached = {
+      ...manifest([route("/", [])]),
+      hints: { unstableIds: ["^a\\d+$"], notes: "x" },
+    };
+    const fresh = { ...manifest([route("/", [])]), hints: { unstableIds: ["^b\\d+$"] } };
+    const merged = mergeManifests(cached, fresh);
+    expect(merged.hints?.unstableIds).toEqual(["^a\\d+$", "^b\\d+$"]);
+    expect(merged.hints?.notes).toBe("x");
+  });
+
   it("preserves authored states and refreshes auto states on a shared route", () => {
     const cached = manifest([
       route("/", [

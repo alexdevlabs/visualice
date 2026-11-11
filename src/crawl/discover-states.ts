@@ -6,7 +6,13 @@ import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe, gotoRoute } from "./recipe";
 import { discoverFormStates } from "./discover-forms";
-import { GENERATED_ID_SOURCE, isGeneratedId } from "./generated-ids";
+import {
+  confirmStableId,
+  generatedIdSource,
+  isGeneratedId,
+  learnUnstableId,
+  needsStabilityCheck,
+} from "./generated-ids";
 import { createHash } from "node:crypto";
 import {
   addedLines,
@@ -50,7 +56,7 @@ export async function collectCandidates(
     maxCandidates: interactions.maxCandidates,
     root: root ?? null,
     testIdAttribute: testIdAttribute(),
-    generatedId: GENERATED_ID_SOURCE,
+    generatedId: generatedIdSource(),
   };
   const raw = await page.evaluate((cfg) => {
     const generated = new RegExp(cfg.generatedId);
@@ -515,6 +521,33 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
         if (opened) containers.set(id, opened);
         ctx.urls.set(id, after.url);
         log(`    + ${ctx.route.id}: ${id}`);
+
+        // An id with a number in it may be a counter (`mat-dialog-3`, `ember812`):
+        // open the same thing again and see whether it comes back under the same
+        // id. Once per shape of id, so a site pays for it a handful of times.
+        if (waitId && needsStabilityCheck(waitId) && (await enterParent())) {
+          const again = await attempt(cand, action);
+          const ids = again.kind
+            ? [
+                ...again.after.openModalIds.filter((x) => !again.before.openModalIds.includes(x)),
+                ...again.after.openPanelIds.filter((x) => !again.before.openPanelIds.includes(x)),
+              ]
+            : [];
+          if (ids.includes(waitId)) confirmStableId(waitId);
+          else if (ids.length) {
+            learnUnstableId(waitId, "reopen");
+            state.recipe = [
+              ...parent.recipe,
+              ...buildSteps(cand, kind, action, undefined, after.modals > before.modals),
+            ];
+            state.siteKey = siteKeyFor(state.recipe, appeared);
+            // The page is showing the state again: sign it without the id.
+            const sig = (await takeSnapshot(page)).sig;
+            state.signature = sig;
+            seenSig.add(sig);
+            log(`      ${id}: id ${waitId} changes when reopened — not waited for`);
+          }
+        }
       }
       if (!(await enterParent())) break;
     } catch {

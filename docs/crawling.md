@@ -77,6 +77,29 @@ from a manifest you authored yourself and skip discovery entirely:
 visualice capture --manifest=path/to/crawl-map.json --target=https://your.site
 ```
 
+### Generated ids
+
+Many frameworks give elements ids when they render: React's `useId()` (`_r_6_`), and
+component libraries like `mat-dialog-0` or `ember812`. Such an id is different on the next
+load, on another device or after another click, so a recipe that waits for one, or clicks
+one, fails on the next capture. visualice never uses them:
+
+- React's ids and the common libraries (Base UI, Radix, Headless UI, MUI, React Aria,
+  react-select…) are known already.
+- Discovery notices others: it loads the first page twice and compares the ids, and it
+  opens a dialog a second time to see whether it comes back under the same id. What it
+  finds is listed under **Generated ids** in `crawl-report.md` (`unstableIds` with
+  `--json`) and remembered in the cached model.
+- `discovery.unstableIds` in the config keeps them with the project, as regular expressions:
+
+  ```json
+  { "discovery": { "unstableIds": ["^mat-dialog-\\d+$", "^ember\\d+$"] } }
+  ```
+
+- When a recipe still waits for an id that turns out to have changed, the capture goes
+  ahead once the click before it has opened something (a dialog, a menu, an expanded
+  panel), instead of failing the shot.
+
 ## Scripts and CI
 
 For agents and CI: `--json` prints a single machine-readable summary to stdout

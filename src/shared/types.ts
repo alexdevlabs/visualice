@@ -259,6 +259,8 @@ export interface Manifest {
     stableSelectors?: string[];
     flakyRegions?: string[];
     skipTriggers?: string[];
+    /** Id patterns the site generates at render time (see `discovery.unstableIds`). */
+    unstableIds?: string[];
     notes?: string;
   };
 }

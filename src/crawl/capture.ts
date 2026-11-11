@@ -20,6 +20,7 @@ import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
 import { takeSnapshot } from "./snapshot";
 import { deviceContextOptions } from "./context-options";
 import { useTestIdAttribute } from "../shared/selectors";
+import { useUnstableIds } from "./generated-ids";
 import { createProgress } from "../shared/progress";
 import { pathExists } from "../shared/fsx";
 import { mapPoolWithResource, sleep } from "../shared/pool";
@@ -562,6 +563,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
   const { config, manifest, baseUrl, runDir } = opts;
   const log = opts.log ?? (() => {});
   useTestIdAttribute(config.testIdAttribute);
+  useUnstableIds(config.discovery.unstableIds);
   const started = Date.now();
   const shotsDir = path.join(runDir, "screenshots");
   await fs.mkdir(shotsDir, { recursive: true });

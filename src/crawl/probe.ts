@@ -6,7 +6,7 @@ import { testIdAttribute, useTestIdAttribute } from "../shared/selectors";
 import { applyContextInit } from "./stabilize";
 import { deviceContextOptions } from "./context-options";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
-import { GENERATED_ID_SOURCE } from "./generated-ids";
+import { generatedIdSource, useUnstableIds } from "./generated-ids";
 import {
   addedLines,
   addedRegions,
@@ -226,7 +226,7 @@ async function readFormsAndControls(
         }
         return { forms, controls };
       },
-      [testIdAttribute(), GENERATED_ID_SOURCE] as const,
+      [testIdAttribute(), generatedIdSource()] as const,
     )
     .catch(() => ({ forms: [], controls: [] })) as Promise<{
     forms: InventoryForm[];
@@ -303,6 +303,7 @@ export async function probePage(
 ): Promise<{ inventory: PageInventory } | ProbeOutcome> {
   const { config, baseUrl } = opts;
   useTestIdAttribute(config.testIdAttribute);
+  useUnstableIds(config.discovery.unstableIds);
   const device = pickDevice(config, opts.device);
   const engines = { chromium, firefox, webkit };
   const browser = await engines[device.browser ?? "chromium"].launch(launchOptions());

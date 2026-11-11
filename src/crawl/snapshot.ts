@@ -1,5 +1,5 @@
 import type { Page } from "playwright";
-import { GENERATED_ID_SOURCE } from "./generated-ids";
+import { generatedIdSource } from "./generated-ids";
 
 /**
  * What a page is showing, reduced to what state discovery and capture compare:
@@ -199,7 +199,7 @@ export function takeSnapshot(page: Page): Promise<Snapshot> {
         doc: doc ?? null,
       };
     },
-    [DOC_KEY, GENERATED_ID_SOURCE] as const,
+    [DOC_KEY, generatedIdSource()] as const,
   );
 }
 

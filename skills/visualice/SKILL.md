@@ -128,6 +128,16 @@ password-protected staging: [`references/auth.md`](references/auth.md).
   usually means its recipe needs an Explore-mode tweak.
 - Failed captures were already retried (`politeness.retries`); don't blindly re-run
   the whole crawl for one flaky shot — fix or mask the cause.
+- **Generated ids.** Many frameworks give elements ids at render time (React's
+  `useId`, `mat-dialog-0`, `ember812`), which differ on the next load, so a recipe must
+  never rely on one. visualice knows the common ones and notices others by loading a
+  page twice and opening a dialog twice; what it noticed comes back as `unstableIds` in
+  `--json` and under `## Generated ids` in the report. When it does, check the patterns
+  (an id the app really chose, like `step-2`, shouldn't be there), add the real ones to
+  `discovery.unstableIds` in `visualice.config.json` so they're kept with the project,
+  and tell the user in one line. Do the same when you can see the project's framework
+  generates ids (its `package.json`, ids in `crawl-map.json`, failures that are
+  timeouts on a `waitFor` of an `[id=…]`). A regex per pattern: `"^mat-dialog-\\d+$"`.
 - Open the viewer: `visualice serve --open` (`--site=<name>` for another site in the
   output directory, `--run=<id>` for a specific run instead of the latest,
   `--screenshot=out.png` to grab a headless screenshot of the viewer itself). Shots are

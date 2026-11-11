@@ -7,6 +7,7 @@ import { httpContextOptions } from "./context-options";
 import { discoverRoutes, type RouteDiscoveryLimit } from "./discover-routes";
 import { defaultState, discoverStates } from "./discover-states";
 import { gotoRoute, resolveUrl } from "./recipe";
+import { learnFromTwoLoads, learnedUnstableIds, useUnstableIds } from "./generated-ids";
 import { locatorFor, useTestIdAttribute } from "../shared/selectors";
 import { mapPool } from "../shared/pool";
 import { uniqueId } from "../shared/url";
@@ -142,6 +143,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
   const log = opts.log ?? (() => {});
   const interactions = config.discovery.interactions;
   useTestIdAttribute(config.testIdAttribute);
+  useUnstableIds(config.discovery.unstableIds);
   const browser = await chromium.launch(launchOptions());
 
   const newDiscoveryContext = async (device?: Device): Promise<BrowserContext> => {
@@ -165,6 +167,19 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
     log("discovering routes…");
     const routes = await discoverRoutes(context, config, baseUrl, log, opts.limit);
     log(`found ${routes.length} route(s); discovering UI states…`);
+
+    // Ids that differ on a second load are generated, whatever made them: learn
+    // their shape before any recipe can lean on one. One page is enough to see how
+    // a site names things, and costs two loads.
+    if (routes.length && interactions.auto) {
+      const first = resolveUrl(baseUrl, routes[0].finalUrl ?? routes[0].url);
+      const waitUntil = config.stabilize.waitStrategy;
+      await learnFromTwoLoads(async () => {
+        const page = await context.newPage();
+        await gotoRoute(page, first, waitUntil);
+        return page;
+      }).catch(() => []);
+    }
 
     // State discovery is per-route independent — run it under the politeness pool
     // (each call opens its own page on the shared context).
@@ -214,7 +229,18 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
 
     const totalStates = countStates(routes);
     log(`discovered ${routes.length} route(s), ${totalStates} state(s)`);
-    return { site: { title: routes[0]?.title }, routes };
+    const learned = learnedUnstableIds();
+    if (learned.length) {
+      log(
+        `ids generated at render time, not used in recipes: ${learned.map((l) => `${l.pattern} (e.g. ${l.example})`).join(", ")}`,
+      );
+    }
+    return {
+      site: { title: routes[0]?.title },
+      routes,
+      // Carried in the cached model so later runs avoid them from the start.
+      ...(learned.length ? { hints: { unstableIds: learned.map((l) => l.pattern) } } : {}),
+    };
   } finally {
     await browser.close();
   }

@@ -83,7 +83,21 @@ export function mergeManifests(
   return {
     site: fresh.site ?? cached.site,
     auth: cached.auth ?? fresh.auth,
-    hints: { ...cached.hints, ...fresh.hints },
+    hints: mergeHints(cached.hints, fresh.hints),
     routes,
   };
+}
+
+/**
+ * The fresh hints over the cached ones, except the id patterns: each discovery
+ * learns only what it happened to see, so what an earlier run learned is kept.
+ */
+function mergeHints(
+  cached: InputManifest["hints"],
+  fresh: InputManifest["hints"],
+): InputManifest["hints"] {
+  const merged = { ...cached, ...fresh };
+  const ids = [...new Set([...(cached?.unstableIds ?? []), ...(fresh?.unstableIds ?? [])])];
+  if (ids.length) merged.unstableIds = ids;
+  return merged;
 }

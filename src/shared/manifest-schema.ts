@@ -148,6 +148,7 @@ const HintsSchema = z.object({
   stableSelectors: z.array(z.string()).optional(),
   flakyRegions: z.array(z.string()).optional(),
   skipTriggers: z.array(z.string()).optional(),
+  unstableIds: z.array(z.string()).optional(),
   notes: z.string().optional(),
 });
 

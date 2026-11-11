@@ -172,6 +172,8 @@ function reportDone(runDir: string, manifest: Manifest, flags: Flags, log: Log):
         failed: stats?.failed ?? 0,
         failures: stats?.failures ?? [],
         wanted: stats?.wanted ?? [],
+        // Generated-id patterns crawls noticed, not yet in the config.
+        ...(manifest.hints?.unstableIds?.length ? { unstableIds: manifest.hints.unstableIds } : {}),
         ...(stats?.accessibility ? { accessibility: stats.accessibility } : {}),
       }),
     );

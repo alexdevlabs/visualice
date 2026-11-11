@@ -185,6 +185,9 @@ exploring keeps paying off:
   (`stabilize.waitForSelectorsTimeoutMs`, 5 s by default); one that never appears
   costs that wait on every shot and logs a warning — don't leave a stale one in place.
 - `skipTriggers` → merged into `discovery.interactions.denySelectors`: never probed.
+- `unstableIds` → merged into `discovery.unstableIds`: id patterns the site generates
+  at render time, never used in a recipe or a signature. Crawls write the ones they
+  notice here themselves; move them into the config to keep them with the project.
 
 Hints only ever add to the config; they can't remove what the user set, and applying
 them twice changes nothing. Put site-specific knowledge here rather than in the
