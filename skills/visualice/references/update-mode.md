@@ -8,7 +8,9 @@ title:
 ```
 
 Each run's `crawl-map.json` has the same record as `source`, with the list of files
-that had uncommitted changes. When the project moves on (new pages, edited ones), you
+that had uncommitted changes. Only a run that shot every state moves the line: one with
+failed shots, or a `--no-states` run, leaves it at the last complete run, so `changes`
+still diffs from there. When the project moves on (new pages, edited ones), you
 don't have to reshoot everything: find out what changed, work out which pages it
 touches, and reshoot only those. A partial run carries every other page's shots over
 from the last run, so the new run is still the whole site.

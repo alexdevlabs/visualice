@@ -212,7 +212,7 @@ async function readFormsAndControls(
               entry.submit = {
                 target: btid
                   ? { testId: btid }
-                  : btn.id
+                  : btn.id && /^[A-Za-z][\w-]*$/.test(btn.id) && !generated.test(btn.id)
                     ? { selector: `#${btn.id}` }
                     : text
                       ? { role: "button", name: text }

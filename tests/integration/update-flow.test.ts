@@ -147,6 +147,19 @@ describe("updating a catalogue after code changes", () => {
     const after = await changes();
     expect(after.verdict).toBe("none");
 
+    // 5b. A run that leaves the states out doesn't stand for the commit: the record
+    // stays where it was, so the change still shows.
+    const recorded = await sourceLine();
+    await fs.writeFile(
+      about,
+      (await fs.readFile(about, "utf8")).replace("</body>", "<p>Hi</p></body>"),
+    );
+    await commit("about again");
+    await visualice("crawl", server.url, "--no-states", "--json", "--quiet");
+    expect(await sourceLine()).toBe(recorded);
+    expect((await changes()).verdict).toBe("partial");
+    await git("checkout", "-q", "--", ".");
+
     // 6. A change every page sees asks for a full run.
     await fs.appendFile(path.join(site, "assets", "tailwind.css"), "\nbody{color:red}\n");
     const full = await changes();

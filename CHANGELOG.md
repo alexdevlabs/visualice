@@ -6,7 +6,9 @@
 
 - Each crawl records the git commit it shot, on a `visualice-source` line in
   `visualice.routes.md` and as `source` in the run's `crawl-map.json` (branch, files with
-  uncommitted changes, whether the target was local, a hash of the config).
+  uncommitted changes, whether the target was local, a hash of the config). Only a run
+  that shot every state moves the routes-file line; one with failed shots or `--no-states`
+  leaves it where it was.
 - `visualice changes` diffs the project against that commit: the commits and files since,
   the changes that reach every page (dependencies, global styles, root layouts, header
   and footer, the config), the pages file-based routing ties changed files to, and the

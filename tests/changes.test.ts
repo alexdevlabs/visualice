@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { matchesAny } from "../src/shared/glob";
 import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -44,6 +45,14 @@ describe("file-based routing", () => {
   it("matches patterns against catalogue pages", () => {
     expect(patternMatches("/blog/*", "/blog/hello")).toBe(true);
     expect(patternMatches("/blog/*", "/blog")).toBe(false);
+    // The same rules the crawl applies to --only (shared/glob):
+    for (const [pattern, page] of [
+      ["/blog/*", "/blog/hello"],
+      ["/docs/**", "/docs"],
+      ["/docs/**", "/docs/a/b"],
+      ["/blog/*", "/blog/a/b"],
+    ])
+      expect(patternMatches(pattern, page), `${pattern} ${page}`).toBe(matchesAny(page, [pattern]));
     expect(patternMatches("/docs/**", "/docs")).toBe(true);
     expect(patternMatches("/docs/**", "/docs/a/b")).toBe(true);
     expect(patternMatches("/**", "/anything")).toBe(true);

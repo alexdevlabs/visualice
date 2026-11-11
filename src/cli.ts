@@ -14,6 +14,7 @@ import {
   type Flags,
 } from "./cli-args";
 import { countStates, loadInputManifest, modelCachePath } from "./crawl/manifest";
+import { applyHints } from "./shared/hints";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
 import {
   capturePipeline,
@@ -897,7 +898,9 @@ async function cmdProbe(flags: Flags): Promise<void> {
   }
   const probeOn = (device: string | undefined, shotPath: string | undefined) =>
     probePage({
-      config,
+      // The model's hints (generated-id patterns a crawl learned, masks) apply here
+      // as in capture, so a probe's verdict is the one capture will reach.
+      config: applyHints(config, model?.hints),
       baseUrl,
       url: route?.url ?? page,
       recipe,

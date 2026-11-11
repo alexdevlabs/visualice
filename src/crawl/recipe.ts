@@ -54,83 +54,91 @@ export const NETWORK_IDLE_MS = 10_000;
 const GENERATED_ID_WAIT_MS = 1500;
 
 /**
- * What is open on the page, counted: dialogs and popups, expanded triggers, open
- * `<details>`, and elements a component library marks open. Compared before and
- * after a click to tell whether the click opened something, in terms every
- * framework shares.
+ * How long the element a recipe names by id gets to appear before the step settles
+ * for "the click opened something" instead.
  */
-const countOpen = (page: Page): Promise<number[]> =>
+const ID_GRACE_MS = 3000;
+
+/**
+ * What is open on the page: dialogs and popups, open `<details>`, and regions a
+ * component library marks open. Compared before and after a click to tell whether
+ * it opened something, in terms every framework shares. Triggers are left out —
+ * a button's own `aria-expanded` or `data-state` flips the instant it's clicked,
+ * before what it opens is there — and so is anything hidden.
+ */
+const openRegions = (page: Page): Promise<string[]> =>
   page.evaluate(() => {
     const shown = (el: Element) => {
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
     };
-    const count = (sel: string, visibleOnly: boolean) =>
-      Array.from(document.querySelectorAll(sel)).filter((el) => !visibleOnly || shown(el)).length;
-    return [
-      count(
-        'dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"]',
-        true,
+    const regions = Array.from(
+      document.querySelectorAll(
+        'dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"],details[open],[data-state="open"],[data-open]',
       ),
-      count('[aria-expanded="true"]', false),
-      count("details[open]", false),
-      count('[data-state="open"],[data-open]', true),
-    ];
+    ).filter(
+      (el) =>
+        shown(el) && !el.matches('button,[role="button"],[aria-expanded],[aria-haspopup],summary'),
+    );
+    // Where each sits, so one region closing as another opens still reads as a change.
+    return regions.map((el) => {
+      const path: number[] = [];
+      for (let n: Element | null = el; n?.parentElement; n = n.parentElement) {
+        path.unshift(Array.from(n.parentElement.children).indexOf(n));
+      }
+      return `${el.tagName}:${path.join(".")}`;
+    });
   });
 
+const openedSince = (before: string[], now: string[]) => now.some((r) => !before.includes(r));
+
 /**
- * Wait for the element a recipe names by id, or for the click before it to have
- * opened something: whichever comes first. The id was right when the state was
+ * Wait for the element a recipe names by id, as it was recorded, falling back to
+ * "the click before it opened something". The id was right when the state was
  * recorded, but a site can generate it (a counter, React's useId) and give the same
- * dialog another one on this load; what the click does doesn't change. An id
- * already known to be generated isn't waited for at all.
+ * dialog another one on this load; what the click does doesn't change.
+ *
+ * - A stable id gets the first few seconds to itself, so a region that takes a
+ *   moment to fill (a menu loading its items) is still waited for. After that, a
+ *   region the click opened is enough; with none, the wait carries on to its
+ *   timeout and fails as it always did.
+ * - An id already known to be generated is never there: the step gives the click a
+ *   moment to open something and moves on, whatever it did.
  */
 async function waitForIdOrOpened(
   page: Page,
   selector: string,
   generated: boolean,
-  before: number[],
+  before: string[],
   timeout: number | undefined,
 ): Promise<void> {
-  const byId = generated
-    ? undefined
-    : page.locator(selector).first().waitFor({ state: "visible", timeout });
-  const opened = page.waitForFunction(
-    (was) => {
-      const shown = (el: Element) => {
-        const r = el.getBoundingClientRect();
-        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
-      };
-      const count = (sel: string, visibleOnly: boolean) =>
-        Array.from(document.querySelectorAll(sel)).filter((el) => !visibleOnly || shown(el)).length;
-      const now = [
-        count(
-          'dialog[open],[role="dialog"],[role="alertdialog"],[aria-modal="true"],[role="menu"],[role="listbox"]',
-          true,
-        ),
-        count('[aria-expanded="true"]', false),
-        count("details[open]", false),
-        count('[data-state="open"],[data-open]', true),
-      ];
-      return now.some((n, i) => n > was[i]);
-    },
-    before,
-    { timeout, polling: 100 },
-  );
-  const waits = byId ? [byId, opened] : [opened];
-  for (const w of waits) w.catch(() => {}); // the loser times out on its own
-  try {
-    await Promise.any(waits);
-  } catch {
-    // Neither: report the id the recipe asked for, as before.
-    await (byId ?? opened);
+  if (generated) {
+    const end = Date.now() + GENERATED_ID_WAIT_MS;
+    while (Date.now() < end) {
+      if (openedSince(before, await openRegions(page).catch(() => []))) return;
+      await page.waitForTimeout(100);
+    }
+    return;
   }
+  const wait = (ms: number | undefined) =>
+    page.locator(selector).first().waitFor({ state: "visible", timeout: ms });
+  // No timeout of its own: the page's default applies to what's left.
+  const limit = timeout;
+  const grace = Math.min(ID_GRACE_MS, limit ?? ID_GRACE_MS);
+  try {
+    await wait(grace);
+    return;
+  } catch (e) {
+    if (openedSince(before, await openRegions(page).catch(() => []))) return;
+    if (limit !== undefined && limit <= grace) throw e;
+  }
+  await wait(limit === undefined ? undefined : limit - grace);
 }
 
 /** Replay an ordered list of interaction steps on a page. */
 export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void> {
   /** What was open just before the step a following id-wait depends on. */
-  let before: number[] | undefined;
+  let before: string[] | undefined;
   for (const [i, step] of steps.entries()) {
     const next = steps[i + 1];
     if (
@@ -140,7 +148,7 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
       (next.state ?? "visible") === "visible" &&
       idOfSelector(next.selector) !== undefined
     ) {
-      before = await countOpen(page).catch(() => undefined);
+      before = await openRegions(page).catch(() => undefined);
     }
     switch (step.action) {
       case "navigate":

@@ -6,6 +6,7 @@ import type { StaticServer } from "../../src/shared/file-serve";
 import { ConfigSchema, type Config } from "../../src/shared/config";
 import { crawlPipeline, planCrawl } from "../../src/crawl/orchestrator";
 import type { ViewerData } from "../../src/shared/types";
+import { markRunIncomplete } from "../../src/crawl/runs";
 import { FIXTURE_DIR, silent, tempDir } from "./helpers";
 
 /**
@@ -75,5 +76,21 @@ describe("partial runs", () => {
     ) as ViewerData;
     expect(data.tiles.filter((t) => t.updated).every((t) => t.routeUrl === named)).toBe(true);
     expect(data.tiles.some((t) => t.carried)).toBe(true);
-  }, 120000);
+
+    // Interrupted, then resumed without repeating --only: still the same partial run.
+    await markRunIncomplete(part.runDir);
+    const resumed = await crawlPipeline({
+      config,
+      baseUrl: server.url,
+      replay: true,
+      resume: true,
+      log: silent,
+    });
+    expect(resumed.runDir).toBe(part.runDir);
+    expect(resumed.manifest.partial).toEqual({
+      only: [named],
+      carriedFrom: full.manifest.site.runId,
+    });
+    expect(resumed.manifest.stats?.carried).toBeGreaterThan(0);
+  }, 180000);
 });

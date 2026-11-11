@@ -257,6 +257,38 @@ export default { target: ${JSON.stringify(server.url)}, devices: [phone] as Devi
     }
   }, 180_000);
 
+  it("probe avoids the generated ids a crawl learned, as capture does", async () => {
+    // A form whose field ids an unknown framework numbers; an earlier crawl noticed
+    // and kept the pattern in the cached model's hints, not in the config.
+    const { server, dir: site } = await serveFiles({
+      "index.html": html(
+        "Form",
+        `<form><input id="fld-3" name="" aria-label="Email" required>
+         <button id=":r5:" type="submit">Send</button></form>`,
+      ),
+    });
+    const dir = await tempDir("bin-probe-hints");
+    try {
+      await fs.mkdir(path.join(dir, ".visualice"), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, ".visualice", "crawl-map.cache.json"),
+        JSON.stringify({ hints: { unstableIds: ["^fld\\-\\d+$"] }, routes: [] }),
+      );
+      const { stdout } = await run(["probe", "/", `--target=${server.url}`, "--quiet"], dir);
+      const { inventory } = JSON.parse(stdout) as {
+        inventory: { forms: { fields: { target: unknown }[]; submit?: { target: unknown } }[] };
+      };
+      const form = inventory.forms[0];
+      expect(form.fields[0].target).toEqual({ label: "Email" });
+      // React's id on the submit: neither relied on nor turned into a broken selector.
+      expect(form.submit?.target).toEqual({ role: "button", name: "Send" });
+    } finally {
+      await server.close();
+      await fs.rm(site, { recursive: true, force: true });
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("rejects an unknown flag with exit code 2", async () => {
     const dir = await tempDir("bin");
     try {

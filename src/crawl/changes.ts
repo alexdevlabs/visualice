@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { SourceInfo } from "../shared/types";
 import { git, isUnder, parsePorcelain, repoRoot, toRepoPath } from "./source";
+import { globToRegExp } from "../shared/glob";
 
 // `visualice changes`: what changed in the project since the commit the catalogue
 // was shot from, and what that means for the next run. The mechanical half: git
@@ -213,20 +214,8 @@ export function patternMatches(pattern: string, page: string): boolean {
     pathOnly.replace(/\.html?$/, ""),
     pathOnly.replace(/\/index$/, "") || "/",
   ]);
-  let re = "";
-  const p = pattern === "/" ? "/" : pattern.replace(/\/+$/, "");
-  for (let i = 0; i < p.length; i++) {
-    if (p.startsWith("/**", i)) {
-      re += "(?:/.*)?";
-      i += 2;
-    } else if (p.startsWith("**", i)) {
-      re += ".*";
-      i += 1;
-    } else if (p[i] === "*") {
-      re += "[^/]+";
-    } else re += p[i].replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-  }
-  const rx = new RegExp(`^${re}$`);
+  // The crawl's own glob rules, so `--only` matches here what it matches there.
+  const rx = globToRegExp(pattern === "/" ? "/" : pattern.replace(/\/+$/, ""));
   return [...variants].some((v) => rx.test(v));
 }
 

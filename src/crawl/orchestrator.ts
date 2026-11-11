@@ -140,7 +140,13 @@ export function toViewerData(m: Manifest): ViewerData {
           meta: ref.meta,
           a11y: ref.a11y,
           error: ref.error,
-          ...(ref.carried ? { carried: ref.carried } : m.partial ? { updated: true } : {}),
+          ...(ref.carried
+            ? { carried: ref.carried }
+            : // Shot because `--only` named the page: not a failed carry, nor a page
+              // shot only because the earlier run didn't have it.
+              m.partial && ref.full && !ref.error && matchesOnly(r, m.partial.only)
+              ? { updated: true }
+              : {}),
         });
       }
     }
@@ -326,18 +332,21 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
   // A partial run shoots what `--only` names and carries the rest from the last
   // finished run; without one to carry from, it shoots everything.
   let carry: CarryPlan | undefined;
-  const carrySource = opts.only?.length ? await findCarrySource(site, id) : undefined;
-  if (opts.only?.length) {
+  // A resumed partial run is still partial: its plan was kept in the run folder.
+  const only = opts.only ?? (opts.resume !== undefined ? await readPartialPlan(runDir) : undefined);
+  if (only?.length) await savePartialPlan(runDir, only);
+  const carrySource = only?.length ? await findCarrySource(site, id) : undefined;
+  if (only?.length) {
     if (!carrySource) {
       log("--only: no finished run of this site to carry from — capturing every page");
     } else {
       carry = await verifyCarry(
-        planCarry(manifest.routes, opts.only, carrySource.manifest, config.devices),
+        planCarry(manifest.routes, only, carrySource.manifest, config.devices),
         carrySource,
         config.devices,
       );
-      logCarryPlan(carry, opts.only, carrySource.runId, log);
-      manifest.partial = { only: opts.only, carriedFrom: carrySource.runId };
+      logCarryPlan(carry, only, carrySource.runId, log);
+      manifest.partial = { only, carriedFrom: carrySource.runId };
     }
   }
 
@@ -366,6 +375,7 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
     result.manifest.stats.routes = allRoutes.length;
     result.manifest.stats.states = allRoutes.reduce((n, r) => n + r.states.length, 0);
     result.manifest.stats.carried = carried;
+    countCarryFailures(result.manifest.stats, carry.carry);
     log(
       `carried ${carried} shot(s) of ${carry.carry.length} page(s) from run ${carrySource.runId}`,
     );
@@ -515,9 +525,16 @@ async function crawlRun(
   // The routes file now says which commit the catalogue shows, for `changes`. A rerun
   // of the same commit keeps the line it has, so the file only changes when the code
   // did. (Which files were dirty is in each run's manifest, which `changes` reads.)
-  if (source) {
+  // Only a run that shot every state stands for the commit: one with failed shots,
+  // or one that left the states out, would let `changes` call it up to date.
+  const failed = result.manifest.stats?.failed ?? 0;
+  if (source && !opts.pagesOnly && !failed) {
     const record = sameSource(intent.source, source) ? intent.source : source;
     await writeRoutesFile(config, inputManifest, intent, baseUrl, () => {}, record);
+  } else if (source && config.routesFile !== false) {
+    log(
+      `routes file: commit record left as it was — ${opts.pagesOnly ? "this run skipped the UI states" : `${failed} shot(s) failed`}`,
+    );
   }
   return result;
 }
@@ -879,4 +896,44 @@ export async function previewRoutes(opts: {
       capped: found.routes.length >= config.scope.maxPages,
     };
   });
+}
+
+/** Where a partial run keeps what `--only` named, so `--resume` continues it as one. */
+const PARTIAL_PLAN = "partial.json";
+
+async function savePartialPlan(runDir: string, only: string[]): Promise<void> {
+  await fs.writeFile(path.join(runDir, PARTIAL_PLAN), JSON.stringify({ only }));
+}
+
+export async function readPartialPlan(runDir: string): Promise<string[] | undefined> {
+  try {
+    const { only } = JSON.parse(await fs.readFile(path.join(runDir, PARTIAL_PLAN), "utf8")) as {
+      only?: unknown;
+    };
+    return Array.isArray(only) && only.every((o) => typeof o === "string") && only.length
+      ? only
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A shot that couldn't be carried is missing from the run like a failed capture, and
+ * counts as one: in `failed` (so `--fail-on-error` exits 3), in the report and in
+ * `failures` with `--json`.
+ */
+export function countCarryFailures(
+  stats: Pick<NonNullable<Manifest["stats"]>, "failed" | "failures">,
+  carried: RouteNode[],
+): void {
+  for (const route of carried) {
+    for (const state of route.states) {
+      for (const [device, ref] of Object.entries(state.shots)) {
+        if (!ref.error) continue;
+        stats.failed++;
+        stats.failures.push({ route: route.url, state: state.id, device, error: ref.error });
+      }
+    }
+  }
 }

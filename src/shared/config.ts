@@ -2,6 +2,7 @@ import { z } from "zod";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { validPattern } from "./pattern";
 
 // NOTE on defaults: zod's `.default(value)` does NOT re-parse the provided value,
 // so attaching `.default({})` to a nested object schema would yield a bare `{}`
@@ -154,19 +155,7 @@ const DiscoverySchema = z.object({
     ),
   interactions: InteractionsSchema.default(InteractionsSchema.parse({})),
   unstableIds: z
-    .array(
-      z.string().refine(
-        (p) => {
-          try {
-            new RegExp(p);
-            return p.length > 0;
-          } catch {
-            return false;
-          }
-        },
-        { message: "not a valid regular expression" },
-      ),
-    )
+    .array(z.string().refine(validPattern, { message: "not a valid regular expression" }))
     .default([])
     .describe(
       "Element ids this site generates at render time, as regular expressions (`^mat-dialog-\\d+$`, `^ember\\d+$`). Such an id is different on the next load, on another device or after another click, so recipes and state signatures never use one. React's useId and common component libraries are known already, and each crawl lists the ones it noticed changing; add those here to keep them.",

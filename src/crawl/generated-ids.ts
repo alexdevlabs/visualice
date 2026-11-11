@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { validPattern } from "../shared/pattern";
 
 /**
  * Ids a page generates at render time, which a recipe can't rely on.
@@ -26,7 +27,11 @@ const BUILTIN = [
   // React useId, alone or inside a library prefix/suffix.
   String.raw`(?:^|[-:_])(?::[rR][0-9a-zA-Z]*:|«[rR][0-9a-zA-Z]*»|_[rR]_[0-9a-zA-Z]*_)(?:$|[-:_])`,
   // Libraries that number their own ids.
-  String.raw`^(?:headlessui|radix|base-ui|mui|reach|chakra|mantine|react-aria)[-:_]?`,
+  // The name, a separator, and a number somewhere after it: `headlessui-menu-1`,
+  // not `reachability`, `muirfield-map` or `reach-us-form`. React Aria runs its
+  // number straight on (`react-aria123`).
+  String.raw`^(?:headlessui|radix|base-ui|mui|reach|chakra|mantine|react-aria)[-:_](?=.*[\d:«»])`,
+  String.raw`^react-aria\d`,
   String.raw`^react-select-\d+-`,
 ];
 
@@ -54,15 +59,6 @@ export function useUnstableIds(patterns: readonly string[] = []): void {
   learned.clear();
   confirmedStable.clear();
   compiled = undefined;
-}
-
-export function validPattern(p: string): boolean {
-  try {
-    new RegExp(p);
-    return p.length > 0;
-  } catch {
-    return false;
-  }
 }
 
 /** Every pattern in force right now, as one regex source for use inside a page. */

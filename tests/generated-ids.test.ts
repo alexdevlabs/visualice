@@ -50,6 +50,12 @@ describe("generated ids: what's known without looking", () => {
       "nav-r1",
       "step-2",
       "mat-dialog-0",
+      // Words that merely start like a library's name:
+      "reachability",
+      "reach-us-form",
+      "muirfield-map",
+      "chakra-section",
+      "radix-sort-demo",
     ])
       expect(isGeneratedId(id), id).toBe(false);
   });
