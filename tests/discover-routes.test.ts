@@ -256,3 +256,31 @@ describe("limit", () => {
     expect(routes[0].id).not.toBe("a");
   });
 });
+
+describe("scope.samples across crawls", () => {
+  const products = ["/product/1", "/product/2", "/product/3", "/product/4", "/product/5"];
+  const SHOP: Site = { "/": products, ...Object.fromEntries(products.map((p) => [p, []])) };
+  const sampled = (seeds: string[] = []) =>
+    config({ seeds, scope: { samples: { "/product/*": 2 } } });
+  const count = (urls: string[]) => urls.filter((u) => u.startsWith("/product/")).length;
+
+  it("stays at its size when the last crawl's pages are seeded back", async () => {
+    const first = await crawl(SHOP, sampled());
+    expect(count(first.urls)).toBe(2);
+    // What the routes file does on the next crawl: every page it kept is a seed.
+    const { context } = fakeContext(SHOP);
+    const again = await discoverRoutes(context, sampled(first.urls), `${ORIGIN}/`, () => {}, {
+      known: first.urls,
+    });
+    expect(count(again.map((r) => r.url))).toBe(2);
+  });
+
+  it("still keeps a page named by hand on top of the sample", async () => {
+    const { urls } = await crawl(SHOP, sampled(["/product/5"]));
+    expect(urls.filter((u) => u.startsWith("/product/")).sort()).toEqual([
+      "/product/1",
+      "/product/2",
+      "/product/5",
+    ]);
+  });
+});

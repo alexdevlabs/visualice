@@ -56,7 +56,8 @@ export function renderReport(m: Manifest): string {
     const shots = refs.filter((ref) => ref.full).length;
     const failed = refs.filter((ref) => ref.error).length;
     const states = r.states.map((s) => s.id).join(", ");
-    lines.push(`| \`${r.url}\` | ${r.title ?? ""} | ${states} | ${shots} | ${failed || ""} |`);
+    const title = (r.title ?? "").replace(/\|/g, "\\|").replace(/\s+/g, " ");
+    lines.push(`| \`${r.url}\` | ${title} | ${states} | ${shots} | ${failed || ""} |`);
   }
   lines.push("");
 

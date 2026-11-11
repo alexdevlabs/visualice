@@ -88,6 +88,10 @@
             "minLength": 1,
             "description": "Route path (or absolute URL) as authored."
           },
+          "trailingSlash": {
+            "description": "The page is served at the path with a trailing slash, which `url` drops.",
+            "type": "boolean"
+          },
           "finalUrl": {
             "type": "string"
           },

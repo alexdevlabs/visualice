@@ -98,6 +98,64 @@
 - Viewer: the shortcuts popover and the phone details sheet sit below the update banner
   instead of overlapping the header.
 
+### Safety and security
+
+- Discovery never clicks a form's submit button. A `<button>` in a form with no `type`
+  is one, and was clicked (and the form sent).
+- A page that redirects to another site is left out, not probed and shot as part of
+  this one.
+- A crafted link can no longer make a run write shots outside its folder, and two
+  different pages never share a shot folder (`/` and `/home`, `/About` and `/about`,
+  paths in non-Latin scripts): where a folder name would lose part of the path, a hash
+  of the path is added (`about__p-3f2a9c`).
+- The login recipe runs against the site being crawled (`--target`), not the config's
+  `target`, and a session saved for another host is not reused. A failed login step no
+  longer prints the value it typed.
+- The config snapshot in `crawl-map.json` hides more: preview and bypass headers by name
+  or by a token-like value, `user:pass@` in the target and proxy URLs, query values in
+  the login URL, `select` values. The manifest and the routes file never keep the
+  `user:pass@` of a target.
+- `visualice serve` answers only to a host name that is this machine's (`localhost`, an
+  IP address, the computer's name, or one in `VISUALICE_ALLOWED_HOSTS`), which stops a
+  page on another site reading runs through DNS rebinding. The check that the served
+  site can't be deleted no longer depends on letter case, and a malformed URL gets a 400.
+
+### More fixes
+
+- Discovery: buttons that share a name (a "Details" on every card), or whose name is
+  inside another's ("Menu" and "Close menu"), are probed and replayed instead of failing
+  to click. A page is loaded at the path the site links to (`/docs/`), and robots.txt
+  rules are checked against that path. `/**/` in a glob matches whole segments
+  (`/blog/**/edit` no longer matches `/blog/credit`). Sitemap URLs with `&amp;` or CDATA
+  are read correctly. `scope.samples` holds across crawls instead of growing each time.
+  Each page is probed in a browser context of its own, so pages probed side by side
+  can't disturb each other's stored state.
+- Capture: an app shell that locks the page and scrolls inside gets all its screens. A
+  font that never loads, or a hung accessibility check, no longer hangs the run. A JPEG
+  taller than the format holds is cut to fit and marked clamped, and very tall pages no
+  longer fail on the pixel limit. Accessibility checks run on component states written
+  as `role=` or `text=` selectors, and a resumed run's totals include the shots it kept.
+- `--resume` continues only the newest run, never an old unfinished one with finished
+  runs after it. The output lock can't be taken by two processes at once.
+- Routes file: a path typed with a trailing slash is the page it names, a page listed
+  twice is merged, and a `skip:` written under a state's own line is obeyed. Authored
+  state ids must be one word.
+- `changes` no longer takes templates, partials or build output (`templates/base.html`,
+  `coverage/index.html`) for pages.
+- The report's Routes table survives a `|` in a page title.
+- CLI: a mistyped short flag (`crawl -h`) is no longer taken for the target and saved
+  to the config; `--help` after a command prints help; an expected error prints its
+  message without a stack trace (`VISUALICE_DEBUG=1` shows it); `--port=` with no value
+  is an error; `--open` works on Windows.
+- Viewer: full screen no longer comes back after switching version; right-click and a
+  second finger no longer confuse panning, and two fingers pinch to zoom; Cmd/Ctrl
+  shortcuts go to the browser; Escape closes an open picker before leaving full screen;
+  a device filter from an old link falls back to all devices; the Live page link is
+  only ever a web address; tablets get the mobile icon; device names with a comma
+  survive in links.
+- Docs: `AGENTS.md` starts with `visualice init`, and the rule about `--json` names the
+  commands that don't take it.
+
 ## 0.1.1
 
 ### Fixes

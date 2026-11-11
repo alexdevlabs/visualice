@@ -135,6 +135,10 @@ export const StateNodeSchema = z.object({
 export const RouteNodeSchema = z.object({
   id: z.string().min(1),
   url: z.string().min(1).describe("Route path (or absolute URL) as authored."),
+  trailingSlash: z
+    .boolean()
+    .optional()
+    .describe("The page is served at the path with a trailing slash, which `url` drops."),
   finalUrl: z.string().optional(),
   title: z.string().optional(),
   status: z.number().int().optional(),

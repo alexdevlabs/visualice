@@ -11,11 +11,15 @@ using visualice on a project or working on this repo.
   `skills/visualice/` folder into their skills directory as it is.
 - Run the CLI as `visualice` if it is installed, else `npx -y visualice@0.1.1 <cmd>`.
   Needs Node 22.18+. Start with `visualice doctor`.
-- Run non-interactively with `--json --quiet`: a command given `--json` prints one JSON
-  summary on stdout (`probe` always does), progress goes to stderr, and exit codes are
-  0 ok, 1 error, 2 usage, 3 capture failures (with `--fail-on-error`).
-- The default flow is explore, not just crawl: map the site with
-  `visualice crawl <url> --dry-run --json`, group its pages into page types, confirm the
+- Run non-interactively with `--quiet`, and `--json` on the commands that take it
+  (`crawl`, `changes`, `author`, `doctor`, `routes`…; not `init`, `auth`, `serve` or
+  `probe`, which prints JSON anyway). A command given `--json` prints one JSON summary on
+  stdout, progress goes to stderr, and exit codes are 0 ok, 1 error, 2 usage, 3 capture
+  failures (with `--fail-on-error`).
+- The default flow is explore, not just crawl: in a project with no
+  `visualice.config.json`, run `visualice init <url>` first (a dry run writes no config,
+  and `probe` and `crawl --replay` need the target from it). Then map the site with
+  `visualice crawl --dry-run --json`, group its pages into page types, confirm the
   plan with the user, explore each type, then capture with `visualice crawl --replay`.
   A plain `visualice crawl <url>` is the quick path, for when the user asks for one.
 - Read `visualice.routes.md` to orient, not the cache JSON. Edit it to steer the crawl

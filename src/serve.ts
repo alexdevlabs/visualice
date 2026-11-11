@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { startServer, serveFileFromRoot, type StaticServer } from "./shared/file-serve";
@@ -83,6 +84,37 @@ export function isChild(dir: string, name: string): boolean {
     name !== "." &&
     name !== ".."
   );
+}
+
+/**
+ * Is `host` (a request's Host header) a name for this machine: `localhost`, an IP
+ * address, this computer's own name, or one listed in `VISUALICE_ALLOWED_HOSTS`
+ * (comma-separated, for a reverse proxy)? The server listens on every interface so
+ * a phone on the network can open it by address; a web page on another site can
+ * only reach it under that site's own name, which is none of these.
+ */
+export function knownHost(host: string | undefined): boolean {
+  if (!host) return true; // HTTP/1.0, curl by hand: no browser sends none
+  let name: string;
+  try {
+    name = new URL(`http://${host}`).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (name === "localhost" || name.endsWith(".localhost")) return true;
+  if (/^\[.*\]$/.test(name) || /^\d{1,3}(\.\d{1,3}){3}$/.test(name)) return true;
+  const own = os.hostname().toLowerCase();
+  if (name === own || name === `${own}.local` || name === own.replace(/\.local$/, "")) return true;
+  return (process.env.VISUALICE_ALLOWED_HOSTS ?? "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(name);
+}
+
+/** Two site names for one folder? Case aside: macOS and Windows file systems ignore it. */
+function sameSite(a: string | undefined, b: string | undefined): boolean {
+  return !!a && !!b && a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
 }
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
@@ -188,8 +220,22 @@ export async function serveViewer(opts: {
 
   return startServer(async (req, res) => {
     try {
+      // Only by a name that is this machine's: a page elsewhere that points its own
+      // name at this address (DNS rebinding) could otherwise read every run.
+      if (!knownHost(req.headers.host)) {
+        res.statusCode = 403;
+        res.end("unknown host: open the viewer by localhost or by this machine's address");
+        return;
+      }
       const url = new URL(req.url ?? "/", "http://localhost");
-      const pathname = decodeURIComponent(url.pathname);
+      let pathname: string;
+      try {
+        pathname = decodeURIComponent(url.pathname);
+      } catch {
+        res.statusCode = 400;
+        res.end("bad request");
+        return;
+      }
 
       if (req.method === "DELETE") {
         // `/sites/<site>`: the site and every run of it, from the dashboard. Not the
@@ -200,7 +246,7 @@ export async function serveViewer(opts: {
           ? 403
           : !dir || !(await fs.stat(dir).catch(() => undefined))?.isDirectory()
             ? 404
-            : site === current.site
+            : sameSite(site, current.site)
               ? 409
               : 204;
         if (res.statusCode === 204) await fs.rm(dir, { recursive: true, force: true });

@@ -163,6 +163,10 @@ export function parseFlags(
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (!token.startsWith("--")) {
+      // `-q`, `-x`: a flag, mistyped. Never the page or the URL the command takes.
+      if (/^-[a-zA-Z]/.test(token)) {
+        throw new UsageError(`unknown flag ${token} — flags look like --name=value`);
+      }
       const positional = own(POSITIONAL, cmd);
       if (positional && flags[positional] === undefined) {
         flags[positional] = token;

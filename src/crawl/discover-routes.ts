@@ -5,6 +5,7 @@ import { globToRegExp, inScope } from "../shared/glob";
 import {
   canonicalPath,
   dedupeLinks,
+  hashPart,
   relativeToOrigin,
   routeId,
   scopePath,
@@ -40,8 +41,10 @@ async function fetchSitemapUrls(
       const xml = await r.text();
       // A <sitemapindex> lists further sitemap files in its <loc>s, not pages.
       const isIndex = /<sitemapindex[\s>]/i.test(xml);
-      for (const m of xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)) {
-        const u = m[1].trim();
+      for (const m of xml.matchAll(
+        /<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]]+?)\s*(?:\]\]>)?\s*<\/loc>/gi,
+      )) {
+        const u = xmlText(m[1].trim());
         try {
           if (new URL(u).origin !== origin) continue;
         } catch {
@@ -57,12 +60,40 @@ async function fetchSitemapUrls(
   return out;
 }
 
+/** XML character data as text: `&amp;` → `&`. A sitemap URL with two parameters has one. */
+export function xmlText(s: string): string {
+  return s.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi, (all, name: string) => {
+    const n = name.toLowerCase();
+    if (n === "amp") return "&";
+    if (n === "lt") return "<";
+    if (n === "gt") return ">";
+    if (n === "quot") return '"';
+    if (n === "apos") return "'";
+    const code = n.startsWith("#x") ? parseInt(n.slice(2), 16) : parseInt(n.slice(1), 10);
+    return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : all;
+  });
+}
+
+function safeUrl(url: string): URL | undefined {
+  try {
+    return new URL(url);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Narrows a route discovery to known pages. */
 export interface RouteDiscoveryLimit {
   /** Visit exactly these pages: no start page, no sitemap, no link following. */
   only?: string[];
   /** Route ids already in use (by a cached model the result is merged into). */
   takenIds?: string[];
+  /**
+   * Pages the last crawl kept. The routes file seeds every one of them, and a seeded
+   * page is always kept: these count toward `scope.samples`, so a sampled template
+   * stays at its size instead of gaining `max` more pages each crawl.
+   */
+  known?: string[];
 }
 
 /** BFS link crawl (+ sitemap) confined to the target origin, scope rules and robots.txt. */
@@ -123,9 +154,16 @@ export async function discoverRoutes(
     taken: 0,
     skipped: 0,
   }));
-  const sampled = (path: string, seeded: boolean): boolean => {
+  const known = new Set(limit.known ?? []);
+  const sampled = (path: string, seeded: boolean, canon: string): boolean => {
     const sample = samples.find((x) => x.re.test(path));
-    if (!sample || seeded) return true; // a page asked for by name is always kept
+    if (!sample) return true;
+    if (seeded) {
+      // A page asked for by name is always kept, on top of the sample. One the last
+      // crawl already had is part of the sample it took.
+      if (known.has(canon)) sample.taken++;
+      return true;
+    }
     if (sample.taken >= sample.max) {
       sample.skipped++;
       return false;
@@ -141,11 +179,14 @@ export async function discoverRoutes(
       const item = queue.shift()!;
       let canon: string;
       let scope: string;
+      /** The path as the site wrote it, which is what its robots.txt rules are about. */
+      let written: string;
       try {
         const u = new URL(item.url);
         if (sameOriginOnly && u.origin !== origin) continue;
         canon = canonicalPath(u, hashRoutes);
         scope = scopePath(u, hashRoutes);
+        written = u.pathname + u.search;
       } catch {
         continue;
       }
@@ -154,12 +195,12 @@ export async function discoverRoutes(
       // Mark before filtering so a rejected URL is only evaluated (and logged) once.
       visited.add(key);
       if (!inScope(scope, include, exclude)) continue;
-      if (respectRobots && !isAllowed(canon, robots)) {
+      if (respectRobots && !isAllowed(written, robots)) {
         blocked++;
         log(`  ⊘ ${canon} — disallowed by robots.txt`);
         continue;
       }
-      if (!sampled(scope, !!item.seeded)) continue;
+      if (!sampled(scope, !!item.seeded, canon)) continue;
 
       let status: number | undefined;
       let title: string | undefined;
@@ -201,10 +242,27 @@ export async function discoverRoutes(
         }
       }
 
+      // A page that sends the browser to another site isn't this site's page: what
+      // is there must not be probed (its buttons clicked) or shot as part of it.
+      const landed = navigated ? safeUrl(page.url()) : undefined;
+      if (sameOriginOnly && landed && landed.origin !== origin) {
+        log(`  ⊘ ${canon} — redirects to ${landed.origin}, outside the site`);
+        await sleep(delayMs);
+        continue;
+      }
+
       const id = uniqueId(routeId(canon), [...(limit.takenIds ?? []), ...routes.map((r) => r.id)]);
       routes.push({
         id,
         url: canon,
+        // The site serves this page at the path with a slash on the end: the
+        // canonical path drops it, and a server may answer that with a 404.
+        ...(landed &&
+        landed.pathname.length > 1 &&
+        landed.pathname.endsWith("/") &&
+        canonicalPath(landed, hashRoutes) === canon
+          ? { trailingSlash: true }
+          : {}),
         // page.url() is only meaningful if the navigation landed — after a failed
         // goto it still points at the *previous* page.
         finalUrl: navigated ? relativeToOrigin(page.url(), origin, hashRoutes) : undefined,
@@ -228,7 +286,10 @@ export async function discoverRoutes(
               !inScope(scopePath(u, hashRoutes), include, exclude)
             )
               continue;
-            enqueue(origin + linkCanon, item.depth + 1, canon);
+            // As the page wrote it (`/docs/`), not the canonical form: some servers
+            // answer only that one.
+            u.hash = hashPart(u, hashRoutes);
+            enqueue(u.href, item.depth + 1, canon);
           } catch {
             /* skip */
           }

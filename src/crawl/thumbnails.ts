@@ -31,14 +31,14 @@ export async function writeFull(
   quality: number,
 ): Promise<void> {
   if (format === "webp") {
-    const { width = 0, height = 0 } = await sharp(buf).metadata();
+    const { width = 0, height = 0 } = await sharp(buf, { limitInputPixels: false }).metadata();
     if (Math.max(width, height) > MAX_SIDE.webp) {
       throw new Error(
         `the page is ${height}px tall, and a WebP image holds at most ${MAX_SIDE.webp}px: ` +
           `set screenshot.format to "png", or lower screenshot.maxHeight`,
       );
     }
-    await sharp(buf).webp({ quality }).toFile(destPath);
+    await sharp(buf, { limitInputPixels: false }).webp({ quality }).toFile(destPath);
   } else {
     await fs.writeFile(destPath, buf); // already encoded as png/jpeg by Playwright
   }
@@ -63,7 +63,7 @@ export async function makeThumb(
 }
 
 export async function imageSize(buf: Buffer): Promise<{ width?: number; height?: number }> {
-  const m = await sharp(buf).metadata();
+  const m = await sharp(buf, { limitInputPixels: false }).metadata();
   return { width: m.width, height: m.height };
 }
 
@@ -76,7 +76,8 @@ export async function writeViewportCrop(
   width: number,
   height: number,
 ): Promise<void> {
-  const img = sharp(buf).extract({ left: 0, top: 0, width, height });
+  // A long page is past sharp's default pixel limit; the crop itself is one screen.
+  const img = sharp(buf, { limitInputPixels: false }).extract({ left: 0, top: 0, width, height });
   await encode(img, format, quality).toFile(destPath);
 }
 

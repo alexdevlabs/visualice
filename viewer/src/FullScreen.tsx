@@ -65,6 +65,9 @@ export function FullScreen({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+      // An open picker or popover in the header has the keys: Escape closes it, the
+      // arrows move in its list.
+      if (document.querySelector('[role="listbox"], [role="dialog"]')) return;
       let handled = true;
       if (e.key === "Escape" || e.key === "f") onExit();
       else if (e.key === "ArrowLeft") onStep(-1);

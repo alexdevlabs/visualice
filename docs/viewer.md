@@ -59,7 +59,10 @@ of a blank canvas.
 
 `serve` listens on every network interface, so a phone on the same network can browse the
 runs. Writes are local only: deleting a site (below) is refused from any other machine
-(403) and from pages on other origins.
+(403) and from pages on other origins. The server answers only to a name that is this
+machine's (`localhost`, an IP address, the computer's own name), so a web page elsewhere
+can't read the runs by pointing its own domain here; behind a reverse proxy, list its
+host name in `VISUALICE_ALLOWED_HOSTS` (comma-separated).
 
 ## Sites and versions
 

@@ -71,6 +71,61 @@ export async function storageStateExpiry(
   return expiries.length ? Math.min(...expiries) : undefined;
 }
 
+/** An error message with every value a recipe types or selects taken out. */
+export function scrubSecrets(message: string, steps: RecipeStep[]): string {
+  const values = steps
+    .flatMap((s) => (s.action === "fill" || s.action === "select" ? [s.value] : []))
+    .flatMap((v) => (Array.isArray(v) ? v : [v]))
+    .filter((v): v is string => typeof v === "string" && v.length > 0)
+    // Longest first, so a value that contains another goes whole.
+    .sort((a, b) => b.length - a.length);
+  let out = message;
+  for (const v of values) {
+    for (const form of new Set([v, JSON.stringify(v).slice(1, -1)])) {
+      out = out.split(form).join("•••");
+    }
+  }
+  return out;
+}
+
+const safeHost = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+/**
+ * Does a saved session have anything for `target`'s host: a cookie whose domain
+ * covers it, or stored data for its origin? An empty state covers anything (there is
+ * nothing in it to belong elsewhere), as does one that can't be read.
+ */
+export async function storageStateCovers(file: string, target: string): Promise<boolean> {
+  let state: StorageState & { origins?: { origin: string }[] };
+  let url: URL;
+  try {
+    state = JSON.parse(await fs.readFile(file, "utf8")) as typeof state;
+    url = new URL(target);
+  } catch {
+    return true;
+  }
+  const cookies = state.cookies ?? [];
+  const origins = state.origins ?? [];
+  if (!cookies.length && !origins.length) return true;
+  const host = url.hostname.toLowerCase();
+  return (
+    origins.some((o) => o.origin === url.origin) ||
+    cookies.some((c) => {
+      const domain = String((c as { domain?: string }).domain ?? "")
+        .toLowerCase()
+        .replace(/^\./, "");
+      // A cookie that doesn't say where it is from can't be said to be from elsewhere.
+      return domain === "" || host === domain || host.endsWith(`.${domain}`);
+    })
+  );
+}
+
 /**
  * Ensure a Playwright storageState file exists for authenticated crawls.
  * - Reuses a stored session while it is still valid — by the expiry of the cookies
@@ -81,7 +136,10 @@ export async function storageStateExpiry(
 export async function ensureStorageState(
   config: Config,
   log: (m: string) => void,
+  /** The site being crawled (`--target`), when it isn't the config's `target`. */
+  baseUrl?: string,
 ): Promise<string | undefined> {
+  const target = baseUrl ?? config.target;
   const sp = config.auth.storageStatePath;
   if (!sp) return undefined;
 
@@ -100,11 +158,16 @@ export async function ensureStorageState(
       expiry !== undefined
         ? expiry - Date.now() > 60_000
         : (Date.now() - stat.mtimeMs) / 3.6e6 < maxAgeHours;
-    if (fresh) return abs;
+    // A session saved for another host (staging, when this crawl is of production)
+    // is no session here, however new it is.
+    const elsewhere = target ? !(await storageStateCovers(abs, target)) : false;
+    if (fresh && !elsewhere) return abs;
     log(
-      expiry !== undefined
-        ? `saved session expired (session cookie expired ${new Date(expiry).toISOString()})`
-        : `saved session is older than ${maxAgeHours}h`,
+      elsewhere
+        ? `saved session is for another site than ${safeHost(target!)}`
+        : expiry !== undefined
+          ? `saved session expired (session cookie expired ${new Date(expiry).toISOString()})`
+          : `saved session is older than ${maxAgeHours}h`,
     );
   } else if (!login) {
     return undefined; // nothing saved and no way to create it
@@ -116,11 +179,17 @@ export async function ensureStorageState(
   try {
     const context = await browser.newContext(httpContextOptions(config));
     const page = await context.newPage();
-    const startUrl = login?.url
-      ? resolveUrl(config.target ?? "http://localhost", login.url)
-      : config.target;
+    // Against the site being crawled: `crawl https://staging…` must not type the
+    // credentials into the config's production `target`.
+    const startUrl = login?.url ? resolveUrl(target ?? "http://localhost", login.url) : target;
     if (startUrl) await page.goto(startUrl, { waitUntil: "domcontentloaded" });
-    await applyRecipe(page, resolveEnvSteps((login?.steps ?? []) as RecipeStep[]));
+    const steps = resolveEnvSteps((login?.steps ?? []) as RecipeStep[]);
+    try {
+      await applyRecipe(page, steps);
+    } catch (e) {
+      // Playwright's error repeats the call, typed value and all (`fill("hunter2")`).
+      throw new Error(`auth login: ${scrubSecrets((e as Error).message, steps)}`);
+    }
 
     // Verify success BEFORE saving — otherwise a changed login form quietly persists
     // a logged-out session and the whole run screenshots the login wall.

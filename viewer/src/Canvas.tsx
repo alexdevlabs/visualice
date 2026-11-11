@@ -349,7 +349,16 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   const scrolled = useRef(new Map<string, number>());
 
   // pointer pan + click-to-select
-  const drag = useRef<{ x: number; y: number; t0: Transform; moved: boolean } | null>(null);
+  const drag = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    t0: Transform;
+    moved: boolean;
+  } | null>(null);
+  /** Every pointer that is down, by id: one pans, two pinch. */
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ dist: number; mid: { x: number; y: number }; t0: Transform } | null>(null);
   const panRaf = useRef<number | null>(null);
   const pendingPan = useRef<Transform | null>(null);
   useEffect(
@@ -358,17 +367,68 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     },
     [],
   );
+  const schedule = (next: Transform) => {
+    // Coalesce to one setT per frame — pointermove can fire far faster than 60Hz.
+    pendingPan.current = next;
+    panRaf.current ??= requestAnimationFrame(() => {
+      panRaf.current = null;
+      if (pendingPan.current) setT(pendingPan.current);
+    });
+  };
+  /** The two fingers of a pinch: how far apart, and the point between them on the canvas. */
+  const pinchOf = () => {
+    const [a, b] = [...pointers.current.values()];
+    const rect = elRef.current?.getBoundingClientRect();
+    return {
+      dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+      mid: { x: (a.x + b.x) / 2 - (rect?.left ?? 0), y: (a.y + b.y) / 2 - (rect?.top ?? 0) },
+    };
+  };
   const onPointerDown = (e: React.PointerEvent) => {
+    // The primary button only: a right-click opens the browser's menu, which eats
+    // the pointerup and would leave the canvas panning with the bare pointer.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     // Capture on the canvas itself, not the tile under the cursor — a tile can be
     // unmounted by virtualization mid-drag, which would drop the capture and strand
     // the pan (drag.current left non-null, no pointerup).
     elRef.current?.setPointerCapture?.(e.pointerId);
     stopGlide();
-    drag.current = { x: e.clientX, y: e.clientY, t0: tRef.current, moved: false };
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 1) {
+      drag.current = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        t0: tRef.current,
+        moved: false,
+      };
+    } else if (pointers.current.size === 2) {
+      // A second finger: the two zoom about the point between them.
+      drag.current = null;
+      following.current = false;
+      pinch.current = { ...pinchOf(), t0: pendingPan.current ?? tRef.current };
+    }
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const p = pinch.current;
+    if (p && pointers.current.size >= 2) {
+      const now = pinchOf();
+      const scale = clamp((p.t0.scale * now.dist) / p.dist, MIN_SCALE, MAX_SCALE);
+      // The canvas point that was between the fingers stays between them.
+      const wx = (p.mid.x - p.t0.x) / p.t0.scale;
+      const wy = (p.mid.y - p.t0.y) / p.t0.scale;
+      schedule({ ...p.t0, scale, x: now.mid.x - wx * scale, y: now.mid.y - wy * scale });
+      return;
+    }
     const d = drag.current;
-    if (!d) return;
+    if (!d || d.id !== e.pointerId) return;
+    // The button came up somewhere this element never heard of it.
+    if (e.pointerType === "mouse" && e.buttons === 0) {
+      endPointer(e.pointerId);
+      return;
+    }
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) > 3) {
@@ -376,16 +436,32 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       following.current = false;
     }
     if (!d.moved) return;
-    // Coalesce to one setT per frame — pointermove can fire far faster than 60Hz.
-    pendingPan.current = { ...d.t0, x: d.t0.x + dx, y: d.t0.y + dy };
-    panRaf.current ??= requestAnimationFrame(() => {
-      panRaf.current = null;
-      if (pendingPan.current) setT(pendingPan.current);
-    });
+    schedule({ ...d.t0, x: d.t0.x + dx, y: d.t0.y + dy });
+  };
+  /** A pointer is gone, by lifting or by the browser taking it. Returns the drag it ended. */
+  const endPointer = (id: number) => {
+    const d = drag.current?.id === id ? drag.current : null;
+    pointers.current.delete(id);
+    if (d) drag.current = null;
+    if (pinch.current) {
+      pinch.current = null;
+      // One finger left: it carries on as a pan from where the pinch ended, and its
+      // release is not a tap.
+      const [rest] = [...pointers.current.entries()];
+      if (rest) {
+        drag.current = {
+          id: rest[0],
+          x: rest[1].x,
+          y: rest[1].y,
+          t0: pendingPan.current ?? tRef.current,
+          moved: true,
+        };
+      }
+    }
+    return d;
   };
   const onPointerUp = (e: React.PointerEvent) => {
-    const d = drag.current;
-    drag.current = null;
+    const d = endPointer(e.pointerId);
     if (d && !d.moved) {
       // Hit-test by coordinate, not `e.target`: the pointer capture above retargets
       // every event to the canvas, so the tile under the cursor is only findable here.
@@ -394,6 +470,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       onSelect(tileEl?.dataset.tileId ?? null);
     }
   };
+  /** Taken away (a system gesture, the capture lost): ends the pan, selects nothing. */
+  const onPointerCancel = (e: React.PointerEvent) => void endPointer(e.pointerId);
 
   /** Move the selection one tile in a direction; the focus effect brings it on screen. */
   const stepSelection = (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => {
@@ -405,6 +483,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   // keyboard: arrows pan, shift+arrows walk tiles, +/- zoom, 0 fits, Escape clears
   const onKeyDown = (e: React.KeyboardEvent) => {
     const PAN = 90;
+    // The browser's own: Cmd/Ctrl +, - and 0 zoom the page, Alt/Cmd + arrows go back.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key.startsWith("Arrow") && !e.shiftKey) takeOver();
     switch (e.key) {
       case "+":
@@ -463,6 +543,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onPointerCancel}
       onKeyDown={onKeyDown}
     >
       <div

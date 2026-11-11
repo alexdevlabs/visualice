@@ -1,3 +1,5 @@
+import { canonicalPath } from "../shared/url";
+import { redactUrl } from "../shared/redact";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import type { Config } from "../shared/config";
@@ -68,9 +70,16 @@ function splitDash(content: string): { head: string; rest?: string } {
  * Parse a routes file. Tolerant by design: unknown lines (prose, comments, junk)
  * are ignored — only route/state bullets and `skip:` markers carry meaning.
  */
-export function parseRoutesFile(text: string): RoutesIntent {
+export function parseRoutesFile(
+  text: string,
+  /**
+   * How discovery writes a path (trailing slash dropped, query sorted), so a page
+   * typed as `/pricing/` is the model's `/pricing` and not a second page beside it.
+   */
+  canonical: (path: string) => string = (p) => p,
+): RoutesIntent {
   const intent = emptyRoutesIntent();
-  const seenRoutes = new Set<string>();
+  const seenRoutes = new Map<string, RoutesFileRoute>();
   let current: RoutesFileRoute | undefined;
 
   for (const raw of text.split("\n")) {
@@ -96,17 +105,21 @@ export function parseRoutesFile(text: string): RoutesIntent {
         continue;
       }
       const { head, rest } = splitDash(content);
-      const path = head.split(/\s+/)[0];
-      if (!isRoutePath(path)) {
+      const written = head.split(/\s+/)[0];
+      if (!isRoutePath(written)) {
         intent.warnings.push(`ignored route line (not a path): "${content}"`);
         continue;
       }
-      if (seenRoutes.has(path)) {
-        intent.warnings.push(`duplicate route "${path}" — first entry wins`);
+      const path = written.startsWith("/") ? safely(canonical, written) : written;
+      const seen = seenRoutes.get(path);
+      if (seen) {
+        // One page: what is listed under the second line belongs to the first.
+        intent.warnings.push(`duplicate route "${written}" — merged into the first`);
+        current = seen;
         continue;
       }
-      seenRoutes.add(path);
       current = { path, label: rest, states: [] };
+      seenRoutes.set(path, current);
       intent.routes.push(current);
       continue;
     }
@@ -131,7 +144,16 @@ export function parseRoutesFile(text: string): RoutesIntent {
       intent.warnings.push(`ignored state line under "${current.path}": "${content}"`);
       continue;
     }
-    if (current.states.some((s) => s.id === id)) continue; // first entry wins
+    const listed = current.states.find((s) => s.id === id);
+    if (listed) {
+      // First entry wins, except that a `skip:` added under a state's own line (as
+      // the legend says to) is the newer word on it.
+      if (skip) {
+        listed.skip = true;
+        listed.wanted = undefined;
+      }
+      continue;
+    }
     current.states.push({
       id,
       description: rest,
@@ -140,6 +162,14 @@ export function parseRoutesFile(text: string): RoutesIntent {
     });
   }
   return intent;
+}
+
+function safely(map: (p: string) => string, path: string): string {
+  try {
+    return map(path) || path;
+  } catch {
+    return path;
+  }
 }
 
 /** `skip:`-ed state ids per route path. */
@@ -313,7 +343,8 @@ export async function loadRoutesIntent(config: Config): Promise<RoutesIntent> {
   } catch {
     return emptyRoutesIntent();
   }
-  return parseRoutesFile(text);
+  const { hashRoutes } = config.scope;
+  return parseRoutesFile(text, (p) => canonicalPath(new URL(p, "http://_local_"), hashRoutes));
 }
 
 /** Regenerate the routes file from the cached model + prior intent. */
@@ -327,6 +358,10 @@ export async function writeRoutesFile(
 ): Promise<void> {
   const file = routesFilePath(config);
   if (!file) return;
-  await fs.writeFile(file, renderRoutesFile(model, intent, target, source ?? intent.source));
+  // A file people commit: never the `user:pass@` a target URL may carry.
+  await fs.writeFile(
+    file,
+    renderRoutesFile(model, intent, redactUrl(target), source ?? intent.source),
+  );
   log(`routes file → ${file}`);
 }

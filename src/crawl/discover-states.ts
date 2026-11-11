@@ -64,6 +64,7 @@ export async function collectCandidates(
     root: root ?? null,
     testIdAttribute: testIdAttribute(),
     generatedId: generatedIdSource(),
+    mark: CANDIDATE_MARK,
   };
   const raw = await page.evaluate((cfg) => {
     const generated = new RegExp(cfg.generatedId);
@@ -147,7 +148,9 @@ export async function collectCandidates(
       hint?: string;
       controls?: string;
       probe?: string;
+      mark: string;
     }[] = [];
+    const MARK = cfg.mark;
     // ARIA allows `aria-controls` to list several ids; everything downstream turns
     // this into a selector for one element, so keep the first that exists.
     const controlledId = (el: Element): string | undefined => {
@@ -168,8 +171,20 @@ export async function collectCandidates(
       if (!visible(el)) continue;
       if (el.getAttribute("target") === "_blank") continue;
       if (el.hasAttribute("download")) continue;
-      const ty = el.getAttribute("type");
-      if (ty === "submit" || ty === "reset") continue;
+      const ty = (el.getAttribute("type") || "").toLowerCase();
+      if (ty === "submit" || ty === "reset" || ty === "image") continue;
+      // A button in a form with no `type` (or one the browser doesn't know) is a
+      // submit button: clicking it would send the form.
+      const control = el as HTMLButtonElement;
+      if (
+        (el.tagName === "BUTTON" || el.tagName === "INPUT") &&
+        control.form &&
+        (control.type === "submit" || control.type === "reset")
+      )
+        continue;
+      // Likewise anything inside a submit button, or a label that clicks one.
+      const inside = el.closest("button, input") as HTMLButtonElement | null;
+      if (inside && inside !== el && inside.form && inside.type === "submit") continue;
       if (
         cfg.denySelectors.some((s) => {
           try {
@@ -182,11 +197,13 @@ export async function collectCandidates(
         continue;
       const label = labelFor(el);
       if (deny.some((d) => label.toLowerCase().includes(d))) continue;
+      el.setAttribute(MARK, String(out.length));
       out.push({
         target: targetFor(el),
         label,
         hint: hintFor(el),
         controls: controlledId(el),
+        mark: String(out.length),
       });
       if (out.length >= cfg.maxCandidates) break;
     }
@@ -206,12 +223,14 @@ export async function collectCandidates(
         if (!marked && !hasSubmenu) continue;
         const label = labelFor(a);
         if (deny.some((d) => label.toLowerCase().includes(d))) continue;
+        a.setAttribute(MARK, String(out.length));
         out.push({
           target: targetFor(a),
           label,
           hint: "menu",
           controls: controlledId(a),
           probe: "hover",
+          mark: String(out.length),
         });
       }
     }
@@ -228,7 +247,51 @@ export async function collectCandidates(
     return final;
   }, arg);
 
-  return raw as RawCandidate[];
+  const candidates = raw as (RawCandidate & { mark: string })[];
+  try {
+    for (const cand of candidates) cand.target = await uniqueTarget(page, cand.target, cand.mark);
+  } finally {
+    await page
+      .evaluate((mark) => {
+        for (const el of Array.from(document.querySelectorAll(`[${mark}]`))) {
+          el.removeAttribute(mark);
+        }
+      }, CANDIDATE_MARK)
+      .catch(() => {});
+  }
+  return candidates.map(({ mark: _mark, ...cand }) => cand);
+}
+
+/** Marks each candidate element while its target is checked, then removed. */
+const CANDIDATE_MARK = "data-vc-candidate";
+
+/**
+ * A target that names one element. A role and name match any element whose name
+ * contains it ("Menu" also finds "Close menu"), and a page may have the same button
+ * twice (a "Details" on every card): a click on such a target is refused, in the
+ * probe and in every capture after it. So match the name exactly, and where that
+ * still finds several, say which one.
+ */
+async function uniqueTarget(page: Page, target: Target, mark: string): Promise<Target> {
+  const count = (t: Target) =>
+    locatorFor(page, t)
+      .count()
+      .catch(() => 1);
+  if ((await count(target)) <= 1) return target;
+  let narrowed = target;
+  if (target.role && target.name) {
+    const exact = { ...target, exact: true };
+    const n = await count(exact);
+    if (n === 1) return exact;
+    if (n > 1) narrowed = exact;
+  }
+  const nth = await locatorFor(page, narrowed)
+    .evaluateAll((els, [attr, value]) => els.findIndex((el) => el.getAttribute(attr) === value), [
+      CANDIDATE_MARK,
+      mark,
+    ] as const)
+    .catch(() => -1);
+  return nth >= 0 ? { ...narrowed, nth } : target;
 }
 
 export function classifyChange(

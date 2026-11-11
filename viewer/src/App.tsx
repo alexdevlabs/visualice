@@ -149,8 +149,14 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
       .then((d) => {
         if (cancelled) return;
         setData(d);
-        // Only seed the filters when the URL didn't already specify them.
-        setDeviceFilter((prev) => (prev.size ? prev : new Set(d.devices.map((dev) => dev.name))));
+        // Only seed the filters when the URL didn't already specify them. Names this
+        // run doesn't have (an old link, a device renamed since) are dropped, and a
+        // filter left with none of this run's devices shows them all.
+        setDeviceFilter((prev) => {
+          const names = d.devices.map((dev) => dev.name);
+          const kept = names.filter((n) => prev.has(n));
+          return new Set(kept.length ? kept : names);
+        });
       })
       .catch((e) => !cancelled && setError(String(e.message ?? e)));
     return () => {
@@ -231,7 +237,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
       run: run ?? undefined,
       route: routeId ?? undefined,
       devices:
-        deviceFilter.size && deviceFilter.size !== data.devices.length
+        deviceFilter.size && !data.devices.every((d) => deviceFilter.has(d.name))
           ? [...deviceFilter]
           : undefined,
       kinds: kindFilter.size ? [...kindFilter] : undefined,
@@ -243,6 +249,11 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   // Full screen is about the selected shot; without one there's nothing to show.
   const isFull = full && !!selected;
+  // Nor to come back to: with the selection gone (another version, a shot this run
+  // doesn't have), the next shot clicked opens on the canvas, not full screen.
+  useEffect(() => {
+    if (full && data && !selected) setFull(false);
+  }, [full, data, selected]);
   const openFull = useCallback(() => setFull(true), []);
   const exitFull = useCallback(() => setFull(false), []);
 
@@ -895,6 +906,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
                 setQuery("");
                 setKindFilter(new Set());
                 setFailedOnly(false);
+                if (data) setDeviceFilter(new Set(data.devices.map((d) => d.name)));
               }}
             >
               Clear filters

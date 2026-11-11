@@ -63,6 +63,17 @@ export function canonicalPath(u: URL, hashRoutes: HashRoutes = "never"): string 
   return `${p}?${search}${hash}`;
 }
 
+/**
+ * The address to load a route at: its path, with the trailing slash put back when
+ * the site serves the page there (`/docs/?page=2`). The canonical `url` drops the
+ * slash so `/docs` and `/docs/` are one route; a server may still answer only one.
+ */
+export function routeHref(route: { url: string; trailingSlash?: boolean }): string {
+  if (!route.trailingSlash) return route.url;
+  const m = /^([^?#]*)(.*)$/.exec(route.url)!;
+  return m[1].endsWith("/") ? route.url : `${m[1]}/${m[2]}`;
+}
+
 /** Stable, filesystem-safe id for a canonical path. */
 export function routeId(canonical: string): string {
   return pathSlug(canonical).replace(/\//g, "-");

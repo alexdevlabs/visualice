@@ -12,10 +12,26 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 /**
  * The live page a shot was taken from. Routes are origin-absolute ("/about"), so they
  * resolve against the crawled target, or under `liveBase` when the pages live elsewhere.
+ *
+ * Undefined when that isn't a web address: the route and the site come from a data
+ * file, and a link built from one must not be `javascript:` or throw while rendering
+ * (a `baseUrl` with no scheme).
  */
-export function liveUrl(routeUrl: string, site: { baseUrl: string; liveBase?: string }): string {
-  if (site.liveBase) return site.liveBase.replace(/\/+$/, "") + routeUrl;
-  return new URL(routeUrl, site.baseUrl).href;
+export function liveUrl(
+  routeUrl: string,
+  site: { baseUrl: string; liveBase?: string },
+): string | undefined {
+  try {
+    const absolute = /^[a-z][a-z0-9+.-]*:/i.test(routeUrl);
+    const url = absolute
+      ? new URL(routeUrl)
+      : site.liveBase
+        ? new URL(site.liveBase.replace(/\/+$/, "") + routeUrl)
+        : new URL(routeUrl, site.baseUrl);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** "Sep 21, 01:49" for a generated run id (UTC, as the id records it); anything else as-is. */

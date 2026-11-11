@@ -212,6 +212,8 @@ export interface StateNode {
 export interface RouteNode {
   id: string;
   url: string; // path or absolute, as authored
+  /** The page is served at the path with a trailing slash (`/docs/`), which `url` drops. */
+  trailingSlash?: boolean;
   finalUrl?: string; // post-redirect location: an origin-relative path, or an absolute url if it left the origin
   title?: string;
   status?: number;

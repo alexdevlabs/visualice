@@ -34,6 +34,19 @@ function axeSource(): Promise<string> {
 
 const MAX_TARGETS = 5;
 
+/** An evaluate has no timeout of its own; a page that hangs axe must not hang the run. */
+const AXE_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${ms / 1000}s`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 export async function checkAccessibility(
   page: Page,
   tags: string[],
@@ -41,27 +54,35 @@ export async function checkAccessibility(
 ): Promise<AccessibilityViolation[]> {
   // Evaluated rather than added as a <script>: a page's CSP has no say over this.
   await page.evaluate(await axeSource());
-  const raw = await page.evaluate(
-    async ([runTags, selector]) => {
-      const axe = (
-        globalThis as unknown as {
-          axe: { run: (context: unknown, options: unknown) => Promise<{ violations: unknown[] }> };
-        }
-      ).axe;
-      const result = await axe.run(selector ?? document, {
-        runOnly: { type: "tag", values: runTags },
-        resultTypes: ["violations"],
-      });
-      return result.violations as {
-        id: string;
-        impact?: string;
-        help: string;
-        helpUrl?: string;
-        nodes: { target: unknown[] }[];
-      }[];
-    },
-    [tags, scope ?? null] as const,
-  );
+  // The element the shot shows: the first match of a Playwright selector (which may
+  // be `role=…` or `text=…`, nothing axe could look up itself).
+  const element = scope ? await page.locator(scope).first().elementHandle() : null;
+  const raw = await withTimeout(
+    page.evaluate(
+      async ([runTags, selector]) => {
+        const axe = (
+          globalThis as unknown as {
+            axe: {
+              run: (context: unknown, options: unknown) => Promise<{ violations: unknown[] }>;
+            };
+          }
+        ).axe;
+        const result = await axe.run(selector ?? document, {
+          runOnly: { type: "tag", values: runTags },
+          resultTypes: ["violations"],
+        });
+        return result.violations as {
+          id: string;
+          impact?: string;
+          help: string;
+          helpUrl?: string;
+          nodes: { target: unknown[] }[];
+        }[];
+      },
+      [tags, element] as const,
+    ),
+    AXE_TIMEOUT_MS,
+  ).finally(() => element?.dispose().catch(() => {}));
   return raw.map((v) => ({
     id: v.id,
     impact: v.impact as AccessibilityViolation["impact"],

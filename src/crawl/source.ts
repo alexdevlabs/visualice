@@ -49,7 +49,7 @@ export function parsePorcelain(out: string): string[] {
     const code = entry.slice(0, 2);
     files.push(entry.slice(3));
     // A rename or copy is followed by its original path, as its own NUL-terminated field.
-    if (code[0] === "R" || code[0] === "C") i++;
+    if (/[RC]/.test(code)) i++;
   }
   return files;
 }
@@ -82,12 +82,15 @@ export async function readSource(
   ]);
   const ignore = (opts.ignore ?? []).map((p) => toRepoPath(root, p)).filter(Boolean) as string[];
   const dirtyFiles = parsePorcelain(statusOut ?? "").filter((f) => !isUnder(f, ignore));
+  // `git status` failed or timed out (a huge tree): the tree isn't known to be clean.
+  // One change nobody can list, which `changes` answers with a full run.
+  const unknown = statusOut === undefined;
   const config = opts.configFile ? await hashFile(opts.configFile) : undefined;
   return {
     commit: head,
     branch: branchOut?.trim() || undefined,
     committedAt: dateOut?.trim() || undefined,
-    dirty: dirtyFiles.length,
+    dirty: unknown ? 1 : dirtyFiles.length,
     ...(dirtyFiles.length
       ? { dirtyFiles: dirtyFiles.slice(0, MAX_DIRTY), dirtyHash: hashList(dirtyFiles) }
       : {}),

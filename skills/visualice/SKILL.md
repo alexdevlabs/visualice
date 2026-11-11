@@ -62,8 +62,9 @@ captured once, on the first page it was found on. One-off tweaks don't need conf
 edits — flags like `--max-pages=<n> --include=<globs> --devices=<names>` override,
 `--seed=/a,/b` adds entry pages discovery can't reach by links, and `--no-states`
 captures pages only (fast; the states already in the cache are kept).
-Always add `--json` and `--quiet` when running non-interactively, and `--fail-on-error`
-when a failed capture should fail the command (exit 3).
+When running non-interactively, always add `--quiet`, and `--json` on the commands that
+take it (`init`, `auth`, `serve` and `probe` don't; `probe` prints JSON anyway). Add
+`--fail-on-error` when a failed capture should fail the command (exit 3).
 
 ### Estimate the size before crawling something big
 
@@ -76,6 +77,8 @@ gigabyte and many minutes of crawling. Before pointing visualice at anything you
 haven't scoped, run `visualice crawl <url> --dry-run --json`: it discovers routes and
 states **without taking a single screenshot**. The JSON has the exact `shots` count, the
 `states` total, the `devices`, and `routes` (each page's `url` and its state ids).
+A dry run never writes a config: in a project without one, run `visualice init <url>`
+first, or `probe` and `crawl --replay` afterwards have no target.
 Then narrow with `--max-pages` / `--include` / `--devices` / `--no-states` and confirm
 with the user. A dry run writes the cache, so the
 real crawl that follows can be `--replay`.

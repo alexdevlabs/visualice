@@ -10,9 +10,9 @@ export function globToRegExp(glob: string): RegExp {
     const c = glob[i];
     if (c === "/" && glob[i + 1] === "*" && glob[i + 2] === "*") {
       // "/**" → optionally "/<anything>", so the directory itself matches too
+      // "/**/x": whole segments in between, or none ("/a/**/b" ⊇ "/a/b", not "/ab")
       re += "(?:/.*)?";
       i += 2;
-      if (glob[i + 1] === "/") i++; // "/**/x" → the leading slash is part of the optional group
     } else if (c === "*") {
       if (glob[i + 1] === "*") {
         re += ".*";

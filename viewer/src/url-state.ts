@@ -25,12 +25,16 @@ export interface UrlState {
 
 const LIST_SEPARATOR = ",";
 
+// A device can be called "Desktop, wide": its comma must not split the list.
+const escapeItem = (item: string): string => item.replace(/%/g, "%25").replace(/,/g, "%2C");
+const unescapeItem = (item: string): string => item.replace(/%2C/gi, ",").replace(/%25/g, "%");
+
 export function readUrlState(search: string): UrlState {
   const p = new URLSearchParams(search);
   const list = (key: string): string[] | undefined => {
     const raw = p.get(key);
     if (!raw) return undefined;
-    const items = raw.split(LIST_SEPARATOR).filter(Boolean);
+    const items = raw.split(LIST_SEPARATOR).filter(Boolean).map(unescapeItem);
     return items.length ? items : undefined;
   };
   // An empty value is the same as an absent one: `?tile=` must not select a tile
@@ -60,8 +64,8 @@ export function serializeUrlState(state: UrlState): string {
   if (state.site) p.set("site", state.site);
   if (state.run) p.set("run", state.run);
   if (state.route) p.set("route", state.route);
-  if (state.devices?.length) p.set("devices", state.devices.join(LIST_SEPARATOR));
-  if (state.kinds?.length) p.set("kinds", state.kinds.join(LIST_SEPARATOR));
+  if (state.devices?.length) p.set("devices", state.devices.map(escapeItem).join(LIST_SEPARATOR));
+  if (state.kinds?.length) p.set("kinds", state.kinds.map(escapeItem).join(LIST_SEPARATOR));
   if (state.mode) p.set("mode", state.mode);
   if (state.full && state.tile) p.set("full", "1");
   if (state.tile) p.set("tile", state.tile);

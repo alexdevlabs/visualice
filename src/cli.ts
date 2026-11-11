@@ -324,11 +324,23 @@ async function shootViewer(url: string, outFile: string): Promise<void> {
   }
 }
 
+/** A target must be an http(s) URL; anything else is a usage error, not a crash later. */
+function requireHttpUrl(target: string): void {
+  let ok = false;
+  try {
+    ok = /^https?:$/.test(new URL(target).protocol);
+  } catch {
+    /* not a URL */
+  }
+  if (!ok)
+    throw new UsageError(`"${target}" is not a URL — a target looks like https://example.com`);
+}
+
 /** Parse and validate an optional --port flag. */
 function parsePort(flags: Flags): number | undefined {
   const v = str(flags, "port");
   if (v === undefined) return undefined;
-  const port = Number(v);
+  const port = v.trim() === "" ? NaN : Number(v);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new UsageError(`invalid --port=${v}`);
   }
@@ -341,7 +353,8 @@ function openInBrowser(url: string): void {
     process.platform === "darwin"
       ? ["open", [url]]
       : process.platform === "win32"
-        ? ["cmd", ["/c", "start", "", url]]
+        ? // Not `cmd /c start`: cmd would cut the URL at its first `&`.
+          ["rundll32", ["url.dll,FileProtocolHandler", url]]
         : ["xdg-open", [url]];
   spawn(cmd as string, args as string[], { detached: true, stdio: "ignore" }).unref();
 }
@@ -535,6 +548,8 @@ async function cmdCrawl(flags: Flags): Promise<void> {
     throw new UsageError(
       "no base URL: pass a url (visualice crawl <url>) or run 'visualice init <url>'",
     );
+  // Before anything is written: a mistyped target must not become the saved one.
+  requireHttpUrl(baseUrl);
   // First crawl in a fresh project: persist the target so `visualice crawl` alone
   // works from now on. --no-save opts out, and a dry run only looks.
   if (
@@ -901,7 +916,7 @@ async function cmdProbe(flags: Flags): Promise<void> {
     recipe = state.recipe;
   }
 
-  const storageState = await ensureStorageState(config, log);
+  const storageState = await ensureStorageState(config, log, baseUrl);
   const shot = str(flags, "shot");
   const allDevices = flags["all-devices"] === true;
   if (allDevices && !recipe) {
@@ -1043,6 +1058,10 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "--version" || cmd === "-v") return printVersion();
+  if (rest.includes("--help") || rest.includes("-h")) {
+    printHelp();
+    return;
+  }
   if (!isCommand(cmd)) {
     console.error(`unknown command: ${cmd}`);
     printHelp();
@@ -1129,6 +1148,12 @@ main().catch((e) => {
     console.error(e.message);
     process.exit(1);
   }
-  console.error(e instanceof Error ? (e.stack ?? e.message) : e);
+  // An error raised on purpose (a plain `Error`) is its message. Anything else is a
+  // bug, and its stack is what a report needs.
+  const plain = e instanceof Error && e.name === "Error";
+  const debug = process.env.VISUALICE_DEBUG === "1";
+  console.error(
+    e instanceof Error ? (plain && !debug ? `error: ${e.message}` : (e.stack ?? e.message)) : e,
+  );
   process.exit(1);
 });

@@ -80,13 +80,14 @@ export async function isRunComplete(dir: string): Promise<boolean> {
   return !(await pathExists(path.join(dir, INCOMPLETE)));
 }
 
-/** Newest run that was never finished, if any. */
+/**
+ * The run to resume: the newest one, when it was never finished. An unfinished run
+ * with finished ones after it is history (an old crawl that was interrupted and then
+ * superseded): resuming it would pass its old shots off as today's.
+ */
 export async function findResumableRun(root: string): Promise<string | undefined> {
-  const ids = await listRuns(root);
-  for (const id of [...ids].reverse()) {
-    if (!(await isRunComplete(runDir(root, id)))) return id;
-  }
-  return undefined;
+  const newest = (await listRuns(root)).at(-1);
+  return newest && !(await isRunComplete(runDir(root, newest))) ? newest : undefined;
 }
 
 /** Absolute path of a run directory under `root` (a site's directory). */

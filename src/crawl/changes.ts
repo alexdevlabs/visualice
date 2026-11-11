@@ -186,14 +186,22 @@ export function guessRoute(file: string): RouteGuess | undefined {
     return { segments: bracketSegments(parts), kind: "page" };
   }
   // Plain HTML at the root or in public/: about.html, blog/index.html
+  // Not a template, a partial, a component's markup or a build's output: those are
+  // HTML files too, and none of them is a page at its own path.
   m = /^(?:public\/|static\/)?(.+)\.html?$/.exec(file);
-  if (m && !file.includes("node_modules/")) {
+  if (m && !NOT_A_PAGE.test(file)) {
     const parts = m[1].split("/");
     if (parts.at(-1) === "index") parts.pop();
     return { segments: parts, kind: "page" };
   }
   return undefined;
 }
+
+const NOT_A_PAGE = new RegExp(
+  String.raw`(^|/)(node_modules|src|app|lib|templates?|partials?|includes?|_includes|layouts?|_layouts|components?|views?|emails?|coverage|dist|build|out|tests?|e2e|fixtures?|storybook-static|playwright-report)/` +
+    String.raw`|(^|/)_[^/]*$|\.(component|partial|template|tpl)\.html?$`,
+  "i",
+);
 
 /** A guess as a route pattern string: `/blog/*`; a layout covers everything under it. */
 export function guessPattern(g: RouteGuess): string {

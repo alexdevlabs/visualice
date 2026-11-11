@@ -116,6 +116,8 @@ export function parseViewerData(raw: unknown): ViewerData {
       width: typeof d.width === "number" ? d.width : 1280,
       height: typeof d.height === "number" ? d.height : 800,
       dpr: typeof d.dpr === "number" ? d.dpr : 1,
+      // The device icon goes by it: a tablet is mobile, however wide.
+      ...(typeof d.mobile === "boolean" ? { mobile: d.mobile } : {}),
     };
   });
 

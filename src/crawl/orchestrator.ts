@@ -47,7 +47,7 @@ import {
   siteKey,
   updateLatest,
 } from "./runs";
-import { redactConfig } from "../shared/redact";
+import { redactConfig, redactUrl } from "../shared/redact";
 import { acquireLock } from "../shared/lock";
 import { applyHints, describeHints } from "../shared/hints";
 import {
@@ -325,7 +325,8 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
     version: 1,
     ...(source ? { source } : {}),
     site: {
-      baseUrl,
+      // Without the `user:pass@` a target may carry: the manifest is served and shared.
+      baseUrl: redactUrl(baseUrl),
       origin,
       title: inputManifest.site?.title,
       framework: inputManifest.site?.framework,
@@ -365,7 +366,7 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
     }
   }
 
-  const storageState = opts.storageState ?? (await ensureStorageState(config, log));
+  const storageState = opts.storageState ?? (await ensureStorageState(config, log, baseUrl));
 
   const allRoutes = manifest.routes;
   if (carry) manifest.routes = carry.capture;
@@ -436,7 +437,7 @@ export async function readProjectSource(
   // crawl may just have scaffolded is looked up now.
   const file = await findConfigFile(process.cwd(), configFile);
   return readSource(process.cwd(), {
-    target: baseUrl,
+    target: redactUrl(baseUrl),
     configFile: file,
     ignore: crawlOwnFiles(config, file),
   });
@@ -856,7 +857,7 @@ async function prepareModel(
   }
   for (const w of intent.warnings) log(`⚠ routes file: ${w}`);
   const effectiveConfig = applyRoutesIntent(config, seeded);
-  const storageState = await ensureStorageState(config, log);
+  const storageState = await ensureStorageState(config, log, baseUrl);
   const cached = (await pathExists(cachePath)) ? await loadInputManifest(cachePath) : undefined;
   return { intent, seeded, effectiveConfig, storageState, cached };
 }
@@ -879,6 +880,7 @@ async function rediscover(
     baseUrl,
     storageState,
     log,
+    limit: { known: cached?.routes.map((r) => r.url) },
   });
   let model: InputManifest;
   // Discovery MERGES into any existing cache rather than overwriting it — auto
@@ -968,6 +970,7 @@ export async function previewRoutes(opts: {
       baseUrl,
       storageState,
       log,
+      limit: { known: cached?.routes.map((r) => r.url) },
     });
     // Every known page is a seed, so a deleted one is still visited: it is gone when
     // the site answers that it is (404, 410…). One discovery never reached is gone

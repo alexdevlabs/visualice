@@ -90,13 +90,28 @@ export async function acquireLock(outRoot: string, opts: LockOptions = {}): Prom
   };
   await fs.mkdir(outRoot, { recursive: true });
 
+  const body = JSON.stringify(info, null, 2);
   const write = async () => {
-    // `wx` fails when the file exists — that atomicity is the whole lock.
-    const handle = await fs.open(file, "wx");
+    // The lock appears whole or not at all: written beside it, then hard-linked into
+    // place, which fails when the name is taken. Creating it and then writing to it
+    // would leave a moment where it exists empty, and an empty lock reads as a dead
+    // one that the next process removes.
+    const draft = `${file}.${process.pid}.${Date.now().toString(36)}`;
+    await fs.writeFile(draft, body);
     try {
-      await handle.writeFile(JSON.stringify(info, null, 2));
+      await fs.link(draft, file);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") throw e;
+      // A file system without hard links: exclusive create is the next best thing.
+      const handle = await fs.open(file, "wx");
+      try {
+        await handle.writeFile(body);
+      } finally {
+        await handle.close();
+      }
     } finally {
-      await handle.close();
+      await fs.rm(draft, { force: true });
     }
   };
 
@@ -111,7 +126,19 @@ export async function acquireLock(outRoot: string, opts: LockOptions = {}): Prom
         ? `taking over a stale lock from pid ${holder.pid} (${holder.startedAt})`
         : "removing an unreadable lock file",
     );
-    await fs.rm(file, { force: true });
+    // Move the stale lock aside rather than delete it: two processes may both have
+    // judged it stale, and the slower one must not delete the faster one's new lock.
+    const aside = `${file}.stale.${process.pid}`;
+    const before = await fs.readFile(file, "utf8").catch(() => undefined);
+    await fs.rename(file, aside).catch(() => {});
+    const moved = await fs.readFile(aside, "utf8").catch(() => undefined);
+    if (moved !== undefined && moved !== before) {
+      // Not the lock that was judged: someone took it in between. Give it back.
+      await fs.link(aside, file).catch(() => {});
+      await fs.rm(aside, { force: true });
+      throw new LockedError((await readLock(file)) ?? info);
+    }
+    await fs.rm(aside, { force: true });
     try {
       await write();
     } catch (raced) {
