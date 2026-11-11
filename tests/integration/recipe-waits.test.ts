@@ -52,6 +52,24 @@ describe("waiting for what a click opened, by id", () => {
     await p.close();
   });
 
+  it("waits out a plain id, whatever else the click opened meanwhile", async () => {
+    // The search box's listbox shell opens at once; the results take four seconds.
+    // `results` is no counter: the recipe means that element, not "something opened".
+    const p = await load(`
+      <button onclick="
+        const shell = document.createElement('div');
+        shell.setAttribute('role', 'listbox'); shell.textContent = 'Searching';
+        document.body.append(shell);
+        setTimeout(() => {
+          const r = document.createElement('ul');
+          r.id = 'results'; r.innerHTML = '<li>Espresso</li>';
+          document.body.append(r);
+        }, 4000);">Search</button>`);
+    await applyRecipe(p, clickThenWait("Search", "#results", 10_000));
+    expect(await p.locator("#results").isVisible()).toBe(true);
+    await p.close();
+  }, 20_000);
+
   it("settles for the dialog the click opened when its id has changed", async () => {
     // Recorded as dlg-7; this load numbers it dlg-31.
     const p = await load(`

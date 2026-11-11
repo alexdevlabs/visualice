@@ -1090,7 +1090,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   const shortcuts = shortcutsOpen && (
     <div
-      className="fixed top-[60px] right-3.5 z-30 w-[340px] rounded-xl border border-line-strong bg-panel px-3.5 pt-3 pb-4 shadow-pop"
+      className="fixed top-[calc(60px+var(--banner-h,0px))] right-3.5 z-30 w-[340px] rounded-xl border border-line-strong bg-panel px-3.5 pt-3 pb-4 shadow-pop"
       role="dialog"
       aria-label="Keyboard shortcuts"
     >

@@ -160,6 +160,33 @@ describe("updating a catalogue after code changes", () => {
     expect((await changes()).verdict).toBe("partial");
     await git("checkout", "-q", "--", ".");
 
+    // 5c. Nor does a partial run whose --only names no page (a typo): nothing was
+    // shot for it, and it says so.
+    const typo = JSON.parse(
+      await visualice("crawl", server.url, "--replay", "--only=/abuot", "--json", "--quiet"),
+    );
+    expect(typo.unmatchedOnly).toEqual(["/abuot"]);
+    expect(await sourceLine()).toBe(recorded);
+    expect((await changes()).verdict).toBe("partial");
+    // A trailing slash is the same page.
+    const slash = JSON.parse(
+      await visualice("crawl", server.url, "--replay", "--only=/about/", "--json", "--quiet"),
+    );
+    expect(slash.unmatchedOnly).toBeUndefined();
+    expect(slash.shots).toBeGreaterThan(0);
+    expect(await sourceLine()).toBe(await git("rev-parse", "HEAD"));
+    await commit("catalogue after about");
+
+    // 5d. A page deleted from the site is listed as removed, though the routes file
+    // still seeds it.
+    await fs.rm(path.join(site, "pricing.html"));
+    await commit("drop pricing");
+    const gone = JSON.parse(
+      await visualice("changes", "--discover", `--target=${server.url}`, "--json", "--quiet"),
+    ) as ChangesReport;
+    expect(gone.routes?.removed).toEqual(["/pricing"]);
+    expect(gone.routes?.added).toEqual([]);
+
     // 6. A change every page sees asks for a full run.
     await fs.appendFile(path.join(site, "assets", "tailwind.css"), "\nbody{color:red}\n");
     const full = await changes();

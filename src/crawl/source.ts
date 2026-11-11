@@ -88,11 +88,21 @@ export async function readSource(
     branch: branchOut?.trim() || undefined,
     committedAt: dateOut?.trim() || undefined,
     dirty: dirtyFiles.length,
-    ...(dirtyFiles.length ? { dirtyFiles: dirtyFiles.slice(0, MAX_DIRTY) } : {}),
+    ...(dirtyFiles.length
+      ? { dirtyFiles: dirtyFiles.slice(0, MAX_DIRTY), dirtyHash: hashList(dirtyFiles) }
+      : {}),
     capturedAt: (opts.now ?? new Date()).toISOString(),
     ...(opts.target ? { target: opts.target, local: isLocalTarget(opts.target) } : {}),
     ...(config ? { config } : {}),
   };
+}
+
+/** A short hash of a list of paths, whatever order they come in. */
+function hashList(files: string[]): string {
+  return createHash("sha256")
+    .update([...files].sort().join("\0"))
+    .digest("hex")
+    .slice(0, 12);
 }
 
 /** The first 12 hex digits of a file's SHA-256, or undefined when it can't be read. */
@@ -146,6 +156,7 @@ export function renderSourceLine(s: SourceInfo): string {
     ["commit", s.commit],
     ["branch", s.branch],
     ["dirty", s.dirty],
+    ["files", s.dirty ? s.dirtyHash : undefined],
     ["captured", s.capturedAt],
     ["target", s.target],
     ["config", s.config],
@@ -171,10 +182,12 @@ export function parseSourceLine(line: string): SourceInfo | undefined {
   const dirty = Number(kv.get("dirty") ?? 0);
   const target = kv.get("target");
   const config = kv.get("config");
+  const files = kv.get("files");
   return {
     commit,
     branch: kv.get("branch") || undefined,
     dirty: Number.isFinite(dirty) && dirty > 0 ? Math.floor(dirty) : 0,
+    ...(files && dirty > 0 ? { dirtyHash: files } : {}),
     capturedAt: kv.get("captured") ?? "",
     ...(target ? { target, local: isLocalTarget(target) } : {}),
     ...(config ? { config } : {}),

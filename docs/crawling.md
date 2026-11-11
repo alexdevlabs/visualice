@@ -86,6 +86,11 @@ still loading, or the DOM is still changing), the probe keeps looking, up to
 `discovery.interactions.patienceMs` (1500 ms) after the click. A trigger that does
 nothing leaves the page idle, so it costs no more than before.
 
+A page that is never idle (a ticker or an animation rewriting the DOM, a poll asking
+the server every second) would make every trigger look busy. The first time a trigger
+on a page shows nothing while the page is busy, the probe watches the page for a moment
+with nothing clicked; what it does on its own is not counted as loading from then on.
+
 Every trigger that showed nothing is listed under **Clicked, nothing opened** in
 `crawl-report.md`. Most do nothing visible by design (sorting, refresh, pagination). The
 ones marked **still loading** were still busy when the probe gave up: a slow page may be

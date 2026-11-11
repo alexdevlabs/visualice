@@ -1,7 +1,7 @@
 import type { Page, Response } from "playwright";
 import type { RecipeStep } from "../shared/types";
 import { locatorFor, visibleMatch } from "../shared/selectors";
-import { idOfSelector, isGeneratedId, namesGeneratedId } from "./generated-ids";
+import { idOfSelector, idShape, isGeneratedId, namesGeneratedId } from "./generated-ids";
 
 export function resolveUrl(base: string, u: string): string {
   return /^https?:\/\//i.test(u) ? u : new URL(u, base).href;
@@ -98,10 +98,12 @@ const openedSince = (before: string[], now: string[]) => now.some((r) => !before
  * recorded, but a site can generate it (a counter, React's useId) and give the same
  * dialog another one on this load; what the click does doesn't change.
  *
- * - A stable id gets the first few seconds to itself, so a region that takes a
- *   moment to fill (a menu loading its items) is still waited for. After that, a
- *   region the click opened is enough; with none, the wait carries on to its
- *   timeout and fails as it always did.
+ * - An id that may be a counter (it has a number in it: `mat-dialog-3`) gets the
+ *   first few seconds to itself, so a region that takes a moment to fill (a menu
+ *   loading its items) is still waited for. After that, a region the click opened is
+ *   enough; with none, the wait carries on to its timeout and fails as it always did.
+ * - An id with nothing generated about it (`#results`) never comes here: it is
+ *   waited for to its timeout, whatever else the click opened meanwhile.
  * - An id already known to be generated is never there: the step gives the click a
  *   moment to open something and moves on, whatever it did.
  */
@@ -196,7 +198,12 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
       case "waitFor":
         if (step.selector && before && idOfSelector(step.selector) !== undefined) {
           const id = idOfSelector(step.selector)!;
-          await waitForIdOrOpened(page, step.selector, isGeneratedId(id), before, step.timeoutMs);
+          const generated = isGeneratedId(id);
+          // Only an id that could differ on this load may be stood in for by "the
+          // click opened something": a plain one is what the recipe is waiting on.
+          if (generated || idShape(id) !== undefined) {
+            await waitForIdOrOpened(page, step.selector, generated, before, step.timeoutMs);
+          } else await waitStep(page, step.selector, step.state, step.timeoutMs);
         } else if (step.selector && namesGeneratedId(step.selector)) {
           // Recorded before generated ids were recognised: the id it names most
           // likely differs on this load. The step before it already did the work,

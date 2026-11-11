@@ -36,6 +36,14 @@ describe("the routes-file source line", () => {
     expect(parseSourceLine(line)).toEqual(record({ config: "bab17dc92481" }));
   });
 
+  it("keeps a hash of which files were dirty, not the list", () => {
+    const dirty = record({ dirty: 2, dirtyFiles: ["a.tsx", "b.tsx"], dirtyHash: "0123456789ab" });
+    const line = renderSourceLine(dirty);
+    expect(line).toContain("dirty=2 files=0123456789ab");
+    expect(parseSourceLine(line)?.dirtyHash).toBe("0123456789ab");
+    expect(renderSourceLine(record({ dirtyHash: "0123456789ab" }))).not.toContain("files=");
+  });
+
   it("keeps a branch name with spaces in one token", () => {
     const back = parseSourceLine(renderSourceLine(record({ branch: "my branch" })));
     expect(back?.branch).toBe("my branch");

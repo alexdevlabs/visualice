@@ -152,6 +152,24 @@ export function UpdateBanner() {
     });
   }, []);
 
+  // Panels fixed to the viewport (the shortcuts popover, the phone details sheet)
+  // sit under the header, which the banner pushes down: tell them by how much.
+  const shown = !!info && !hidden;
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty("--banner-h", `${el.offsetHeight}px`);
+    set();
+    const observer = new ResizeObserver(set);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--banner-h");
+    };
+  }, [shown]);
+
   if (!info || hidden) return null;
 
   const dismiss = () => {
@@ -166,6 +184,7 @@ export function UpdateBanner() {
   return (
     <>
       <div
+        ref={bar}
         role="status"
         className="flex shrink-0 items-center gap-3 border-b border-accent-line bg-accent-soft px-4 py-2 text-[12.5px] text-fg"
       >

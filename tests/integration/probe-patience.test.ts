@@ -40,13 +40,36 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><title>Queues</ti
   </script>
 </body></html>`;
 
-async function serve(): Promise<{ url: string; close: () => Promise<void> }> {
+// A page that is never idle: a ticker rewrites the DOM and a poll asks the server,
+// with nobody touching it. Its buttons do nothing.
+const RESTLESS = `<!doctype html><html><head><meta charset="utf-8"><title>Live</title></head><body>
+  <h1>Live</h1>
+  <p id="tick">0</p>
+  <button>Refresh</button>
+  <button>Sort</button>
+  <button>Filter</button>
+  <button>Export</button>
+  <script>
+    let n = 0;
+    setInterval(() => { document.getElementById("tick").textContent = String(++n); }, 40);
+    setInterval(() => fetch("/poll.json?t=" + n), 120);
+  </script>
+</body></html>`;
+
+async function serve(page = PAGE): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
-    const delay = req.url === "/slow.json" ? 800 : req.url === "/stuck.json" ? 15_000 : 0;
-    const body = req.url?.endsWith(".json") ? "{}" : PAGE;
+    const delay =
+      req.url === "/slow.json"
+        ? 800
+        : req.url === "/stuck.json"
+          ? 15_000
+          : req.url?.startsWith("/poll.json")
+            ? 200
+            : 0;
+    const body = req.url?.includes(".json") ? "{}" : page;
     const timer = setTimeout(() => {
       res.writeHead(200, {
-        "content-type": req.url?.endsWith(".json") ? "application/json" : "text/html",
+        "content-type": req.url?.includes(".json") ? "application/json" : "text/html",
       });
       res.end(body);
     }, delay);
@@ -64,8 +87,8 @@ async function serve(): Promise<{ url: string; close: () => Promise<void> }> {
   };
 }
 
-const run = async (interactions: Record<string, unknown>) => {
-  const site = await serve();
+const run = async (interactions: Record<string, unknown>, page = PAGE) => {
+  const site = await serve(page);
   try {
     const started = Date.now();
     const found = await discoverPipeline({
@@ -119,6 +142,19 @@ describe("probing a page that is slow to answer a click", () => {
     // The dialog's request (0.8s), Ping's (0.8s) and Export log's full ten seconds.
     expect(ms - once).toBeLessThan(10_000 + 2 * 800 + 1500);
     expect(ms - once).toBeGreaterThan(10_000);
+  }, 90_000);
+
+  it("doesn't take a page that changes and polls on its own for a click still loading", async () => {
+    const { quiet, ms } = await run({ patienceMs: 5000 }, RESTLESS);
+    expect(quiet.map((q) => [q.trigger, q.result])).toEqual([
+      ['"Refresh"', "no change"],
+      ['"Sort"', "no change"],
+      ['"Filter"', "no change"],
+      ['"Export"', "no change"],
+    ]);
+    // Only the first button waits out the patience, which is how the page is found
+    // out; the other three cost what a button that does nothing always did.
+    expect(ms).toBeLessThan(5000 + 5000);
   }, 90_000);
 
   it("puts the list in the run's report, and keeps it out of the cached model", async () => {

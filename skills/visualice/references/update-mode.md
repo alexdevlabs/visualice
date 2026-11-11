@@ -9,8 +9,11 @@ title:
 
 Each run's `crawl-map.json` has the same record as `source`, with the list of files
 that had uncommitted changes. Only a run that shot every state moves the line: one with
-failed shots, or a `--no-states` run, leaves it at the last complete run, so `changes`
-still diffs from there. When the project moves on (new pages, edited ones), you
+failed shots, a `--no-states` run, or a partial run whose `--only` named a page it
+couldn't find, leaves it at the last complete run, so `changes` still diffs from there.
+When the newest complete run on this computer was shot at another commit than the line
+says (a routes file pulled from a teammate), `changes` diffs from that run instead and
+says so, because its shots are the ones a partial run carries over. When the project moves on (new pages, edited ones), you
 don't have to reshoot everything: find out what changed, work out which pages it
 touches, and reshoot only those. A partial run carries every other page's shots over
 from the last run, so the new run is still the whole site.
@@ -105,6 +108,11 @@ visualice crawl --replay --json --quiet     # or without --replay to rediscover 
 last run can't cover it: a page new since, or one whose shots are missing or failed
 there (a device added, a state added). The summary's `carried` count says how many
 shots came from the earlier run.
+
+`unmatchedOnly` in the summary lists the `--only` paths that matched no page (a typo, or
+a page not in the site model yet). Nothing was shot for them and the commit record stays
+where it was: fix the path, or for a new page crawl without `--replay` or add a
+`- /path` line to the routes file, then run it again.
 
 When the run finishes, the routes file records the new commit. Tell the user to commit
 `visualice.routes.md` with their change, so the next `changes` starts from here.

@@ -75,6 +75,28 @@
 - The report lists the triggers discovery clicked that showed nothing, under **Clicked,
   nothing opened**. The ones still loading when it gave up (`stillLoading` in `--json`)
   are where a slow page may hide a state.
+- `changes` and partial runs no longer leave a page stale without saying so:
+  - A partial run whose `--only` names no page (a typo, or a page not in the site model)
+    says so (`unmatchedOnly` in `--json`, **Not shot** in the report) and leaves the
+    commit record where it was. `--only=/pricing` matches a page crawled as `/pricing/`.
+  - When the newest run on this computer was shot at another commit than the routes
+    file records, `changes` compares against that run, whose shots a partial run
+    carries over.
+  - A shared file under `app/` whose name ends in "page", "layout" or "error"
+    (`app/components/homepage.tsx`) is no longer taken for a route.
+  - In a monorepo, changed files are mapped by their path inside the project folder; a
+    file outside it is left to be traced, and a root lockfile still asks for a full run.
+  - `changes --discover` lists a page the site answers 404 for as removed, though the
+    routes file still seeds it.
+- A first crawl no longer counts the `.gitignore` it edits as an uncommitted change, and
+  a rerun at the same commit with other files uncommitted writes a new record.
+- A partial run's accessibility totals cover the carried pages too.
+- A recipe that waits for a plain id (`#results`) waits for it to its timeout, even when
+  the click opened something else first.
+- A page that changes or polls on its own no longer makes every trigger on it wait out
+  `patienceMs` and show up as **still loading**.
+- Viewer: the shortcuts popover and the phone details sheet sit below the update banner
+  instead of overlapping the header.
 
 ## 0.1.1
 

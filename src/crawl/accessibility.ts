@@ -84,6 +84,30 @@ export interface AccessibilityRollup {
 
 const SEVERITY = ["critical", "serious", "moderate", "minor"];
 
+/** Two rollups as one: a partial run's own shots and the ones it carried over. */
+export function mergeRollups(
+  a: AccessibilityRollup[],
+  b: AccessibilityRollup[],
+): AccessibilityRollup[] {
+  const byRule = new Map<string, AccessibilityRollup>();
+  for (const r of [...a, ...b]) {
+    const entry = byRule.get(r.id);
+    if (entry) {
+      entry.shots += r.shots;
+      entry.elements += r.elements;
+    } else byRule.set(r.id, { ...r });
+  }
+  return sortRollups([...byRule.values()]);
+}
+
+function sortRollups(rollups: AccessibilityRollup[]): AccessibilityRollup[] {
+  const rank = (r: AccessibilityRollup) => {
+    const i = SEVERITY.indexOf(r.impact ?? "");
+    return i < 0 ? SEVERITY.length : i;
+  };
+  return rollups.sort((a, b) => rank(a) - rank(b) || b.shots - a.shots || a.id.localeCompare(b.id));
+}
+
 export function rollupViolations(perShot: AccessibilityViolation[][]): AccessibilityRollup[] {
   const byRule = new Map<string, AccessibilityRollup>();
   for (const violations of perShot) {
@@ -101,11 +125,5 @@ export function rollupViolations(perShot: AccessibilityViolation[][]): Accessibi
       byRule.set(v.id, entry);
     }
   }
-  const rank = (r: AccessibilityRollup) => {
-    const i = SEVERITY.indexOf(r.impact ?? "");
-    return i < 0 ? SEVERITY.length : i;
-  };
-  return [...byRule.values()].sort(
-    (a, b) => rank(a) - rank(b) || b.shots - a.shots || a.id.localeCompare(b.id),
-  );
+  return sortRollups([...byRule.values()]);
 }

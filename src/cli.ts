@@ -22,10 +22,11 @@ import {
   discoverOnlyPipeline,
   planCrawl,
   previewRoutes,
+  crawlOwnFiles,
   type CrawlPlan,
 } from "./crawl/orchestrator";
 import { computeChanges, type ChangesReport } from "./crawl/changes";
-import { CONFIG_FILES, findConfigFile, hashFile } from "./crawl/source";
+import { findConfigFile, hashFile } from "./crawl/source";
 import { setHeaded } from "./shared/launch";
 import {
   computeWanted,
@@ -170,6 +171,10 @@ function reportDone(runDir: string, manifest: Manifest, flags: Flags, log: Log):
         states: stats?.states ?? 0,
         shots: stats?.shots ?? 0,
         ...(stats?.carried !== undefined ? { carried: stats.carried } : {}),
+        // `--only` paths that matched no page: nothing was shot for them.
+        ...(manifest.partial?.unmatched?.length
+          ? { unmatchedOnly: manifest.partial.unmatched }
+          : {}),
         failed: stats?.failed ?? 0,
         failures: stats?.failures ?? [],
         wanted: stats?.wanted ?? [],
@@ -602,18 +607,21 @@ function reportPlan(plan: CrawlPlan, flags: Flags, log: Log): void {
 }
 
 /** The commit records in a site's runs, newest first. */
-async function runSources(config: Config, baseUrl: string | undefined): Promise<SourceInfo[]> {
+async function runSources(
+  config: Config,
+  baseUrl: string | undefined,
+): Promise<{ source: SourceInfo; complete: boolean }[]> {
   const outRoot = path.resolve(config.output.dir);
   const site = baseUrl ? siteKey(baseUrl, config.output.site) : config.output.site;
   if (!site) return [];
   const root = siteDir(outRoot, site);
-  const out: SourceInfo[] = [];
+  const out: { source: SourceInfo; complete: boolean }[] = [];
   for (const id of [...(await listRuns(root))].reverse()) {
     try {
       const m = JSON.parse(
         await fs.readFile(path.join(runDir(root, id), "crawl-map.json"), "utf8"),
       ) as Manifest;
-      if (m.source?.commit) out.push(m.source);
+      if (m.source?.commit) out.push({ source: m.source, complete: m.stats?.complete === true });
     } catch {
       // An unfinished or unreadable run has no record to offer.
     }
@@ -629,12 +637,18 @@ async function cmdChanges(flags: Flags): Promise<void> {
   const recorded = intent.source;
   // The run that matches the routes file's record holds its list of dirty files; with
   // no record in the file (not committed, or an older catalogue), the newest run's.
-  const sources = await runSources(config, baseUrl);
+  const runs = await runSources(config, baseUrl);
+  const sources = runs.map((r) => r.source);
   const runSource =
     (recorded &&
       (sources.find((s) => s.commit === recorded.commit && s.capturedAt === recorded.capturedAt) ??
         sources.find((s) => s.commit === recorded.commit))) ||
     (recorded ? undefined : sources[0]);
+  // The newest run is the one a partial run carries from: the baseline, when it was
+  // shot at another commit than the routes file says (a file pulled from a teammate).
+  // Only when that run stands for its commit: one with failed shots, without the
+  // states, or with a path it shot nothing for leaves the routes file's record be.
+  const localRun = runs[0]?.complete ? runs[0].source : undefined;
 
   const cachePath = modelCachePath(path.resolve(config.output.dir));
   const model = (await pathExists(cachePath)) ? await loadInputManifest(cachePath) : undefined;
@@ -645,25 +659,20 @@ async function cmdChanges(flags: Flags): Promise<void> {
     if (!baseUrl)
       throw new UsageError("--discover needs a target: pass --target=<url> or set target");
     const preview = await previewRoutes({ config, baseUrl, log });
-    routes = { added: preview.added, removed: preview.capped ? [] : preview.removed };
+    routes = { added: preview.added, removed: preview.removed };
     if (preview.capped)
       log(
-        `⚠ discovery stopped at scope.maxPages (${config.scope.maxPages}): removed pages aren't listed`,
+        `⚠ discovery stopped at scope.maxPages (${config.scope.maxPages}): only pages the site answers as gone (404) are listed as removed`,
       );
   }
 
-  const routesFile = routesFilePath(config);
   const configFile = (await resolveConfigPath(flags)) ?? path.resolve("visualice.config.json");
   const report = await computeChanges({
     cwd: process.cwd(),
     recorded,
     runSource,
-    ignore: [
-      path.resolve(config.output.dir),
-      ...(routesFile ? [routesFile] : []),
-      ...CONFIG_FILES.map((name) => path.resolve(name)),
-      configFile,
-    ],
+    localRun,
+    ignore: crawlOwnFiles(config, configFile),
     config: { file: configFile, hash: await hashFile(configFile) },
     pages,
     routes,

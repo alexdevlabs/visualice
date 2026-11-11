@@ -148,14 +148,17 @@ export function guessRoute(file: string): RouteGuess | undefined {
 
   // Next.js app router: app/blog/[slug]/page.tsx
   m = new RegExp(
-    String.raw`^(?:src/)?app/(.*?)/?(page|layout|template|loading|error|not-found)\.${CODE}$`,
+    // The name is the whole file name: `app/components/homepage.tsx` is no page.
+    String.raw`^(?:src/)?app/(?:(.*)/)?(page|layout|template|loading|error|not-found)\.${CODE}$`,
   ).exec(file);
-  if (m && !/(^|\/)api(\/|$)/.test(m[1])) {
+  if (m && !/(^|\/)api(\/|$)/.test(m[1] ?? "")) {
     const segs = bracketSegments(m[1] ? m[1].split("/") : []);
     return { segments: segs, kind: m[2] === "page" ? "page" : "layout" };
   }
   // SvelteKit: src/routes/blog/[slug]/+page.svelte
-  m = new RegExp(String.raw`^src/routes/(.*?)/?\+(page|layout)(?:\.server)?\.${CODE}$`).exec(file);
+  m = new RegExp(String.raw`^src/routes/(?:(.*)/)?\+(page|layout)(?:\.server)?\.${CODE}$`).exec(
+    file,
+  );
   if (m) {
     return {
       segments: bracketSegments(m[1] ? m[1].split("/") : []),
@@ -243,6 +246,13 @@ export interface ChangesInput {
   recorded?: SourceInfo;
   /** A run manifest's record, used when the routes file has none (and for its dirty files). */
   runSource?: SourceInfo;
+  /**
+   * The newest finished run on this computer: the one a partial run carries from.
+   * When it was shot at another commit than the routes file records (a routes file
+   * pulled from a teammate, a run on another branch), it is the baseline, so that
+   * `changes` and `crawl --only` work from the same shots.
+   */
+  localRun?: SourceInfo;
   /** Paths whose changes don't count: the routes file, the output folder, the config. */
   ignore: string[];
   /** The config file now, and its hash: compared with the record's, not diffed. */
@@ -277,7 +287,12 @@ export async function computeChanges(input: ChangesInput): Promise<ChangesReport
   const headCommit = (await git(root, ["rev-parse", "HEAD"]))?.trim();
   const branch = (await git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]))?.trim();
 
-  const record = input.recorded ?? input.runSource;
+  const local =
+    input.recorded && input.localRun && input.localRun.commit !== input.recorded.commit
+      ? input.localRun
+      : undefined;
+  const record = local ?? input.recorded ?? input.runSource;
+  const runSource = local ?? input.runSource;
   if (!record) {
     report.reasons.push(
       "no recorded commit: the catalogue predates commit tracking, or was never shot",
@@ -286,16 +301,19 @@ export async function computeChanges(input: ChangesInput): Promise<ChangesReport
     return report;
   }
   const dirtyFiles =
-    input.runSource && input.runSource.commit === record.commit
-      ? input.runSource.dirtyFiles
-      : undefined;
+    runSource && runSource.commit === record.commit ? runSource.dirtyFiles : undefined;
   // A record keeps a capped list; past the cap, the files it left out can't be diffed.
   const dirtyListed = record.dirty === 0 || (dirtyFiles?.length ?? 0) >= record.dirty;
   report.baseline = {
     ...record,
     ...(dirtyFiles ? { dirtyFiles } : {}),
-    from: input.recorded ? "routes-file" : "run",
+    from: input.recorded && !local ? "routes-file" : "run",
   };
+  if (local && input.recorded) {
+    report.reasons.push(
+      `the routes file records commit ${input.recorded.commit.slice(0, 12)}, but the newest run on this computer was shot at ${local.commit.slice(0, 12)}: compared against that run, whose shots are the ones a partial run carries over`,
+    );
+  }
 
   if (!(await commitExists(root, record.commit))) {
     report.reasons.push(
@@ -349,14 +367,26 @@ export async function computeChanges(input: ChangesInput): Promise<ChangesReport
     report.global.push({ path: rel, reason: "visualice config" });
   }
 
-  // Classify every changed file.
+  // Classify every changed file, by its path inside the project: in a monorepo the
+  // project is a folder of the repository (`apps/web`), and git's paths start there.
+  const project = toRepoPath(root, input.cwd);
   for (const f of files) {
-    const reason = globalReason(f.path) ?? (f.from ? globalReason(f.from) : undefined);
+    const local = projectPath(f.path, project);
+    if (local === undefined) {
+      // Outside the project: a root lockfile reaches it; anything else (a shared
+      // package, another app) is for whoever traces imports to say.
+      if (globalReason(f.path) === "dependencies") {
+        report.global.push({ path: f.path, reason: "dependencies" });
+      } else report.unmapped.push(f.path);
+      continue;
+    }
+    const from = f.from ? projectPath(f.from, project) : undefined;
+    const reason = globalReason(local) ?? (from ? globalReason(from) : undefined);
     if (reason) {
       report.global.push({ path: f.path, reason });
       continue;
     }
-    const guess = guessRoute(f.path);
+    const guess = guessRoute(local);
     if (guess) {
       const pattern = guessPattern(guess);
       report.candidates.push({
@@ -441,6 +471,16 @@ export async function computeChanges(input: ChangesInput): Promise<ChangesReport
     }
   }
   return report;
+}
+
+/**
+ * A repo-relative path as one relative to the project folder (`project`, itself
+ * repo-relative; undefined when the project is the repository root). Undefined for a
+ * file outside the project.
+ */
+export function projectPath(file: string, project: string | undefined): string | undefined {
+  if (!project) return file;
+  return file.startsWith(`${project}/`) ? file.slice(project.length + 1) : undefined;
 }
 
 /** Quote a value for a POSIX shell when it holds anything a shell would expand. */

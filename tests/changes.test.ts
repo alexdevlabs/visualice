@@ -30,6 +30,15 @@ describe("file-based routing", () => {
     expect(pattern("app/api/users/route.ts")).toBeUndefined();
   });
 
+  it("takes a file for a page only by its whole name", () => {
+    // Shared code that happens to end in "page", "layout" or "error".
+    expect(pattern("app/components/homepage.tsx")).toBeUndefined();
+    expect(pattern("src/app/hooks/use-layout.ts")).toBeUndefined();
+    expect(pattern("app/lib/format-error.ts")).toBeUndefined();
+    expect(pattern("src/routes/shop/my+page.svelte")).toBeUndefined();
+    expect(pattern("src/routes/shop/+page.svelte")).toBe("/shop");
+  });
+
   it("maps pages folders, SvelteKit, Remix and plain HTML", () => {
     expect(pattern("pages/about.tsx")).toBe("/about");
     expect(pattern("src/pages/blog/index.astro")).toBe("/blog");
@@ -221,5 +230,85 @@ describe("computeChanges", () => {
     commit("about");
     const r = await run({ ...baseline!, target: "https://example.com/", local: false });
     expect(r.reasons.some((x) => x.includes("not a local server"))).toBe(true);
+  });
+
+  it("compares against the newest run here when the routes file records another commit", async () => {
+    // A routes file pulled from a teammate records their commit; the shots on this
+    // computer, which a partial run carries over, are from an older one.
+    const mine = baseline!;
+    await write("app/about/page.tsx", "about v2");
+    commit("about");
+    const theirs = await readSource(dir, { target: "http://localhost:3000/" });
+    await write("app/page.tsx", "home v2");
+    commit("home");
+    const r = await computeChanges({
+      cwd: dir,
+      recorded: theirs!,
+      localRun: mine,
+      ignore: [],
+      pages,
+    });
+    expect(r.baseline?.commit).toBe(mine.commit);
+    expect(r.baseline?.from).toBe("run");
+    expect(r.candidates.map((c) => c.file).sort()).toEqual(["app/about/page.tsx", "app/page.tsx"]);
+    expect(r.reasons.some((x) => x.includes("newest run on this computer"))).toBe(true);
+    // The same commit in both: the routes file's record stands.
+    const same = await computeChanges({
+      cwd: dir,
+      recorded: theirs!,
+      localRun: theirs!,
+      ignore: [],
+      pages,
+    });
+    expect(same.baseline?.from).toBe("routes-file");
+    expect(same.candidates.map((c) => c.file)).toEqual(["app/page.tsx"]);
+  });
+
+  describe("in a monorepo, with the project in a folder of the repository", () => {
+    const web = () => path.join(dir, "apps", "web");
+    const inWeb = () =>
+      computeChanges({ cwd: web(), recorded: baseline!, ignore: [], pages: ["/", "/pricing"] });
+
+    beforeEach(async () => {
+      await write("package.json", "{}");
+      await write("apps/web/package.json", "{}");
+      await write("apps/web/app/pricing/page.tsx", "pricing");
+      await write("apps/web/app/blog/layout.tsx", "blog layout");
+      await write("packages/ui/Button.tsx", "button");
+      commit("monorepo");
+      baseline = await readSource(dir, { target: "http://localhost:3000/" });
+    });
+
+    it("maps the project's files by their path inside it", async () => {
+      await write("apps/web/app/pricing/page.tsx", "pricing v2");
+      await write("apps/web/app/blog/layout.tsx", "blog layout v2");
+      const r = await inWeb();
+      expect(r.verdict).toBe("partial");
+      expect(r.global).toEqual([]);
+      expect(r.candidates.map((c) => [c.file, c.pattern])).toEqual([
+        ["apps/web/app/blog/layout.tsx", "/blog/**"],
+        ["apps/web/app/pricing/page.tsx", "/pricing"],
+      ]);
+    });
+
+    it("is full for the project's own dependencies, and the repository's", async () => {
+      await write("apps/web/package.json", '{"a":1}');
+      expect((await inWeb()).global).toEqual([
+        { path: "apps/web/package.json", reason: "dependencies" },
+      ]);
+      git("checkout", "-q", "--", ".");
+      await write("package.json", '{"a":1}');
+      expect((await inWeb()).verdict).toBe("full");
+    });
+
+    it("leaves a file outside the project to be traced", async () => {
+      await write("packages/ui/Button.tsx", "button v2");
+      await write("apps/admin/app/page.tsx", "another app's home");
+      const r = await inWeb();
+      expect(r.verdict).toBe("partial");
+      expect(r.candidates).toEqual([]);
+      expect(r.unmapped.sort()).toEqual(["apps/admin/app/page.tsx", "packages/ui/Button.tsx"]);
+      expect(r.suggest).toBeUndefined();
+    });
   });
 });

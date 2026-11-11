@@ -8,6 +8,7 @@ import {
   componentsSought,
   findCarrySource,
   matchesOnly,
+  unmatchedOnly,
   planCarry,
   safeShotFiles,
   verifyCarry,
@@ -75,6 +76,21 @@ describe("matching --only", () => {
     expect(matchesOnly({ url: "/blog/hi" }, ["/blog/**"])).toBe(true);
     expect(matchesOnly({ url: "/blog" }, ["/blog/**"])).toBe(true);
     expect(matchesOnly({ url: "/pricing" }, ["/about"])).toBe(false);
+  });
+
+  it("doesn't mind a trailing slash on either side", () => {
+    expect(matchesOnly({ url: "/pricing/" }, ["/pricing"])).toBe(true);
+    expect(matchesOnly({ url: "/pricing" }, ["/pricing/"])).toBe(true);
+    expect(matchesOnly({ url: "/about.html" }, ["/about"])).toBe(true);
+  });
+
+  it("says which paths match no page", () => {
+    const pages = [{ url: "/" }, { url: "/pricing/" }, { url: "/blog/hi" }];
+    expect(unmatchedOnly(pages, ["/pricing", "/blog/**"])).toEqual([]);
+    expect(unmatchedOnly(pages, ["/pricng", "/blog/**", "/shop/*"])).toEqual([
+      "/pricng",
+      "/shop/*",
+    ]);
   });
 });
 

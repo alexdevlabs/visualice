@@ -41,6 +41,11 @@ export function renderReport(m: Manifest): string {
       `- **Clamped:** ${clamped} shot(s) hit the \`screenshot.maxHeight\` limit and were cut off`,
     );
   }
+  if (m.partial?.unmatched?.length) {
+    lines.push(
+      `- **Not shot:** \`--only\` matched no page for ${m.partial.unmatched.map((p) => `\`${p}\``).join(", ")}`,
+    );
+  }
   lines.push("");
   lines.push(`## Routes`);
   lines.push("");

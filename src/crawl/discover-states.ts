@@ -361,7 +361,26 @@ interface ProbeContext {
   log: (msg: string) => void;
   /** Told about each trigger that showed no change. */
   onQuiet?: (q: Omit<QuietTrigger, "route" | "device">) => void;
+  /** What this page does with nobody touching it; measured the first time it matters. */
+  ambient?: Ambient;
 }
+
+/**
+ * What a page does on its own: a carousel or an animation rewriting the DOM, a poll
+ * asking the server every second. None of it is a click's doing, so none of it is a
+ * reason to keep waiting on a click.
+ */
+interface Ambient {
+  /** The DOM keeps changing by itself. */
+  dom: boolean;
+  /** Requests the page makes by itself, as origin + path. */
+  urls: Set<string>;
+}
+
+/** How long an idle page is watched to learn what it does on its own. */
+const AMBIENT_MS = 400;
+
+const urlKey = (url: string) => url.split(/[?#]/)[0];
 
 /** How often a probe looks again while the page is still busy. */
 const POLL_MS = 100;
@@ -373,22 +392,29 @@ const RECENT_MUTATION_MS = 150;
  * those its click started, so a page that polls, or a request that never ends (an
  * event stream, a long poll), doesn't make every probe wait.
  */
-const inflight = new WeakMap<Page, Map<Request, number>>();
-function trackRequests(page: Page): Map<Request, number> {
-  let open = inflight.get(page);
-  if (!open) {
-    const map = new Map<Request, number>();
+interface RequestLog {
+  open: Map<Request, number>;
+  /** While set, every request started is noted here too (see `measureAmbient`). */
+  started?: Set<string>;
+}
+const inflight = new WeakMap<Page, RequestLog>();
+function trackRequests(page: Page): RequestLog {
+  let log = inflight.get(page);
+  if (!log) {
+    const made: RequestLog = { open: new Map() };
     page.on("request", (r) => {
       const type = r.resourceType();
-      if (type !== "websocket" && type !== "eventsource") map.set(r, Date.now());
+      if (type === "websocket" || type === "eventsource") return;
+      made.open.set(r, Date.now());
+      made.started?.add(urlKey(r.url()));
     });
-    const done = (r: Request) => void map.delete(r);
+    const done = (r: Request) => void made.open.delete(r);
     page.on("requestfinished", done);
     page.on("requestfailed", done);
-    inflight.set(page, map);
-    open = map;
+    inflight.set(page, made);
+    log = made;
   }
-  return open;
+  return log;
 }
 
 /** Start noting when the document last changed (once per document). */
@@ -410,24 +436,68 @@ async function watchMutations(page: Page): Promise<void> {
     .catch(() => {});
 }
 
+/** When the document last changed, and the time now, on the page's own clock. */
+function mutationClock(page: Page): Promise<{ at: number; now: number }> {
+  return page
+    .evaluate(() => ({
+      at: (window as unknown as { __vcMutatedAt?: number }).__vcMutatedAt ?? -Infinity,
+      now: performance.now(),
+    }))
+    .catch(() => ({ at: -Infinity, now: 0 }));
+}
+
+/** Why a page still counts as busy: the requests still loading, and a DOM still changing. */
+interface Busy {
+  urls: string[];
+  dom: boolean;
+}
+
 /**
  * Is the page still working on what a click did: a request the click started still
  * loading, or the DOM changed a moment ago? Then a probe that saw no change yet
- * looks again, instead of calling the trigger dead.
+ * looks again, instead of calling the trigger dead. What the page is known to do on
+ * its own (`ambient`) doesn't count.
  */
 async function stillBusy(
   page: Page,
-  requests: Map<Request, number>,
+  requests: RequestLog,
   since: number,
-): Promise<boolean> {
-  for (const started of requests.values()) if (started >= since) return true;
-  const quietFor = await page
-    .evaluate(() => {
-      const at = (window as unknown as { __vcMutatedAt?: number }).__vcMutatedAt;
-      return at === undefined ? Infinity : performance.now() - at;
-    })
-    .catch(() => Infinity);
-  return quietFor < RECENT_MUTATION_MS;
+  ambient: Ambient | undefined,
+): Promise<Busy | undefined> {
+  const urls: string[] = [];
+  for (const [request, started] of requests.open) {
+    const key = urlKey(request.url());
+    if (started >= since && !ambient?.urls.has(key)) urls.push(key);
+  }
+  let dom = false;
+  if (!ambient?.dom) {
+    const { at, now } = await mutationClock(page);
+    dom = now - at < RECENT_MUTATION_MS;
+  }
+  return urls.length || dom ? { urls, dom } : undefined;
+}
+
+/**
+ * Watch an idle page for a moment: what it requests and whether its DOM keeps
+ * changing, with nothing clicked. A single change (the last of what an earlier click
+ * did) isn't a habit; the DOM counts only when it changed in both halves of the watch.
+ */
+async function measureAmbient(page: Page, requests: RequestLog): Promise<Ambient> {
+  await watchMutations(page);
+  requests.started = new Set();
+  const start = await mutationClock(page);
+  await page.waitForTimeout(AMBIENT_MS / 2);
+  const mid = await mutationClock(page);
+  await page.waitForTimeout(AMBIENT_MS / 2);
+  const end = await mutationClock(page);
+  const urls = requests.started;
+  requests.started = undefined;
+  return { dom: mid.at > start.now && end.at > mid.now, urls };
+}
+
+/** Does what the page does on its own account for everything that kept a probe waiting? */
+function isAmbient(busy: Busy, ambient: Ambient): boolean {
+  return (!busy.dom || ambient.dom) && busy.urls.every((u) => ambient.urls.has(u));
 }
 
 /**
@@ -514,7 +584,7 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     /** The probe wrote to local or session storage. */
     stored: boolean;
     /** Nothing showed, and the page was still busy when the probe stopped looking. */
-    busy: boolean;
+    busy?: Busy;
   }
 
   const attempt = async (cand: RawCandidate, action: "click" | "hover"): Promise<ProbeAttempt> => {
@@ -537,16 +607,16 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     // Nothing yet, but the page is still loading or rendering what the click did (a
     // dialog's code, its data, a slow dev server): keep looking for a while. A
     // trigger that does nothing leaves the page idle and costs no more than before.
-    let busy = false;
+    let busy: Busy | undefined;
     while (!kind && !navigated) {
-      busy = await stillBusy(page, requests, since);
+      busy = await stillBusy(page, requests, since, ctx.ambient);
       if (!busy || Date.now() - clicked >= interactions.patienceMs) break;
       await page.waitForTimeout(POLL_MS);
       after = await takeSnapshot(page);
       navigated = after.doc !== before.doc;
       kind = navigated ? null : classifyChange(before, after, cand, action);
     }
-    if (kind || navigated) busy = false;
+    if (kind || navigated) busy = undefined;
     const appeared = kind ? addedLines(linesBefore, await readLines(page)) : [];
     // What a trigger stores (a panel remembered open, an item added to a list)
     // outlives the page: it would be showing in every later probe and every shot
@@ -582,7 +652,20 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
 
       const { kind, before, after, action, appeared, stored } = probe;
       if (!kind && after.doc === before.doc) {
-        ctx.onQuiet?.({ trigger: quietLabel(cand), result: probe.busy ? "busy" : "no change" });
+        let busy = probe.busy;
+        // The first time a page is still busy with nothing to show for it, find out
+        // whether it is ever idle: one that animates or polls by itself isn't loading
+        // anything, and its later triggers needn't wait on that.
+        if (busy && !ctx.ambient && (await enterParent())) {
+          ctx.ambient = await measureAmbient(page, trackRequests(page));
+          if (ctx.ambient.dom || ctx.ambient.urls.size) {
+            log(
+              `    ${ctx.route.id}: the page ${ctx.ambient.dom ? "changes" : "makes requests"} on its own — not taken for a click still loading`,
+            );
+          }
+        }
+        if (busy && ctx.ambient && isAmbient(busy, ctx.ambient)) busy = undefined;
+        ctx.onQuiet?.({ trigger: quietLabel(cand), result: busy ? "busy" : "no change" });
       }
       if (kind && !seenSig.has(after.sig)) {
         seenSig.add(after.sig);

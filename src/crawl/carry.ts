@@ -6,6 +6,7 @@ import { pathExists } from "../shared/fsx";
 import { stateSlug } from "../shared/slug";
 import { isRunComplete, listRuns, runDir as runDirFor } from "./runs";
 import { loadManifest } from "./manifest";
+import { patternMatches } from "./changes";
 
 // Partial runs (`crawl --only`): shoot the pages a change touched, and carry every
 // other page's shots over from the last finished run, so the new run is still the
@@ -52,9 +53,21 @@ function routePath(url: string): string {
   }
 }
 
-/** Does a route match one of the `--only` paths or globs? */
+/**
+ * Does a route match one of the `--only` paths or globs? A trailing slash, `.html`
+ * or `/index` on either side makes no difference: `/pricing` names `/pricing/`.
+ */
 export function matchesOnly(route: Pick<RouteNode, "url">, only: string[]): boolean {
-  return matchesAny(route.url, only) || matchesAny(routePath(route.url), only);
+  return (
+    matchesAny(route.url, only) ||
+    matchesAny(routePath(route.url), only) ||
+    only.some((pattern) => patternMatches(pattern, route.url))
+  );
+}
+
+/** The `--only` paths or globs that match none of `routes`: a typo, or a page not in the model. */
+export function unmatchedOnly(routes: Pick<RouteNode, "url">[], only: string[]): string[] {
+  return only.filter((pattern) => !routes.some((r) => matchesOnly(r, [pattern])));
 }
 
 /** The devices a state is captured on. */

@@ -27,6 +27,7 @@ beforeAll(async () => {
     discovery: { interactions: { maxPerPage: 2 }, mobileStates: false },
     stabilize: { extraDelayMs: 50 },
     politeness: { minDelayMs: 0, concurrency: 4 },
+    checks: { accessibility: true },
   });
   config = { ...base, routesFile: false, output: { ...base.output, dir: out } };
 }, 30000);
@@ -59,6 +60,10 @@ describe("partial runs", () => {
     expect(m.routes.map((r) => r.url)).toEqual(pages);
     expect(m.stats?.carried).toBeGreaterThan(0);
     expect(m.stats!.shots + m.stats!.carried!).toBe(full.manifest.stats!.shots);
+    // The same site, so the same accessibility totals: the carried pages count too.
+    expect(full.manifest.stats!.accessibility!.length).toBeGreaterThan(0);
+    expect(m.stats!.accessibility).toEqual(full.manifest.stats!.accessibility);
+    expect(m.stats!.complete).toBe(true);
 
     for (const route of m.routes) {
       for (const state of route.states) {

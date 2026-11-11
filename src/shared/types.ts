@@ -127,6 +127,8 @@ export interface SourceInfo {
   dirty: number;
   /** Which files those were (capped). */
   dirtyFiles?: string[];
+  /** A hash of that list, kept in the routes file, where the list itself isn't. */
+  dirtyHash?: string;
   /** When the run captured (ISO 8601). */
   capturedAt: string;
   /** The URL that was shot. */
@@ -243,7 +245,12 @@ export interface Manifest {
    * A partial run (`crawl --only`): the routes it shot, and the run every other
    * route's shots were carried over from.
    */
-  partial?: { only: string[]; carriedFrom?: string };
+  partial?: {
+    only: string[];
+    carriedFrom?: string;
+    /** `--only` paths that matched no page: what they named was not shot. */
+    unmatched?: string[];
+  };
   configSnapshot?: unknown;
   devices: Device[];
   auth?: { method: string; notes?: string };
@@ -255,6 +262,12 @@ export interface Manifest {
     failed: number;
     /** Shots copied from an earlier run instead of shot (partial runs). */
     carried?: number;
+    /**
+     * The run stands for the commit it was shot at: every state of every page, no
+     * failed shot, and (a partial run) a page for each path it was given. Only such a
+     * run moves the routes file's commit record, or is a baseline for `changes`.
+     */
+    complete?: boolean;
     durationMs: number;
     failures: CaptureFailure[];
     /** Routes-file requests still unmet after this run (the Explore-mode queue). */

@@ -94,7 +94,7 @@ export function Inspector({
       className={cx(
         "flex flex-col overflow-hidden bg-panel",
         phone
-          ? "fixed inset-x-0 top-[72px] bottom-0 z-15 rounded-t-2xl border-t border-line-strong shadow-sheet"
+          ? "fixed inset-x-0 top-[calc(72px+var(--banner-h,0px))] bottom-0 z-15 rounded-t-2xl border-t border-line-strong shadow-sheet"
           : "w-[380px] shrink-0 border-l border-line",
         phone
           ? closing

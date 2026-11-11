@@ -56,8 +56,15 @@ import {
   findCarrySource,
   matchesOnly,
   planCarry,
+  unmatchedOnly,
   verifyCarry,
 } from "./carry";
+import {
+  type AccessibilityRollup,
+  type AccessibilityViolation,
+  mergeRollups,
+  rollupViolations,
+} from "./accessibility";
 import { CONFIG_FILES, findConfigFile, readSource } from "./source";
 
 type Log = (msg: string) => void;
@@ -349,7 +356,12 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
         config.devices,
       );
       logCarryPlan(carry, only, carrySource.runId, log);
-      manifest.partial = { only, carriedFrom: carrySource.runId };
+      const unmatched = unmatchedOnly(manifest.routes, only);
+      manifest.partial = {
+        only,
+        carriedFrom: carrySource.runId,
+        ...(unmatched.length ? { unmatched } : {}),
+      };
     }
   }
 
@@ -379,11 +391,24 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
     result.manifest.stats.states = allRoutes.reduce((n, r) => n + r.states.length, 0);
     result.manifest.stats.carried = carried;
     countCarryFailures(result.manifest.stats, carry.carry);
+    // The capture rolled up only the pages it shot; the carried ones count too.
+    if (result.manifest.stats.accessibility) {
+      result.manifest.stats.accessibility = mergeRollups(
+        result.manifest.stats.accessibility as AccessibilityRollup[],
+        rollupViolations(await carriedViolations(carry.carry, runDir)),
+      );
+    }
     log(
       `carried ${carried} shot(s) of ${carry.carry.length} page(s) from run ${carrySource.runId}`,
     );
   }
 
+  if (result.manifest.stats) {
+    result.manifest.stats.complete =
+      !opts.pagesOnly &&
+      !result.manifest.stats.failed &&
+      !result.manifest.partial?.unmatched?.length;
+  }
   if (result.manifest.stats && opts.quiet?.length) result.manifest.stats.quiet = opts.quiet;
   if (result.manifest.stats && wanted.length) {
     result.manifest.stats.wanted = wanted;
@@ -407,22 +432,55 @@ export async function readProjectSource(
   baseUrl: string,
   configFile?: string,
 ): Promise<SourceInfo | undefined> {
-  const routesFile = config.routesFile === false ? undefined : path.resolve(config.routesFile);
   // `configFile` is the --config the run was given; without one, the file a first
   // crawl may just have scaffolded is looked up now.
   const file = await findConfigFile(process.cwd(), configFile);
   return readSource(process.cwd(), {
     target: baseUrl,
     configFile: file,
-    // The crawl's own files: the output folder, the routes file it rewrites, and the
-    // config (compared by hash in `changes`, since a first crawl scaffolds it).
-    ignore: [
-      path.resolve(config.output.dir),
-      ...(routesFile ? [routesFile] : []),
-      ...CONFIG_FILES.map((name) => path.resolve(name)),
-      ...(file ? [file] : []),
-    ],
+    ignore: crawlOwnFiles(config, file),
   });
+}
+
+/**
+ * The crawl's own files, whose changes are no change to the site: the output folder,
+ * the routes file it rewrites, the config (compared by hash in `changes`, since a
+ * first crawl scaffolds it) and the `.gitignore` that scaffold adds a line to. The
+ * one list for the commit record and for `changes`, so both call the same tree dirty.
+ */
+export function crawlOwnFiles(config: Config, configFile?: string): string[] {
+  const routesFile = config.routesFile === false ? undefined : path.resolve(config.routesFile);
+  return [
+    path.resolve(config.output.dir),
+    ...(routesFile ? [routesFile] : []),
+    ...CONFIG_FILES.map((name) => path.resolve(name)),
+    ...(configFile ? [path.resolve(configFile)] : []),
+    path.resolve(".gitignore"),
+  ];
+}
+
+/** What the accessibility check found on each carried shot, from its sidecar file. */
+async function carriedViolations(
+  routes: RouteNode[],
+  runDir: string,
+): Promise<AccessibilityViolation[][]> {
+  const out: AccessibilityViolation[][] = [];
+  for (const route of routes) {
+    for (const state of route.states) {
+      for (const ref of Object.values(state.shots)) {
+        if (ref.error || !ref.meta || !ref.a11y) continue;
+        try {
+          const sidecar = JSON.parse(await fs.readFile(path.join(runDir, ref.meta), "utf8")) as {
+            accessibility?: AccessibilityViolation[];
+          };
+          if (Array.isArray(sidecar.accessibility)) out.push(sidecar.accessibility);
+        } catch {
+          // No sidecar to read: the shot keeps its count, the rollup goes without it.
+        }
+      }
+    }
+  }
+  return out;
 }
 
 function logCarryPlan(plan: CarryPlan, only: string[], from: string, log: Log): void {
@@ -532,25 +590,37 @@ async function crawlRun(
   // did. (Which files were dirty is in each run's manifest, which `changes` reads.)
   // Only a run that shot every state stands for the commit: one with failed shots,
   // or one that left the states out, would let `changes` call it up to date.
+  // Nor does a partial run that shot nothing for one of the paths it was given.
   const failed = result.manifest.stats?.failed ?? 0;
-  if (source && !opts.pagesOnly && !failed) {
+  const unmatched = result.manifest.partial?.unmatched ?? [];
+  if (unmatched.length) {
+    log(
+      `⚠ --only matched no page for ${unmatched.join(", ")}: nothing was shot for it. Check the path against the routes file; a page that is new needs a crawl without --replay, or a "- <path>" line there`,
+    );
+  }
+  if (source && result.manifest.stats?.complete) {
     const record = sameSource(intent.source, source) ? intent.source : source;
     await writeRoutesFile(config, inputManifest, intent, baseUrl, () => {}, record);
   } else if (source && config.routesFile !== false) {
     log(
-      `routes file: commit record left as it was — ${opts.pagesOnly ? "this run skipped the UI states" : `${failed} shot(s) failed`}`,
+      `routes file: commit record left as it was — ${opts.pagesOnly ? "this run skipped the UI states" : failed ? `${failed} shot(s) failed` : "--only named a page that wasn't shot"}`,
     );
   }
   return result;
 }
 
-/** Do two records describe the same code, shot the same way? Capture time aside. */
+/**
+ * Do two records describe the same code, shot the same way? Capture time aside. With
+ * uncommitted changes, the same files must have been dirty (`dirtyHash`): the same
+ * count can be other files, and `changes` reads which from the run the record names.
+ */
 export function sameSource(a: SourceInfo | undefined, b: SourceInfo): boolean {
   return (
     !!a &&
     a.commit === b.commit &&
     a.branch === b.branch &&
     a.dirty === b.dirty &&
+    a.dirtyHash === b.dirtyHash &&
     a.target === b.target &&
     a.config === b.config
   );
@@ -899,14 +969,20 @@ export async function previewRoutes(opts: {
       storageState,
       log,
     });
-    const now = new Set(found.routes.map((r) => r.url));
+    // Every known page is a seed, so a deleted one is still visited: it is gone when
+    // the site answers that it is (404, 410…). One discovery never reached is gone
+    // too, unless it stopped at scope.maxPages: a page it didn't get to isn't gone.
+    const dead = new Set(
+      found.routes.filter((r) => r.status !== undefined && r.status >= 400).map((r) => r.url),
+    );
+    const seen = new Set(found.routes.map((r) => r.url));
     const known = (cached?.routes ?? []).filter((r) => !matchesAny(r.url, intent.skipRoutes));
     const before = new Set(known.map((r) => r.url));
+    const capped = found.routes.length >= config.scope.maxPages;
     return {
-      added: [...now].filter((u) => !before.has(u)),
-      removed: [...before].filter((u) => !now.has(u)),
-      // Discovery stopped at scope.maxPages: a page it didn't reach isn't gone.
-      capped: found.routes.length >= config.scope.maxPages,
+      added: [...seen].filter((u) => !before.has(u) && !dead.has(u)),
+      removed: [...before].filter((u) => dead.has(u) || (!capped && !seen.has(u))),
+      capped,
     };
   });
 }
