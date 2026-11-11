@@ -6,6 +6,7 @@ import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe, gotoRoute } from "./recipe";
 import { discoverFormStates } from "./discover-forms";
+import { GENERATED_ID_SOURCE, isGeneratedId } from "./generated-ids";
 import { createHash } from "node:crypto";
 import {
   addedLines,
@@ -49,8 +50,10 @@ export async function collectCandidates(
     maxCandidates: interactions.maxCandidates,
     root: root ?? null,
     testIdAttribute: testIdAttribute(),
+    generatedId: GENERATED_ID_SOURCE,
   };
   const raw = await page.evaluate((cfg) => {
+    const generated = new RegExp(cfg.generatedId);
     const base = [
       "[aria-haspopup]",
       "[aria-expanded]",
@@ -100,7 +103,9 @@ export async function collectCandidates(
     const targetFor = (el: Element): Record<string, unknown> => {
       const tid = el.getAttribute(cfg.testIdAttribute);
       if (tid) return { testId: tid };
-      if (el.id) return { selector: `#${CSS.escape(el.id)}` };
+      // A generated id (React's useId, a component library's counter) names a
+      // different element, or none, on the next load.
+      if (el.id && !generated.test(el.id)) return { selector: `#${CSS.escape(el.id)}` };
       const role = el.getAttribute("role");
       const al = el.getAttribute("aria-label");
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
@@ -482,12 +487,14 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
             ? cand.controls
             : undefined;
         const openId = controls ?? newModalId ?? newPanelId;
+        // Waited for on every later capture, so only an id the next load will have.
+        const waitId = openId && !isGeneratedId(openId) ? openId : undefined;
 
         const id = makeStateId(kind, cand.label, nested ? parent.id : "", states);
         const recipe = [
           ...parent.recipe,
           // A panel that slid in without being a dialog has none to wait for.
-          ...buildSteps(cand, kind, action, openId, after.modals > before.modals),
+          ...buildSteps(cand, kind, action, waitId, after.modals > before.modals),
         ];
         const state: StateNode = {
           id,

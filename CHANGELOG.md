@@ -45,6 +45,13 @@
   "Processed image is too large for the WebP format": the viewer's preview images are
   scaled down to fit WebP's 16383px limit, and the full PNG is untouched. With
   `screenshot.format: "webp"`, a page too tall for WebP now says so and how to fix it.
+- States in React apps no longer time out on capture. Discovery recorded waits, click
+  targets and signatures from ids the app generates at render time (`useId()`'s
+  `_r_6_` / `:r6:` / `«r6»`, and `base-ui-…`, `radix-…`, `headlessui-…`, `mui-…`,
+  `react-select-2-…`), which differ on the next load, on another device, or after
+  another click. It now skips them, so those states also stop going stale between runs.
+  A recipe recorded before still captures: its wait for a generated id gives up after a
+  moment instead of failing the shot.
 
 ## 0.1.1
 

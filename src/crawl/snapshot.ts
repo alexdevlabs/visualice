@@ -1,4 +1,5 @@
 import type { Page } from "playwright";
+import { GENERATED_ID_SOURCE } from "./generated-ids";
 
 /**
  * What a page is showing, reduced to what state discovery and capture compare:
@@ -48,147 +49,158 @@ export async function markDocument(page: Page): Promise<string> {
 }
 
 export function takeSnapshot(page: Page): Promise<Snapshot> {
-  return page.evaluate((docKey) => {
-    const vis = (el: Element): boolean => {
-      const r = el.getBoundingClientRect();
-      const s = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
-    };
+  return page.evaluate(
+    ([docKey, generatedId]) => {
+      // A generated id (React's useId, a library's counter) shifts with render order,
+      // so it can't name a region from one load to the next.
+      const generated = new RegExp(generatedId);
+      const stableId = (id: string | null | undefined): string =>
+        id && !generated.test(id) ? id : "";
+      const vis = (el: Element): boolean => {
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
+      };
 
-    // Where an element sits in the document, as a sibling-index path. Two elements
-    // that exist at the same time can't share one — but two that exist one after
-    // the other can, which is the portal pattern (an overlay created under <body>
-    // on open and removed on close), so the path is never used alone.
-    const domPath = (el: Element): string => {
-      const parts: string[] = [];
-      let n: Element | null = el;
-      while (n && n !== document.documentElement) {
-        const parent: Element | null = n.parentElement;
-        if (!parent) break;
-        parts.unshift(`${n.tagName.toLowerCase()}${Array.from(parent.children).indexOf(n)}`);
-        n = parent;
+      // Where an element sits in the document, as a sibling-index path. Two elements
+      // that exist at the same time can't share one — but two that exist one after
+      // the other can, which is the portal pattern (an overlay created under <body>
+      // on open and removed on close), so the path is never used alone.
+      const domPath = (el: Element): string => {
+        const parts: string[] = [];
+        let n: Element | null = el;
+        while (n && n !== document.documentElement) {
+          const parent: Element | null = n.parentElement;
+          if (!parent) break;
+          parts.unshift(`${n.tagName.toLowerCase()}${Array.from(parent.children).indexOf(n)}`);
+          n = parent;
+        }
+        return parts.join(">");
+      };
+
+      // What the region says, hashed: the part of an unnamed region's identity that
+      // a sibling mounted in the same spot doesn't share. Its opening text, or for a
+      // region with none (an image lightbox), what it shows.
+      const fingerprint = (el: Element): string => {
+        const text = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 200);
+        const media = el.querySelector("img[src],video[src],iframe[src]")?.getAttribute("src");
+        const basis = text || media || "";
+        let h = 0x811c9dc5;
+        for (let i = 0; i < basis.length; i++) {
+          h ^= basis.charCodeAt(i);
+          h = Math.imul(h, 0x01000193) >>> 0;
+        }
+        return h.toString(36);
+      };
+
+      // The most specific name the region carries, falling back to where it is and
+      // what it says. `aria-labelledby` is resolved because a dialog titled by its
+      // own heading is the common markup, and that heading is exactly what tells two
+      // of them apart. Deterministic for a given DOM, so a state re-probed still
+      // dedupes against itself.
+      const regionKey = (el: Element): string => {
+        if (stableId(el.id)) return el.id;
+        const label = el.getAttribute("aria-label");
+        if (label) return label;
+        const by = el.getAttribute("aria-labelledby");
+        if (by) {
+          const text = by
+            .split(/\s+/)
+            .map((id) =>
+              (document.getElementById(id)?.textContent || "").replace(/\s+/g, " ").trim(),
+            )
+            .filter(Boolean)
+            .join(" ")
+            .slice(0, 60);
+          if (text) return text;
+        }
+        return `@${domPath(el)}~${fingerprint(el)}`;
+      };
+
+      const modals = Array.from(
+        document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]'),
+      ).filter(vis);
+      const expanded = Array.from(document.querySelectorAll('[aria-expanded="true"]'));
+      const details = Array.from(document.querySelectorAll("details[open]")).filter(vis);
+      // A fixed panel slid into view — an off-canvas drawer moved by a transform, with
+      // no dialog role or aria-expanded to say so. Parked off-screen it doesn't count;
+      // on screen it does. One that is always there (a cookie bar, a fixed header) is
+      // in every snapshot, so it never reads as newly opened. Empty layers (backdrops)
+      // and the regions already counted above are left out.
+      const counted = [...modals, ...details];
+      for (const e of expanded) {
+        for (const id of (e.getAttribute("aria-controls") || "").split(/\s+/)) {
+          const el = id && document.getElementById(id);
+          if (el) counted.push(el);
+        }
       }
-      return parts.join(">");
-    };
-
-    // What the region says, hashed: the part of an unnamed region's identity that
-    // a sibling mounted in the same spot doesn't share. Its opening text, or for a
-    // region with none (an image lightbox), what it shows.
-    const fingerprint = (el: Element): string => {
-      const text = (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 200);
-      const media = el.querySelector("img[src],video[src],iframe[src]")?.getAttribute("src");
-      const basis = text || media || "";
-      let h = 0x811c9dc5;
-      for (let i = 0; i < basis.length; i++) {
-        h ^= basis.charCodeAt(i);
-        h = Math.imul(h, 0x01000193) >>> 0;
+      const overlays: Element[] = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+      for (let n = walker.nextNode() as Element | null; n; ) {
+        if (getComputedStyle(n).position !== "fixed") {
+          n = walker.nextNode() as Element | null;
+          continue;
+        }
+        const r = n.getBoundingClientRect();
+        const w = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+        const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
+        const onScreen = w >= 40 && h >= 40 && w * h >= 0.5 * r.width * r.height;
+        const hasContent =
+          (n.textContent || "").trim() !== "" || !!n.querySelector("img,svg,video");
+        if (
+          onScreen &&
+          hasContent &&
+          vis(n) &&
+          n.getAttribute("aria-hidden") !== "true" &&
+          !counted.some((c) => c.contains(n!) || n!.contains(c))
+        ) {
+          overlays.push(n);
+        }
+        // Nothing inside a fixed element is a separate overlay: skip its subtree.
+        let next: Node | null = walker.nextSibling();
+        while (!next && walker.parentNode()) next = walker.nextSibling();
+        n = next as Element | null;
       }
-      return h.toString(36);
-    };
-
-    // The most specific name the region carries, falling back to where it is and
-    // what it says. `aria-labelledby` is resolved because a dialog titled by its
-    // own heading is the common markup, and that heading is exactly what tells two
-    // of them apart. Deterministic for a given DOM, so a state re-probed still
-    // dedupes against itself.
-    const regionKey = (el: Element): string => {
-      if (el.id) return el.id;
-      const label = el.getAttribute("aria-label");
-      if (label) return label;
-      const by = el.getAttribute("aria-labelledby");
-      if (by) {
-        const text = by
+      const ids = [
+        ...modals.map((e) => `m:${regionKey(e)}`),
+        ...overlays.map((e) => `f:${regionKey(e)}`),
+        ...details.map((e) => `d:${regionKey(e)}`),
+        // An `aria-expanded` element is the *trigger*; the region it opened is what
+        // `aria-controls` names, so that stays the preferred key here.
+        ...expanded.map((e) => `e:${stableId(e.getAttribute("aria-controls")) || regionKey(e)}`),
+      ].sort();
+      const openModalIds = modals.map((e) => e.id).filter(Boolean);
+      // ARIA allows `aria-controls` to list several ids, and this becomes a selector
+      // that needs exactly one: the first that is actually showing, else the first
+      // that exists. A reference to an id the page doesn't have (markup that renamed
+      // its panel and not the button) names nothing to wait for.
+      const controlledId = (e: Element): string => {
+        const ids = (e.getAttribute("aria-controls") || "")
           .split(/\s+/)
-          .map((id) => (document.getElementById(id)?.textContent || "").replace(/\s+/g, " ").trim())
-          .filter(Boolean)
-          .join(" ")
-          .slice(0, 60);
-        if (text) return text;
-      }
-      return `@${domPath(el)}~${fingerprint(el)}`;
-    };
-
-    const modals = Array.from(
-      document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]'),
-    ).filter(vis);
-    const expanded = Array.from(document.querySelectorAll('[aria-expanded="true"]'));
-    const details = Array.from(document.querySelectorAll("details[open]")).filter(vis);
-    // A fixed panel slid into view — an off-canvas drawer moved by a transform, with
-    // no dialog role or aria-expanded to say so. Parked off-screen it doesn't count;
-    // on screen it does. One that is always there (a cookie bar, a fixed header) is
-    // in every snapshot, so it never reads as newly opened. Empty layers (backdrops)
-    // and the regions already counted above are left out.
-    const counted = [...modals, ...details];
-    for (const e of expanded) {
-      for (const id of (e.getAttribute("aria-controls") || "").split(/\s+/)) {
-        const el = id && document.getElementById(id);
-        if (el) counted.push(el);
-      }
-    }
-    const overlays: Element[] = [];
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-    for (let n = walker.nextNode() as Element | null; n; ) {
-      if (getComputedStyle(n).position !== "fixed") {
-        n = walker.nextNode() as Element | null;
-        continue;
-      }
-      const r = n.getBoundingClientRect();
-      const w = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
-      const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
-      const onScreen = w >= 40 && h >= 40 && w * h >= 0.5 * r.width * r.height;
-      const hasContent = (n.textContent || "").trim() !== "" || !!n.querySelector("img,svg,video");
-      if (
-        onScreen &&
-        hasContent &&
-        vis(n) &&
-        n.getAttribute("aria-hidden") !== "true" &&
-        !counted.some((c) => c.contains(n!) || n!.contains(c))
-      ) {
-        overlays.push(n);
-      }
-      // Nothing inside a fixed element is a separate overlay: skip its subtree.
-      let next: Node | null = walker.nextSibling();
-      while (!next && walker.parentNode()) next = walker.nextSibling();
-      n = next as Element | null;
-    }
-    const ids = [
-      ...modals.map((e) => `m:${regionKey(e)}`),
-      ...overlays.map((e) => `f:${regionKey(e)}`),
-      ...details.map((e) => `d:${regionKey(e)}`),
-      // An `aria-expanded` element is the *trigger*; the region it opened is what
-      // `aria-controls` names, so that stays the preferred key here.
-      ...expanded.map((e) => `e:${e.getAttribute("aria-controls") || regionKey(e)}`),
-    ].sort();
-    const openModalIds = modals.map((e) => e.id).filter(Boolean);
-    // ARIA allows `aria-controls` to list several ids, and this becomes a selector
-    // that needs exactly one: the first that is actually showing, else the first
-    // that exists. A reference to an id the page doesn't have (markup that renamed
-    // its panel and not the button) names nothing to wait for.
-    const controlledId = (e: Element): string => {
-      const ids = (e.getAttribute("aria-controls") || "")
-        .split(/\s+/)
-        .filter((id) => id && document.getElementById(id));
-      const showing = ids.find((id) => vis(document.getElementById(id)!));
-      return showing ?? ids[0] ?? "";
-    };
-    const openPanelIds = [
-      ...details.map((e) => e.id).filter(Boolean),
-      ...expanded.map(controlledId).filter(Boolean),
-    ];
-    const doc = (window as unknown as Record<string, string | undefined>)[docKey];
-    return {
-      modals: modals.length,
-      expanded: expanded.length,
-      details: details.length,
-      overlays: overlays.length,
-      ids,
-      sig: ids.join("|"),
-      openModalIds,
-      openPanelIds,
-      url: location.href,
-      doc: doc ?? null,
-    };
-  }, DOC_KEY);
+          .filter((id) => id && document.getElementById(id));
+        const showing = ids.find((id) => vis(document.getElementById(id)!));
+        return showing ?? ids[0] ?? "";
+      };
+      const openPanelIds = [
+        ...details.map((e) => e.id).filter(Boolean),
+        ...expanded.map(controlledId).filter(Boolean),
+      ];
+      const doc = (window as unknown as Record<string, string | undefined>)[docKey];
+      return {
+        modals: modals.length,
+        expanded: expanded.length,
+        details: details.length,
+        overlays: overlays.length,
+        ids,
+        sig: ids.join("|"),
+        openModalIds,
+        openPanelIds,
+        url: location.href,
+        doc: doc ?? null,
+      };
+    },
+    [DOC_KEY, GENERATED_ID_SOURCE] as const,
+  );
 }
 
 /** Same open regions — the comparison that says "this is that state again". */

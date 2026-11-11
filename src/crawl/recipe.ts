@@ -1,6 +1,7 @@
 import type { Page, Response } from "playwright";
 import type { RecipeStep } from "../shared/types";
 import { locatorFor } from "../shared/selectors";
+import { namesGeneratedId } from "./generated-ids";
 
 export function resolveUrl(base: string, u: string): string {
   return /^https?:\/\//i.test(u) ? u : new URL(u, base).href;
@@ -49,6 +50,9 @@ export async function gotoRoute(
 /** The longest a loaded page is given to go network-idle before it is used anyway. */
 export const NETWORK_IDLE_MS = 10_000;
 
+/** How long a wait for a generated id (from an older recipe) holds before moving on. */
+const GENERATED_ID_WAIT_MS = 1500;
+
 /** Replay an ordered list of interaction steps on a page. */
 export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void> {
   for (const step of steps) {
@@ -81,7 +85,16 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
         else await page.keyboard.press(step.key);
         break;
       case "waitFor":
-        if (step.selector)
+        if (step.selector && namesGeneratedId(step.selector)) {
+          // Recorded before generated ids were recognised: the id it names most
+          // likely differs on this load. The step before it already did the work,
+          // so give the element a moment and carry on instead of failing.
+          await page
+            .locator(step.selector)
+            .first()
+            .waitFor({ state: step.state ?? "visible", timeout: GENERATED_ID_WAIT_MS })
+            .catch(() => {});
+        } else if (step.selector)
           await page
             .locator(step.selector)
             .first()
