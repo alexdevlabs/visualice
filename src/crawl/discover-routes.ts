@@ -94,6 +94,14 @@ export interface RouteDiscoveryLimit {
    * stays at its size instead of gaining `max` more pages each crawl.
    */
   known?: string[];
+  /**
+   * Links that only showed once something on a page was opened (a collapsed menu
+   * group, a drawer): visit these, and what they link to, instead of the start
+   * page, seeds and sitemap. `depth` is the page's own, one past where it was found.
+   */
+  revealed?: { url: string; from: string; depth: number }[];
+  /** Pages already discovered this crawl: not visited again, and counted toward the limits. */
+  have?: RouteNode[];
 }
 
 /** BFS link crawl (+ sitemap) confined to the target origin, scope rules and robots.txt. */
@@ -132,15 +140,19 @@ export async function discoverRoutes(
   const enqueue = (url: string, depth: number, from: string | null, seeded = false) =>
     queue.push({ url, depth, from, seeded });
 
-  if (!limit.only) enqueue(baseUrl, 0, null);
-  for (const s of limit.only ?? config.seeds) {
+  const have = limit.have ?? [];
+  for (const r of have) visited.add(origin + r.url);
+  for (const r of limit.revealed ?? []) enqueue(r.url, r.depth, r.from);
+  const fresh = !limit.only && !limit.revealed;
+  if (fresh) enqueue(baseUrl, 0, null);
+  for (const s of limit.revealed ? [] : (limit.only ?? config.seeds)) {
     try {
       enqueue(new URL(s, baseUrl).href, 0, null, true);
     } catch {
       /* skip bad seed */
     }
   }
-  if (config.discovery.useSitemap && !limit.only) {
+  if (config.discovery.useSitemap && fresh) {
     const fromSitemap = await fetchSitemapUrls(baseUrl, origin, robots.sitemaps, maxPages);
     for (const u of fromSitemap) enqueue(u, 0, null);
   }
@@ -154,6 +166,11 @@ export async function discoverRoutes(
     taken: 0,
     skipped: 0,
   }));
+  for (const r of have) {
+    const u = safeUrl(origin + r.url);
+    const sample = u && samples.find((x) => x.re.test(scopePath(u, hashRoutes)));
+    if (sample) sample.taken++;
+  }
   const known = new Set(limit.known ?? []);
   const sampled = (path: string, seeded: boolean, canon: string): boolean => {
     const sample = samples.find((x) => x.re.test(path));
@@ -175,7 +192,7 @@ export async function discoverRoutes(
   let blocked = 0;
   const page = await context.newPage();
   try {
-    while (queue.length && routes.length < maxPages) {
+    while (queue.length && have.length + routes.length < maxPages) {
       const item = queue.shift()!;
       let canon: string;
       let scope: string;
@@ -251,7 +268,11 @@ export async function discoverRoutes(
         continue;
       }
 
-      const id = uniqueId(routeId(canon), [...(limit.takenIds ?? []), ...routes.map((r) => r.id)]);
+      const id = uniqueId(routeId(canon), [
+        ...(limit.takenIds ?? []),
+        ...have.map((r) => r.id),
+        ...routes.map((r) => r.id),
+      ]);
       routes.push({
         id,
         url: canon,

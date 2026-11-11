@@ -67,6 +67,13 @@ States are probed at a desktop viewport _and_ (when a mobile device is configure
 first mobile device's viewport, so mobile-only states like hamburger navs are discovered
 too — those capture only on mobile devices. Hover-revealed dropdowns are probed as well.
 
+Pages are found by following links from the start page, the seeds and the sitemap. Some
+links only exist once something is opened: a sidebar whose groups render their links when
+clicked, a drawer menu. Opening those is part of probing states, so the links that appear
+are followed too, and the pages behind them mapped, within `scope.maxDepth`,
+`scope.maxPages` and the include and exclude globs. A link behind something discovery
+doesn't open (a denied label, a login) still needs a `- /path` line in the routes file.
+
 Discovery is automatic — the cached site model is built on the first run and merged (never
 clobbered) on later ones, so hand-written or Explore-mode states survive a re-crawl. Its
 `hints` are applied to every run that uses it: `flakyRegions` get masked, `stableSelectors`

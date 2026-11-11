@@ -424,6 +424,8 @@ interface ProbeContext {
   log: (msg: string) => void;
   /** Told about each trigger that showed no change. */
   onQuiet?: (q: Omit<QuietTrigger, "route" | "device">) => void;
+  /** Told every link on the page while a state is open: some only exist then. */
+  onLinks?: (hrefs: string[]) => void;
   /** What this page does with nobody touching it; measured the first time it matters. */
   ambient?: Ambient;
 }
@@ -771,6 +773,14 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
         if (opened) containers.set(id, opened);
         ctx.urls.set(id, after.url);
         log(`    + ${ctx.route.id}: ${id}`);
+        // A collapsed menu group or a drawer can hold links to pages nothing else
+        // links to. Playwright's $$eval (DOM query in the page context), not JS eval().
+        if (ctx.onLinks) {
+          const hrefs = await page
+            .$$eval("a[href]", (els) => els.map((e) => (e as HTMLAnchorElement).href))
+            .catch(() => []);
+          ctx.onLinks(hrefs);
+        }
 
         // An id with a number in it may be a counter (`mat-dialog-3`, `ember812`):
         // open the same thing again and see whether it comes back under the same
@@ -826,6 +836,7 @@ export async function discoverStates(
   config: Config,
   log: (msg: string) => void,
   onQuiet?: ProbeContext["onQuiet"],
+  onLinks?: ProbeContext["onLinks"],
 ): Promise<StateNode[]> {
   const states: StateNode[] = [defaultState()];
   const interactions = config.discovery.interactions;
@@ -856,6 +867,7 @@ export async function discoverStates(
       stats: { navigations: 0, reused: 0 },
       log,
       onQuiet,
+      onLinks,
     };
 
     let frontier = [states[0]];

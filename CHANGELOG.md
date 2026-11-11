@@ -22,6 +22,14 @@
 - The skill and `/visualice` follow it: run `changes`, trace the affected pages, ask
   whether to rerun those or everything, then run it.
 
+### Discovery
+
+- Links that only exist once something is opened (a sidebar group that renders its links
+  when clicked, a drawer menu) are followed, and the pages behind them mapped. Before,
+  only links on the page as it loaded were, so an app with a collapsed sidebar needed
+  most of its pages seeded by hand. `scope.maxDepth`, `scope.maxPages`, the scope globs
+  and robots.txt apply as for any link.
+
 ### Viewer
 
 - Shots a partial run took carry an **updated** tag; a carried shot's details say which

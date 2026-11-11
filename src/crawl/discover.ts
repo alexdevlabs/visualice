@@ -17,7 +17,8 @@ import { gotoRoute, resolveUrl } from "./recipe";
 import { learnFromTwoLoads, learnedUnstableIds, useUnstableIds } from "./generated-ids";
 import { locatorFor, useTestIdAttribute } from "../shared/selectors";
 import { mapPool } from "../shared/pool";
-import { routeHref, uniqueId } from "../shared/url";
+import { canonicalPath, hashPart, routeHref, scopePath, uniqueId } from "../shared/url";
+import { inScope } from "../shared/glob";
 import { countStates } from "./manifest";
 import { launchOptions } from "../shared/launch";
 
@@ -201,61 +202,113 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
 
     await context.close();
 
-    // State discovery is per-route independent — run it under the politeness pool.
-    // Each route gets a context of its own: pages of one context share local
-    // storage, and a probe notes what its click stored and puts it back, which goes
-    // wrong (a state not marked as storing, another page's key wiped) when a page
-    // next to it is doing the same.
-    await mapPool(routes, config.politeness.concurrency, async (route) => {
-      const url = resolveUrl(baseUrl, loadPath(route));
-      const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
-        quiet.push({ route: route.url, ...q });
-      const own = await newDiscoveryContext();
-      try {
-        route.states = await discoverStates(own, url, route, config, log, onQuiet).catch((e) => {
-          // One page that won't load costs that page its states, not the whole run.
-          log(`  ! ${route.url}: states not discovered — ${(e as Error).message.split("\n")[0]}`);
-          return [defaultState()];
-        });
-      } finally {
-        await own.close().catch(() => {});
-      }
-    });
-
-    const mobileDevices = config.devices.filter((d) => d.mobile);
-    if (config.discovery.mobileStates && mobileDevices.length && interactions.auto) {
-      const probeDevice = mobileDevices[0];
-      log(`probing mobile-only states (${probeDevice.name} viewport)…`);
-      const names = mobileDevices.map((d) => d.name);
-      const desktopNames = config.devices.filter((d) => !d.mobile).map((d) => d.name);
-      await mapPool(routes, config.politeness.concurrency, async (route) => {
-        const url = resolveUrl(baseUrl, loadPath(route));
-        const mobileContext = await newDiscoveryContext(probeDevice);
+    // Links that only exist while a state is open, by the page they'd be visited at.
+    const origin = new URL(baseUrl).origin;
+    const { hashRoutes, maxDepth, maxPages, include, exclude } = config.scope;
+    const revealed = new Map<string, { url: string; from: string; depth: number }>();
+    const noteLinks = (route: RouteNode, hrefs: string[]) => {
+      if (route.depth >= maxDepth) return;
+      for (const href of hrefs) {
         try {
-          if (desktopNames.length) {
-            const hidden = await hiddenTriggers(mobileContext, url, route.states, config);
-            for (const state of hidden) state.devices = [...desktopNames];
-          }
-          const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
-            quiet.push({ route: route.url, device: probeDevice.name, ...q });
-          const mobileStates = await discoverStates(
-            mobileContext,
-            url,
-            route,
-            config,
-            log,
-            onQuiet,
+          const u = new URL(href);
+          if (u.origin !== origin) continue;
+          const canon = canonicalPath(u, hashRoutes);
+          if (revealed.has(canon) || !inScope(scopePath(u, hashRoutes), include, exclude)) continue;
+          u.hash = hashPart(u, hashRoutes);
+          revealed.set(canon, { url: u.href, from: route.url, depth: route.depth + 1 });
+        } catch {
+          /* not a URL */
+        }
+      }
+    };
+
+    const probeStates = async (batch: RouteNode[]): Promise<void> => {
+      // State discovery is per-route independent — run it under the politeness pool.
+      // Each route gets a context of its own: pages of one context share local
+      // storage, and a probe notes what its click stored and puts it back, which goes
+      // wrong (a state not marked as storing, another page's key wiped) when a page
+      // next to it is doing the same.
+      await mapPool(batch, config.politeness.concurrency, async (route) => {
+        const url = resolveUrl(baseUrl, loadPath(route));
+        const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
+          quiet.push({ route: route.url, ...q });
+        const own = await newDiscoveryContext();
+        try {
+          route.states = await discoverStates(own, url, route, config, log, onQuiet, (hrefs) =>
+            noteLinks(route, hrefs),
           ).catch((e) => {
-            log(
-              `  ! ${route.url}: mobile states not discovered — ${(e as Error).message.split("\n")[0]}`,
-            );
-            return [];
+            // One page that won't load costs that page its states, not the whole run.
+            log(`  ! ${route.url}: states not discovered — ${(e as Error).message.split("\n")[0]}`);
+            return [defaultState()];
           });
-          mergeMobileStates(route, mobileStates, names);
         } finally {
-          await mobileContext.close().catch(() => {});
+          await own.close().catch(() => {});
         }
       });
+
+      const mobileDevices = config.devices.filter((d) => d.mobile);
+      if (config.discovery.mobileStates && mobileDevices.length && interactions.auto) {
+        const probeDevice = mobileDevices[0];
+        log(`probing mobile-only states (${probeDevice.name} viewport)…`);
+        const names = mobileDevices.map((d) => d.name);
+        const desktopNames = config.devices.filter((d) => !d.mobile).map((d) => d.name);
+        await mapPool(batch, config.politeness.concurrency, async (route) => {
+          const url = resolveUrl(baseUrl, loadPath(route));
+          const mobileContext = await newDiscoveryContext(probeDevice);
+          try {
+            if (desktopNames.length) {
+              const hidden = await hiddenTriggers(mobileContext, url, route.states, config);
+              for (const state of hidden) state.devices = [...desktopNames];
+            }
+            const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
+              quiet.push({ route: route.url, device: probeDevice.name, ...q });
+            const mobileStates = await discoverStates(
+              mobileContext,
+              url,
+              route,
+              config,
+              log,
+              onQuiet,
+              (hrefs) => noteLinks(route, hrefs),
+            ).catch((e) => {
+              log(
+                `  ! ${route.url}: mobile states not discovered — ${(e as Error).message.split("\n")[0]}`,
+              );
+              return [];
+            });
+            mergeMobileStates(route, mobileStates, names);
+          } finally {
+            await mobileContext.close().catch(() => {});
+          }
+        });
+      }
+    };
+
+    // A page can keep its links folded away: a sidebar whose groups render their
+    // links only once clicked open. Opening those is state discovery's work, so the
+    // pages behind them turn up here, and are then mapped like any other, until a
+    // round finds nothing new.
+    let batch = routes;
+    while (batch.length) {
+      await probeStates(batch);
+      if (opts.limit?.only || routes.length >= maxPages) break;
+      const have = new Set(routes.map((r) => r.url));
+      const unseen = [...revealed].filter(([canon]) => !have.has(canon)).map(([, link]) => link);
+      revealed.clear();
+      if (!unseen.length) break;
+      log(`following ${unseen.length} link(s) that only showed with something opened…`);
+      const again = await newDiscoveryContext();
+      try {
+        batch = await discoverRoutes(again, config, baseUrl, log, {
+          ...opts.limit,
+          revealed: unseen,
+          have: routes,
+        });
+      } finally {
+        await again.close().catch(() => {});
+      }
+      routes.push(...batch);
+      if (batch.length) log(`found ${batch.length} more route(s); discovering their UI states…`);
     }
 
     if (interactions.siteWideOnce) {

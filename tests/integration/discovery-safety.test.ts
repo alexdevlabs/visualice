@@ -110,6 +110,54 @@ describe("discovery", () => {
     expect(other.requests.filter((r) => r.startsWith("POST"))).toEqual([]);
   }, 60_000);
 
+  // A sidebar whose groups render their links only once clicked open.
+  const nav = `<nav>
+      <a href="/">Home</a>
+      <button id="fin" aria-expanded="false" aria-controls="fin-links">Finance</button>
+      <div id="fin-links"></div>
+    </nav>
+    <script>
+      document.getElementById("fin").onclick = (e) => {
+        const open = e.currentTarget.getAttribute("aria-expanded") === "true";
+        e.currentTarget.setAttribute("aria-expanded", String(!open));
+        document.getElementById("fin-links").innerHTML = open
+          ? ""
+          : '<a href="/payments">Payments</a><a href="/credit-notes">Credit notes</a><a href="/login">Sign in</a>';
+      };
+    </script>`;
+  const folded = () =>
+    site({
+      "/": `<h1>Dashboard</h1>${nav}`,
+      "/payments": `<h1>Payments</h1>${nav}<a href="/payments/42">Payment 42</a>`,
+      "/payments/42": `<h1>Payment 42</h1>${nav}`,
+      "/credit-notes": `<h1>Credit notes</h1>${nav}`,
+      "/login": `<h1>Sign in</h1>`,
+    });
+
+  it("finds the pages behind a menu group that renders its links when opened", async () => {
+    const s = await folded();
+    const found = await discover(s.url, { scope: { exclude: ["/login**"] } });
+    expect(found.routes.map((r) => r.url).sort()).toEqual([
+      "/",
+      "/credit-notes",
+      "/payments",
+      "/payments/42",
+    ]);
+    const payments = found.routes.find((r) => r.url === "/payments")!;
+    expect(payments).toMatchObject({ discoveredFrom: "/", depth: 1 });
+    // Each page is loaded for mapping once, not again by a later round.
+    expect(found.routes.every((r) => r.states.length >= 1)).toBe(true);
+    expect(s.requests).not.toContain("GET /login");
+  }, 120_000);
+
+  it("keeps to the page limit and the depth when following revealed links", async () => {
+    const s = await folded();
+    const capped = await discover(s.url, { scope: { maxPages: 2 } });
+    expect(capped.routes).toHaveLength(2);
+    const shallow = await discover(s.url, { scope: { maxDepth: 0 } });
+    expect(shallow.routes.map((r) => r.url)).toEqual(["/"]);
+  }, 120_000);
+
   it("probes each of several buttons with one name, and a name inside another's", async () => {
     const s = await site({
       "/": `<h1>Cards</h1>
