@@ -114,6 +114,7 @@
           "maxCandidates": 40,
           "clickTimeoutMs": 4000,
           "settleMs": 250,
+          "patienceMs": 1500,
           "nestDepth": 1,
           "siteWideOnce": true,
           "denyLabels": [
@@ -172,6 +173,7 @@
             "maxCandidates": 40,
             "clickTimeoutMs": 4000,
             "settleMs": 250,
+            "patienceMs": 1500,
             "nestDepth": 1,
             "siteWideOnce": true,
             "denyLabels": [
@@ -222,6 +224,13 @@
             "settleMs": {
               "default": 250,
               "description": "Settle delay after a probe before diffing the DOM.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "patienceMs": {
+              "default": 1500,
+              "description": "How long a probe keeps looking for what a click opened while the page is still busy after `settleMs` (requests the click started still loading, the DOM still changing). A slow server or a dev build can take longer than `settleMs` to show a dialog. 0 looks once, after `settleMs`.",
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991

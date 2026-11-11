@@ -1,6 +1,6 @@
 import type { Page, Response } from "playwright";
 import type { RecipeStep } from "../shared/types";
-import { locatorFor } from "../shared/selectors";
+import { locatorFor, visibleMatch } from "../shared/selectors";
 import { idOfSelector, isGeneratedId, namesGeneratedId } from "./generated-ids";
 
 export function resolveUrl(base: string, u: string): string {
@@ -121,7 +121,7 @@ async function waitForIdOrOpened(
     return;
   }
   const wait = (ms: number | undefined) =>
-    page.locator(selector).first().waitFor({ state: "visible", timeout: ms });
+    visibleMatch(page, selector).waitFor({ state: "visible", timeout: ms });
   // No timeout of its own: the page's default applies to what's left.
   const limit = timeout;
   const grace = Math.min(ID_GRACE_MS, limit ?? ID_GRACE_MS);
@@ -133,6 +133,21 @@ async function waitForIdOrOpened(
     if (limit !== undefined && limit <= grace) throw e;
   }
   await wait(limit === undefined ? undefined : limit - grace);
+}
+
+/**
+ * A `waitFor` step on a selector. "Visible" holds once any match is visible;
+ * the other states keep their first-match meaning.
+ */
+function waitStep(
+  page: Page,
+  selector: string,
+  state: "visible" | "hidden" | "attached" | "detached" | undefined,
+  timeout: number | undefined,
+): Promise<void> {
+  const s = state ?? "visible";
+  const loc = s === "visible" ? visibleMatch(page, selector) : page.locator(selector).first();
+  return loc.waitFor({ state: s, timeout });
 }
 
 /** Replay an ordered list of interaction steps on a page. */
@@ -186,16 +201,8 @@ export async function applyRecipe(page: Page, steps: RecipeStep[]): Promise<void
           // Recorded before generated ids were recognised: the id it names most
           // likely differs on this load. The step before it already did the work,
           // so give the element a moment and carry on instead of failing.
-          await page
-            .locator(step.selector)
-            .first()
-            .waitFor({ state: step.state ?? "visible", timeout: GENERATED_ID_WAIT_MS })
-            .catch(() => {});
-        } else if (step.selector)
-          await page
-            .locator(step.selector)
-            .first()
-            .waitFor({ state: step.state ?? "visible", timeout: step.timeoutMs });
+          await waitStep(page, step.selector, step.state, GENERATED_ID_WAIT_MS).catch(() => {});
+        } else if (step.selector) await waitStep(page, step.selector, step.state, step.timeoutMs);
         else if (step.url) await page.waitForURL(step.url, { timeout: step.timeoutMs });
         else if (step.timeoutMs) await page.waitForTimeout(step.timeoutMs);
         before = undefined;

@@ -4,6 +4,7 @@ import type { Config } from "../shared/config";
 import type {
   Manifest,
   InputManifest,
+  QuietTrigger,
   RouteNode,
   SourceInfo,
   StateNode,
@@ -91,6 +92,8 @@ export interface CapturePipelineOptions {
   source?: SourceInfo | null;
   /** The config file the run was loaded from (`--config`), for the source record's hash. */
   configFile?: string;
+  /** What this run's discovery clicked that showed no change, for the report. */
+  quiet?: QuietTrigger[];
   log?: (msg: string) => void;
 }
 
@@ -381,6 +384,7 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
     );
   }
 
+  if (result.manifest.stats && opts.quiet?.length) result.manifest.stats.quiet = opts.quiet;
   if (result.manifest.stats && wanted.length) {
     result.manifest.stats.wanted = wanted;
     log(`${wanted.length} wanted state(s) still need authoring (see routes file / report)`);
@@ -506,7 +510,7 @@ async function crawlRun(
     else log("nothing to resume — starting a new run");
   }
 
-  const { inputManifest, intent, storageState } = await crawlModel(opts, outRoot);
+  const { inputManifest, intent, storageState, quiet } = await crawlModel(opts, outRoot);
   const source = (await readProjectSource(config, baseUrl, opts.configFile)) ?? null;
   const result = await capturePipeline({
     config,
@@ -520,6 +524,7 @@ async function crawlRun(
     only: opts.only,
     configFile: opts.configFile,
     source,
+    quiet,
     log,
   });
   // The routes file now says which commit the catalogue shows, for `changes`. A rerun
@@ -608,7 +613,12 @@ export async function planCrawl(opts: CrawlPipelineOptions): Promise<CrawlPlan> 
 async function crawlModel(
   opts: CrawlPipelineOptions,
   outRoot: string,
-): Promise<{ inputManifest: InputManifest; intent: RoutesIntent; storageState?: string }> {
+): Promise<{
+  inputManifest: InputManifest;
+  intent: RoutesIntent;
+  storageState?: string;
+  quiet?: QuietTrigger[];
+}> {
   const { config, baseUrl, replay } = opts;
   const log = opts.log ?? (() => {});
   const cachePath = modelCachePath(outRoot);
@@ -620,6 +630,7 @@ async function crawlModel(
     ? withoutStates(prepared.effectiveConfig)
     : prepared.effectiveConfig;
   let inputManifest: InputManifest;
+  let quiet: QuietTrigger[] | undefined;
   if (replay && cached) {
     log(`replay: reusing cached site model → ${cachePath}`);
     inputManifest = cached;
@@ -641,7 +652,7 @@ async function crawlModel(
             : " new in the routes file"),
       );
       const remapped = new Set(changed);
-      const found = await discoverPipeline({
+      const { quiet: noted, ...found } = await discoverPipeline({
         config: applyHints(effectiveConfig, cached.hints),
         baseUrl,
         storageState,
@@ -652,6 +663,7 @@ async function crawlModel(
         },
         existing: cached,
       });
+      quiet = noted;
       keepRouteIds(found.routes, cached.routes);
       found.routes = dropMissingSeeds(found.routes, opts.only, intent, cached, log);
       inputManifest = {
@@ -661,7 +673,7 @@ async function crawlModel(
       await saveJson(cachePath, inputManifest);
     }
   } else {
-    inputManifest = await rediscover(
+    ({ model: inputManifest, quiet } = await rediscover(
       effectiveConfig,
       baseUrl,
       storageState,
@@ -669,7 +681,7 @@ async function crawlModel(
       cachePath,
       log,
       keepStates,
-    );
+    ));
     const kept = dropMissingSeeds(inputManifest.routes, opts.only, intent, cached, log);
     if (kept.length !== inputManifest.routes.length) {
       inputManifest = { ...inputManifest, routes: kept };
@@ -678,7 +690,7 @@ async function crawlModel(
   }
 
   await writeRoutesFile(config, inputManifest, intent, baseUrl, log);
-  return { inputManifest, intent, storageState };
+  return { inputManifest, intent, storageState, quiet };
 }
 
 /**
@@ -788,10 +800,11 @@ async function rediscover(
   cachePath: string,
   log: Log,
   keepStates = false,
-): Promise<InputManifest> {
+): Promise<{ model: InputManifest; quiet?: QuietTrigger[] }> {
   // Hints cached from earlier runs steer discovery too (skipTriggers), so read
   // them before probing rather than only on the way into capture.
-  const discovered = await discoverPipeline({
+  // What it noticed about this run only stays out of the cached model.
+  const { quiet, ...discovered } = await discoverPipeline({
     config: applyHints(config, cached?.hints),
     baseUrl,
     storageState,
@@ -812,7 +825,7 @@ async function rediscover(
     log(`cached site model → ${cachePath}`);
   }
   await saveJson(cachePath, model); // shots-free model, cached for reuse
-  return model;
+  return { model, quiet };
 }
 
 /**
@@ -838,7 +851,7 @@ export async function discoverOnlyPipeline(opts: {
       cachePath,
       log,
     );
-    const inputManifest = await rediscover(
+    const { model: inputManifest } = await rediscover(
       keepStates ? withoutStates(effectiveConfig) : effectiveConfig,
       baseUrl,
       storageState,

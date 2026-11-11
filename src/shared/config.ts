@@ -100,6 +100,14 @@ const InteractionsSchema = z.object({
     .nonnegative()
     .default(250)
     .describe("Settle delay after a probe before diffing the DOM."),
+  patienceMs: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(1500)
+    .describe(
+      "How long a probe keeps looking for what a click opened while the page is still busy after `settleMs` (requests the click started still loading, the DOM still changing). A slow server or a dev build can take longer than `settleMs` to show a dialog. 0 looks once, after `settleMs`.",
+    ),
   nestDepth: z
     .number()
     .int()

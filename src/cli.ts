@@ -176,6 +176,11 @@ function reportDone(runDir: string, manifest: Manifest, flags: Flags, log: Log):
         // Generated-id patterns crawls noticed, not yet in the config.
         ...(manifest.hints?.unstableIds?.length ? { unstableIds: manifest.hints.unstableIds } : {}),
         ...(stats?.accessibility ? { accessibility: stats.accessibility } : {}),
+        // Triggers that showed nothing while the page was still loading: where a slow
+        // server may have hidden a state (the full list is in the report).
+        ...(stats?.quiet?.some((q) => q.result === "busy")
+          ? { stillLoading: stats.quiet.filter((q) => q.result === "busy") }
+          : {}),
       }),
     );
   } else {

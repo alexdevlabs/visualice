@@ -85,4 +85,29 @@ describe("renderReport", () => {
       "- **Clamped:** 1 shot(s) hit the `screenshot.maxHeight` limit and were cut off",
     );
   });
+
+  it("lists what discovery clicked that showed nothing, the still-loading ones first", () => {
+    const m = makeManifest();
+    m.stats = {
+      ...m.stats!,
+      quiet: [
+        { route: "/", trigger: '"Refresh"', result: "no change" },
+        { route: "/", trigger: '"Redrive All"', result: "busy" },
+        { route: "/", trigger: "main > div | x", device: "mobile", result: "click failed" },
+      ],
+    };
+    const md = renderReport(m);
+    expect(md).toContain("## Clicked, nothing opened");
+    expect(md).toContain("**still loading** (1)");
+    const rows = md.split("\n").filter((l) => l.startsWith("| `/`"));
+    expect(rows.slice(-3)).toEqual([
+      '| `/` | "Redrive All" | **still loading** |',
+      "| `/` (mobile) | main > div \\| x | click failed |",
+      '| `/` | "Refresh" | no change |',
+    ]);
+  });
+
+  it("leaves the section out when discovery didn't run", () => {
+    expect(renderReport(makeManifest())).not.toContain("Clicked, nothing opened");
+  });
 });

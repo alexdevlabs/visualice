@@ -1,5 +1,6 @@
 import type { BrowserContext, Page } from "playwright";
 import type { Config } from "../shared/config";
+import { visibleMatch } from "../shared/selectors";
 
 type Stabilize = Config["stabilize"];
 
@@ -115,7 +116,7 @@ export async function waitForStableSelectors(
       const remaining = deadline - Date.now();
       if (remaining <= 0) return selector;
       try {
-        await page.locator(selector).first().waitFor({ state: "visible", timeout: remaining });
+        await visibleMatch(page, selector).waitFor({ state: "visible", timeout: remaining });
         return null;
       } catch {
         return selector;

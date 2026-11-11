@@ -1,7 +1,14 @@
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext, Page, Request } from "playwright";
 import type { Config } from "../shared/config";
-import type { RouteNode, StateNode, StateKind, RecipeStep, Target } from "../shared/types";
-import { locatorFor, testIdAttribute } from "../shared/selectors";
+import type {
+  QuietTrigger,
+  RouteNode,
+  StateNode,
+  StateKind,
+  RecipeStep,
+  Target,
+} from "../shared/types";
+import { describeTarget, locatorFor, testIdAttribute } from "../shared/selectors";
 import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe, gotoRoute } from "./recipe";
@@ -352,6 +359,75 @@ interface ProbeContext {
   capLogged: boolean;
   stats: ProbeStats;
   log: (msg: string) => void;
+  /** Told about each trigger that showed no change. */
+  onQuiet?: (q: Omit<QuietTrigger, "route" | "device">) => void;
+}
+
+/** How often a probe looks again while the page is still busy. */
+const POLL_MS = 100;
+/** The DOM changed this recently: the page is still rendering what a click did. */
+const RECENT_MUTATION_MS = 150;
+
+/**
+ * Requests a page has in flight, each with when it started. A probe asks only about
+ * those its click started, so a page that polls, or a request that never ends (an
+ * event stream, a long poll), doesn't make every probe wait.
+ */
+const inflight = new WeakMap<Page, Map<Request, number>>();
+function trackRequests(page: Page): Map<Request, number> {
+  let open = inflight.get(page);
+  if (!open) {
+    const map = new Map<Request, number>();
+    page.on("request", (r) => {
+      const type = r.resourceType();
+      if (type !== "websocket" && type !== "eventsource") map.set(r, Date.now());
+    });
+    const done = (r: Request) => void map.delete(r);
+    page.on("requestfinished", done);
+    page.on("requestfailed", done);
+    inflight.set(page, map);
+    open = map;
+  }
+  return open;
+}
+
+/** Start noting when the document last changed (once per document). */
+async function watchMutations(page: Page): Promise<void> {
+  await page
+    .evaluate(() => {
+      const w = window as unknown as { __vcMutatedAt?: number };
+      if (w.__vcMutatedAt !== undefined) return;
+      w.__vcMutatedAt = performance.now();
+      new MutationObserver(() => {
+        w.__vcMutatedAt = performance.now();
+      }).observe(document, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    })
+    .catch(() => {});
+}
+
+/**
+ * Is the page still working on what a click did: a request the click started still
+ * loading, or the DOM changed a moment ago? Then a probe that saw no change yet
+ * looks again, instead of calling the trigger dead.
+ */
+async function stillBusy(
+  page: Page,
+  requests: Map<Request, number>,
+  since: number,
+): Promise<boolean> {
+  for (const started of requests.values()) if (started >= since) return true;
+  const quietFor = await page
+    .evaluate(() => {
+      const at = (window as unknown as { __vcMutatedAt?: number }).__vcMutatedAt;
+      return at === undefined ? Infinity : performance.now() - at;
+    })
+    .catch(() => Infinity);
+  return quietFor < RECENT_MUTATION_MS;
 }
 
 /**
@@ -437,6 +513,8 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     appeared: string[];
     /** The probe wrote to local or session storage. */
     stored: boolean;
+    /** Nothing showed, and the page was still busy when the probe stopped looking. */
+    busy: boolean;
   }
 
   const attempt = async (cand: RawCandidate, action: "click" | "hover"): Promise<ProbeAttempt> => {
@@ -444,21 +522,42 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     const linesBefore = await readLines(page);
     const storeBefore = await readStorage(page);
     const loc = locatorFor(page, cand.target);
+    const requests = trackRequests(page);
+    await watchMutations(page);
+    const since = Date.now();
     if (action === "hover") await loc.hover({ timeout: interactions.clickTimeoutMs });
     else await loc.click({ timeout: interactions.clickTimeoutMs });
+    const clicked = Date.now();
     await page.waitForTimeout(interactions.settleMs);
-    const after = await takeSnapshot(page);
+    let after = await takeSnapshot(page);
     // A new document is a navigation — a route, which route discovery owns — however
     // much the page it landed on happens to have open.
-    const navigated = after.doc !== before.doc;
-    const kind = navigated ? null : classifyChange(before, after, cand, action);
+    let navigated = after.doc !== before.doc;
+    let kind = navigated ? null : classifyChange(before, after, cand, action);
+    // Nothing yet, but the page is still loading or rendering what the click did (a
+    // dialog's code, its data, a slow dev server): keep looking for a while. A
+    // trigger that does nothing leaves the page idle and costs no more than before.
+    let busy = false;
+    while (!kind && !navigated) {
+      busy = await stillBusy(page, requests, since);
+      if (!busy || Date.now() - clicked >= interactions.patienceMs) break;
+      await page.waitForTimeout(POLL_MS);
+      after = await takeSnapshot(page);
+      navigated = after.doc !== before.doc;
+      kind = navigated ? null : classifyChange(before, after, cand, action);
+    }
+    if (kind || navigated) busy = false;
     const appeared = kind ? addedLines(linesBefore, await readLines(page)) : [];
     // What a trigger stores (a panel remembered open, an item added to a list)
     // outlives the page: it would be showing in every later probe and every shot
     // captured after it. Note it, then undo it.
     const stored = !navigated && storageChanged(storeBefore, await readStorage(page));
     if (stored) await restoreStorage(page, storeBefore);
-    return { action, before, after, kind, appeared, stored };
+    return { action, before, after, kind, appeared, stored, busy };
+  };
+  const quietLabel = (cand: RawCandidate) => {
+    const what = cand.label ? `"${cand.label}"` : describeTarget(cand.target);
+    return nested ? `${parent.label} → ${what}` : what;
   };
 
   for (const cand of candidates) {
@@ -471,6 +570,7 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
       }
       break;
     }
+    let probed = false;
     try {
       let probe = await attempt(cand, cand.probe ?? "click");
       // A menu-hinted trigger whose click changed nothing may be a hover dropdown.
@@ -478,8 +578,12 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
         if (!(await enterParent())) break;
         probe = await attempt(cand, "hover");
       }
+      probed = true;
 
       const { kind, before, after, action, appeared, stored } = probe;
+      if (!kind && after.doc === before.doc) {
+        ctx.onQuiet?.({ trigger: quietLabel(cand), result: probe.busy ? "busy" : "no change" });
+      }
       if (kind && !seenSig.has(after.sig)) {
         seenSig.add(after.sig);
 
@@ -552,6 +656,7 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
       if (!(await enterParent())) break;
     } catch {
       /* candidate not clickable / flaky — put the page back and move on */
+      if (!probed) ctx.onQuiet?.({ trigger: quietLabel(cand), result: "click failed" });
       await enterParent().catch(() => false);
     }
   }
@@ -574,6 +679,7 @@ export async function discoverStates(
   route: RouteNode,
   config: Config,
   log: (msg: string) => void,
+  onQuiet?: ProbeContext["onQuiet"],
 ): Promise<StateNode[]> {
   const states: StateNode[] = [defaultState()];
   const interactions = config.discovery.interactions;
@@ -603,6 +709,7 @@ export async function discoverStates(
       capLogged: false,
       stats: { navigations: 0, reused: 0 },
       log,
+      onQuiet,
     };
 
     let frontier = [states[0]];

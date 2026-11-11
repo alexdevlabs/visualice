@@ -1,7 +1,14 @@
 import { chromium } from "playwright";
 import type { BrowserContext } from "playwright";
 import type { Config } from "../shared/config";
-import type { Device, InputManifest, RouteNode, StateNode, Target } from "../shared/types";
+import type {
+  Device,
+  InputManifest,
+  QuietTrigger,
+  RouteNode,
+  StateNode,
+  Target,
+} from "../shared/types";
 import { applyContextInit } from "./stabilize";
 import { httpContextOptions } from "./context-options";
 import { discoverRoutes, type RouteDiscoveryLimit } from "./discover-routes";
@@ -138,7 +145,13 @@ export function mergeMobileStates(
  * mobile-only states are found too. Capture later replays every state across the
  * devices it applies to.
  */
-export async function discoverPipeline(opts: DiscoverOptions): Promise<InputManifest> {
+/**
+ * The site model discovery found, and what it noticed along the way that belongs
+ * to this run only (not cached): the triggers it clicked that showed no change.
+ */
+export type DiscoveryResult = InputManifest & { quiet?: QuietTrigger[] };
+
+export async function discoverPipeline(opts: DiscoverOptions): Promise<DiscoveryResult> {
   const { config, baseUrl } = opts;
   const log = opts.log ?? (() => {});
   const interactions = config.discovery.interactions;
@@ -161,6 +174,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
     return context;
   };
 
+  const quiet: QuietTrigger[] = [];
   try {
     const context = await newDiscoveryContext();
 
@@ -185,7 +199,9 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
     // (each call opens its own page on the shared context).
     await mapPool(routes, config.politeness.concurrency, async (route) => {
       const url = resolveUrl(baseUrl, route.finalUrl ?? route.url);
-      route.states = await discoverStates(context, url, route, config, log).catch((e) => {
+      const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
+        quiet.push({ route: route.url, ...q });
+      route.states = await discoverStates(context, url, route, config, log, onQuiet).catch((e) => {
         // One page that won't load costs that page its states, not the whole run.
         log(`  ! ${route.url}: states not discovered — ${(e as Error).message.split("\n")[0]}`);
         return [defaultState()];
@@ -206,14 +222,21 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
           const hidden = await hiddenTriggers(mobileContext, url, route.states, config);
           for (const state of hidden) state.devices = [...desktopNames];
         }
-        const mobileStates = await discoverStates(mobileContext, url, route, config, log).catch(
-          (e) => {
-            log(
-              `  ! ${route.url}: mobile states not discovered — ${(e as Error).message.split("\n")[0]}`,
-            );
-            return [];
-          },
-        );
+        const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
+          quiet.push({ route: route.url, device: probeDevice.name, ...q });
+        const mobileStates = await discoverStates(
+          mobileContext,
+          url,
+          route,
+          config,
+          log,
+          onQuiet,
+        ).catch((e) => {
+          log(
+            `  ! ${route.url}: mobile states not discovered — ${(e as Error).message.split("\n")[0]}`,
+          );
+          return [];
+        });
         mergeMobileStates(route, mobileStates, names);
       });
       await mobileContext.close();
@@ -235,13 +258,34 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<InputMani
         `ids generated at render time, not used in recipes: ${learned.map((l) => `${l.pattern} (e.g. ${l.example})`).join(", ")}`,
       );
     }
+    const busy = quiet.filter((q) => q.result === "busy").length;
+    if (busy) {
+      log(
+        `${busy} trigger(s) were still loading when discovery stopped looking — see "Clicked, nothing opened" in the report`,
+      );
+    }
     return {
       site: { title: routes[0]?.title },
       routes,
       // Carried in the cached model so later runs avoid them from the start.
       ...(learned.length ? { hints: { unstableIds: learned.map((l) => l.pattern) } } : {}),
+      ...(quiet.length ? { quiet: sortQuiet(quiet, routes) } : {}),
     };
   } finally {
     await browser.close();
   }
+}
+
+/** In the order the pages were mapped, the desktop pass before the mobile one. */
+function sortQuiet(quiet: QuietTrigger[], routes: RouteNode[]): QuietTrigger[] {
+  const order = new Map(routes.map((r, i) => [r.url, i]));
+  return quiet
+    .map((q, i) => ({ q, i }))
+    .sort(
+      (a, b) =>
+        (order.get(a.q.route) ?? 0) - (order.get(b.q.route) ?? 0) ||
+        Number(!!a.q.device) - Number(!!b.q.device) ||
+        a.i - b.i,
+    )
+    .map(({ q }) => q);
 }

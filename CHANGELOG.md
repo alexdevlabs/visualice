@@ -63,6 +63,19 @@
     caught) goes ahead once the click before it has opened something, instead of failing
     the shot.
 
+- A recipe step that waits for a selector to show now passes once any match is visible,
+  not only the first. A page that keeps a hidden tab panel or a closed drawer mounted
+  (its rows are in the document, ahead of the ones on screen) no longer times the step
+  out while what it waits for is showing.
+- Discovery no longer misses a dialog or menu that is slow to open. When a click leaves
+  the page busy (a request it started still loading, the DOM still changing), the probe
+  keeps looking, up to the new `discovery.interactions.patienceMs` (1500 ms), instead of
+  calling the trigger dead after 250 ms. A trigger that does nothing costs no more than
+  before.
+- The report lists the triggers discovery clicked that showed nothing, under **Clicked,
+  nothing opened**. The ones still loading when it gave up (`stillLoading` in `--json`)
+  are where a slow page may hide a state.
+
 ## 0.1.1
 
 ### Fixes

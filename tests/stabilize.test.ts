@@ -13,18 +13,20 @@ function fakePage(behaviour: Record<string, number | "never">) {
   const t0 = Date.now();
   const page = {
     locator: (selector: string) => ({
-      first: () => ({
-        waitFor: ({ timeout }: { timeout: number }) => {
-          startedAt[selector] = Date.now() - t0;
-          timeouts[selector] = timeout;
-          const delay = behaviour[selector] ?? 0;
-          if (delay === "never") {
-            return new Promise((_, reject) =>
-              setTimeout(() => reject(new Error(`timeout ${selector}`)), timeout),
-            );
-          }
-          return new Promise((resolve) => setTimeout(resolve, delay));
-        },
+      filter: () => ({
+        first: () => ({
+          waitFor: ({ timeout }: { timeout: number }) => {
+            startedAt[selector] = Date.now() - t0;
+            timeouts[selector] = timeout;
+            const delay = behaviour[selector] ?? 0;
+            if (delay === "never") {
+              return new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`timeout ${selector}`)), timeout),
+              );
+            }
+            return new Promise((resolve) => setTimeout(resolve, delay));
+          },
+        }),
       }),
     }),
   } as unknown as Page;

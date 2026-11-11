@@ -107,7 +107,7 @@ async function holdsNow(
   const all = page.locator(step.selector);
   switch (step.state ?? "visible") {
     case "visible":
-      return all.first().isVisible();
+      return (await all.filter({ visible: true }).count()) > 0;
     case "hidden":
       return all.first().isHidden();
     case "attached":

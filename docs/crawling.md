@@ -77,6 +77,21 @@ from a manifest you authored yourself and skip discovery entirely:
 visualice capture --manifest=path/to/crawl-map.json --target=https://your.site
 ```
 
+### Slow pages
+
+A probe clicks a trigger, waits `discovery.interactions.settleMs` (250 ms) and looks at
+what opened. A dialog that has to load first (its code, its data, a busy dev server) can
+take longer than that. If the page is still busy then (a request the click started is
+still loading, or the DOM is still changing), the probe keeps looking, up to
+`discovery.interactions.patienceMs` (1500 ms) after the click. A trigger that does
+nothing leaves the page idle, so it costs no more than before.
+
+Every trigger that showed nothing is listed under **Clicked, nothing opened** in
+`crawl-report.md`. Most do nothing visible by design (sorting, refresh, pagination). The
+ones marked **still loading** were still busy when the probe gave up: a slow page may be
+hiding a state there (`stillLoading` with `--json`). Raise `patienceMs`, or author the
+state.
+
 ### Generated ids
 
 Many frameworks give elements ids when they render: React's `useId()` (`_r_6_`), and

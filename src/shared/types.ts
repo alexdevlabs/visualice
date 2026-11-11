@@ -152,6 +152,20 @@ export interface WantedState {
   description?: string;
 }
 
+/**
+ * A trigger state discovery clicked that showed nothing it could record. Most do
+ * nothing visible by design (sort, refresh, pagination); `busy` ones were still
+ * loading when discovery stopped looking, which is where a slow page hides states.
+ */
+export interface QuietTrigger {
+  route: string;
+  /** What the trigger says, or how it was found. */
+  trigger: string;
+  /** The mobile pass, when it was that pass's probe. */
+  device?: string;
+  result: "no change" | "busy" | "click failed";
+}
+
 export interface StateNode {
   id: string;
   kind: StateKind;
@@ -245,6 +259,8 @@ export interface Manifest {
     failures: CaptureFailure[];
     /** Routes-file requests still unmet after this run (the Explore-mode queue). */
     wanted?: WantedState[];
+    /** Triggers this run's discovery clicked that showed no change. */
+    quiet?: QuietTrigger[];
     /** Accessibility violations by rule, when `checks.accessibility` is on. */
     accessibility?: {
       id: string;

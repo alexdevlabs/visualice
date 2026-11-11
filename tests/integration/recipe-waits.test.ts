@@ -90,3 +90,54 @@ describe("waiting for what a click opened, by id", () => {
     await p.close();
   });
 });
+
+describe("waiting for a selector to show", () => {
+  // A details dialog whose tabs both stay mounted: the inactive panel is hidden but
+  // its table is in the document, ahead of the one the step means.
+  const TABS = `
+    <div role="dialog">
+      <button role="tab" onclick="
+        document.getElementById('details').hidden = true;
+        const csv = document.getElementById('csv');
+        csv.hidden = false;
+        setTimeout(() => {
+          csv.innerHTML = '<table><tbody><tr><td>row 1</td></tr></tbody></table>';
+        }, 400);">CSV Preview</button>
+      <div role="tabpanel" id="details">
+        <table><tbody><tr><td>payment 1</td></tr></tbody></table>
+      </div>
+      <div role="tabpanel" id="csv" hidden></div>
+    </div>`;
+
+  it("passes once any match is visible, not only the first", async () => {
+    const p = await load(TABS);
+    await applyRecipe(p, [
+      { action: "click", target: { role: "tab", name: "CSV Preview" } },
+      {
+        action: "waitFor",
+        selector: "[role=dialog] [role=tabpanel] table tbody tr",
+        state: "visible",
+        timeoutMs: 3000,
+      },
+    ]);
+    expect(await p.getByText("row 1").isVisible()).toBe(true);
+    await p.close();
+  });
+
+  it("still waits for content that hasn't come yet", async () => {
+    const p = await load(TABS);
+    await p.getByRole("tab", { name: "CSV Preview" }).click();
+    // Only the hidden panel has rows at this point, so the step must keep waiting.
+    await expect(
+      applyRecipe(p, [
+        {
+          action: "waitFor",
+          selector: "[role=dialog] [role=tabpanel] table tbody tr",
+          state: "visible",
+          timeoutMs: 200,
+        },
+      ]),
+    ).rejects.toThrow(/Timeout/);
+    await p.close();
+  });
+});

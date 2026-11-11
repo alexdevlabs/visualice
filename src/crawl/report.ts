@@ -132,5 +132,38 @@ export function renderReport(m: Manifest): string {
     }
     lines.push("");
   }
+
+  const quiet = m.stats?.quiet ?? [];
+  if (quiet.length) {
+    const busy = quiet.filter((q) => q.result === "busy");
+    const failed = quiet.filter((q) => q.result === "click failed");
+    lines.push(`## Clicked, nothing opened`);
+    lines.push("");
+    lines.push(
+      `Discovery clicked ${quiet.length} trigger(s) that showed nothing it could record. Most`,
+      `do nothing visible by design (sorting, refresh, pagination). Worth a look:`,
+    );
+    lines.push("");
+    lines.push(
+      `- **still loading** (${busy.length}): the page was still busy when discovery stopped`,
+      `  looking, so a slow server may have hidden a state there. Raise`,
+      `  \`discovery.interactions.patienceMs\`, or author the state (Explore mode).`,
+      `- **click failed** (${failed.length}): covered, disabled or gone before the click landed.`,
+    );
+    lines.push("");
+    lines.push(`| Path | Trigger | Result |`);
+    lines.push(`|---|---|---|`);
+    const rank = { busy: 0, "click failed": 1, "no change": 2 } as const;
+    const label = {
+      busy: "**still loading**",
+      "click failed": "click failed",
+      "no change": "no change",
+    };
+    for (const q of [...quiet].sort((a, b) => rank[a.result] - rank[b.result])) {
+      const where = q.device ? `\`${q.route}\` (${q.device})` : `\`${q.route}\``;
+      lines.push(`| ${where} | ${q.trigger.replace(/\|/g, "\\|")} | ${label[q.result]} |`);
+    }
+    lines.push("");
+  }
   return lines.join("\n");
 }

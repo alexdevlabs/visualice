@@ -128,6 +128,12 @@ password-protected staging: [`references/auth.md`](references/auth.md).
   usually means its recipe needs an Explore-mode tweak.
 - Failed captures were already retried (`politeness.retries`); don't blindly re-run
   the whole crawl for one flaky shot — fix or mask the cause.
+- **Triggers still loading.** `stillLoading` in `--json` (and **still loading** rows under
+  `## Clicked, nothing opened` in the report) are triggers discovery clicked that showed
+  nothing while the page was still busy: a slow server, often a dev build, may have
+  hidden a dialog or menu there. Check each with `visualice probe`, and author the
+  states that are real (explore-mode.md) so later runs don't depend on probe timing.
+  For a slow site, `discovery.interactions.patienceMs` gives every probe longer.
 - **Generated ids.** Many frameworks give elements ids at render time (React's
   `useId`, `mat-dialog-0`, `ember812`), which differ on the next load, so a recipe must
   never rely on one. visualice knows the common ones and notices others by loading a
