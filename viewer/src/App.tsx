@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ViewerData } from "./types";
-import { computeLayout, routePath, type ViewMode } from "./layout";
+import { computeLayout, PAGE_SIZE, routePath, type ViewMode } from "./layout";
 import { Canvas, type CanvasHandle } from "./Canvas";
 import { DL, Inspector } from "./Inspector";
 import { ShotActions } from "./ShotActions";
@@ -45,8 +45,6 @@ import {
   SIDEBAR,
 } from "./ui";
 
-/** Past this many tiles the canvas is capped, with a control to lift it. */
-const DEFAULT_LIMIT = 2500;
 /** The shortest time the boot loader shows: one full pass of its crawl over the pages (2 s in the SVG). */
 const MIN_LOADER_MS = 2000;
 
@@ -110,7 +108,8 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
   const [site, setSite] = useState<string | null>(initial.site ?? null);
   const [run, setRun] = useState<string | null>(initial.run ?? null);
   const [failedOnly, setFailedOnly] = useState(false);
-  const [limit, setLimit] = useState<number | undefined>(DEFAULT_LIMIT);
+  // The canvas page, from 0.
+  const [page, setPage] = useState((initial.page ?? 1) - 1);
   const [routeId, setRouteId] = useState<string | null>(initial.route ?? null);
   const [mode, setMode] = useState<ViewMode>(initial.mode ?? "screen");
   const [full, setFull] = useState(!!initial.full);
@@ -199,13 +198,35 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
             kinds: kindFilter,
             query: deferredQuery,
             failedOnly,
-            limit,
+            pageSize: PAGE_SIZE,
+            page,
             routeId: routeId ?? undefined,
             mode,
           })
         : null,
-    [data, deviceFilter, kindFilter, deferredQuery, failedOnly, limit, routeId, mode],
+    [data, deviceFilter, kindFilter, deferredQuery, failedOnly, page, routeId, mode],
   );
+
+  // Another set of shots starts from its first page. Not the first time the run is
+  // ready: that page came from the link.
+  const pagedFor = useRef(false);
+  useEffect(() => {
+    if (!data) return;
+    if (pagedFor.current) setPage(0);
+    pagedFor.current = true;
+  }, [data, deviceFilter, kindFilter, deferredQuery, failedOnly, routeId]);
+  // The selected shot is always on the canvas: selecting one elsewhere (a link, a
+  // step past the page's last shot) turns to its page. Declared after the reset
+  // above, so the selection wins when both run.
+  const selectedPage = selectedId ? layout?.pageOf.get(selectedId) : undefined;
+  useEffect(() => {
+    if (selectedPage !== undefined) setPage(selectedPage);
+  }, [selectedPage, layout]);
+  /** Turn to another page. The selection stays behind, or it would turn the page back. */
+  const goToPage = useCallback((next: number) => {
+    setPage(next);
+    setSelectedId(null);
+  }, []);
 
   const selected = useMemo(
     () => data?.tiles.find((t) => t.id === selectedId) ?? null,
@@ -243,9 +264,10 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
       kinds: kindFilter.size ? [...kindFilter] : undefined,
       mode: mode === "screen" ? undefined : mode,
       full: full || undefined,
+      page: layout && layout.page > 0 ? layout.page + 1 : undefined,
     };
     writeUrlState(state);
-  }, [data, query, selectedId, site, run, routeId, deviceFilter, kindFilter, mode, full]);
+  }, [data, query, selectedId, site, run, routeId, deviceFilter, kindFilter, mode, full, layout]);
 
   // Full screen is about the selected shot; without one there's nothing to show.
   const isFull = full && !!selected;
@@ -272,16 +294,23 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   const stepShot = useCallback(
     (dir: -1 | 1) => {
-      if (!layout?.placed.length) return;
-      const i = layout.placed.findIndex((p) => p.tile.id === selectedId);
-      const next = layout.placed[(i + dir + layout.placed.length) % layout.placed.length];
-      setSelectedId(next.tile.id);
-      canvas.current?.focusRect({
-        minX: next.x,
-        minY: next.y,
-        maxX: next.x + next.w,
-        maxY: next.y + next.h,
-      });
+      if (!layout?.order.length) return;
+      // Across pages: past a page's last shot is the next page's first.
+      const { order } = layout;
+      const i = order.findIndex((t) => t.id === selectedId);
+      const id =
+        i < 0 ? layout.placed[0]?.tile.id : order[(i + dir + order.length) % order.length].id;
+      if (!id) return;
+      setSelectedId(id);
+      // On another page the canvas brings the shot into focus once it's laid out.
+      const next = layout.placed.find((p) => p.tile.id === id);
+      if (next)
+        canvas.current?.focusRect({
+          minX: next.x,
+          minY: next.y,
+          maxX: next.x + next.w,
+          maxY: next.y + next.h,
+        });
     },
     [layout, selectedId],
   );
@@ -328,24 +357,25 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
 
   // Full screen steps through the shots of the device on screen, in canvas order.
   const devicePlaced = useMemo(
-    () =>
-      layout && selected ? layout.placed.filter((p) => p.tile.device === selected.device) : [],
+    () => (layout && selected ? layout.order.filter((t) => t.device === selected.device) : []),
     [layout, selected],
   );
   const devicePosition = useMemo(() => {
-    const i = devicePlaced.findIndex((p) => p.tile.id === selectedId);
+    const i = devicePlaced.findIndex((t) => t.id === selectedId);
     return i >= 0 ? { index: i + 1, total: devicePlaced.length } : undefined;
   }, [devicePlaced, selectedId]);
   const stepDevice = useCallback(
     (dir: -1 | 1) => {
       if (!devicePlaced.length) return;
-      const i = devicePlaced.findIndex((p) => p.tile.id === selectedId);
-      setSelectedId(devicePlaced[(i + dir + devicePlaced.length) % devicePlaced.length].tile.id);
+      const i = devicePlaced.findIndex((t) => t.id === selectedId);
+      setSelectedId(devicePlaced[(i + dir + devicePlaced.length) % devicePlaced.length].id);
     },
     [devicePlaced, selectedId],
   );
 
   const hasSelection = !!selected;
+  const pageNow = layout?.page ?? 0;
+  const pageCount = layout?.pages ?? 1;
   // Shortcuts that work anywhere on the page. The canvas handles its own keys
   // (pan, zoom, shift+arrows) while it has focus.
   useEffect(() => {
@@ -364,6 +394,8 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
       if (e.key === "?") setShortcutsOpen((v) => !v);
       else if (e.key === "m") toggleMinimap();
       else if (e.key === "f" && hasSelection) setFull(true);
+      else if (e.key === "[" && pageNow > 0 && !isFull) goToPage(pageNow - 1);
+      else if (e.key === "]" && pageNow < pageCount - 1 && !isFull) goToPage(pageNow + 1);
       else if (e.key === "/") {
         e.preventDefault();
         setSearchOpen(true);
@@ -372,7 +404,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleMinimap, hasSelection]);
+  }, [toggleMinimap, hasSelection, pageNow, pageCount, isFull, goToPage]);
 
   if (error) {
     return (
@@ -419,7 +451,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
   const withTiles = new Set(layout.routesWithTiles);
   const groupsWithTiles = data.groups.filter((g) => withTiles.has(g.routeId));
   const failedCount = data.tiles.filter((t) => t.error).length;
-  const shown = layout.placed.length + layout.truncated;
+  const shown = layout.order.length;
   const activeRouteId = routeId;
   /** Put one route on the canvas, or all of them with `null`. The canvas refits itself. */
   const focusRoute = (id: string | null) => {
@@ -428,7 +460,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
     if (isPhone) setSheetOpen(false);
   };
 
-  const detailedIndex = detailed ? layout.placed.findIndex((p) => p.tile.id === detailed.id) : -1;
+  const detailedIndex = detailed ? layout.order.findIndex((t) => t.id === detailed.id) : -1;
 
   // ---- pieces shared by the desktop toolbar and the phone sheet
 
@@ -888,14 +920,6 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           isPhone ? "top-3 left-3" : "top-4 left-4",
         )}
       >
-        {layout.truncated > 0 && (
-          <div className={cx(TOAST, "border-line text-dim")}>
-            Showing {layout.placed.length} of {shown} shots
-            <button type="button" className={LINK} onClick={() => setLimit(undefined)}>
-              Show all
-            </button>
-          </div>
-        )}
         {!layout.placed.length && (
           <div className={cx(TOAST, "border-line text-dim")}>
             No shots match these filters.
@@ -926,6 +950,34 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
   // What's on the canvas, above it rather than on it: a title drawn on the canvas
   // pans and zooms away with the shots.
   const heading = layout.heading;
+  // Where this page's shots sit among all of them: "201–400 of 950".
+  const firstShown = layout.placed.length ? layout.order.indexOf(layout.placed[0].tile) + 1 : 0;
+  const pager = layout.pages > 1 && (
+    <div className="ml-auto flex shrink-0 items-center gap-1.5 pl-3" data-testid="pager">
+      {!isPhone && (
+        <span className="mr-1 text-[12.5px] text-dim tabular-nums">
+          {firstShown}–{firstShown + layout.placed.length - 1} of {layout.order.length} shots
+        </span>
+      )}
+      <IconButton
+        icon="left"
+        label="Previous page ([)"
+        size={28}
+        disabled={layout.page === 0}
+        onClick={() => goToPage(layout.page - 1)}
+      />
+      <span className="text-[12.5px] text-fg tabular-nums">
+        Page {layout.page + 1} of {layout.pages}
+      </span>
+      <IconButton
+        icon="right"
+        label="Next page (])"
+        size={28}
+        disabled={layout.page === layout.pages - 1}
+        onClick={() => goToPage(layout.page + 1)}
+      />
+    </div>
+  );
   const canvasHeader = (
     <div
       className={cx(
@@ -952,6 +1004,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           </span>
         </>
       )}
+      {pager}
     </div>
   );
 
@@ -1008,7 +1061,7 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           }
           position={
             detailedIndex >= 0
-              ? { index: detailedIndex + 1, total: layout.placed.length }
+              ? { index: detailedIndex + 1, total: layout.order.length }
               : undefined
           }
         />
@@ -1143,6 +1196,14 @@ export default function App({ onHome }: { onHome?: () => void } = {}) {
           <Kbd>⇧</Kbd> + <Kbd>arrows</Kbd>
         </dt>
         <dd>Step between shots</dd>
+        {layout.pages > 1 && (
+          <>
+            <dt>
+              <Kbd>[</Kbd> <Kbd>]</Kbd>
+            </dt>
+            <dd>Previous / next page</dd>
+          </>
+        )}
         <dt>
           <Kbd>F</Kbd>
         </dt>

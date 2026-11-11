@@ -28,6 +28,11 @@
   run and commit it was really taken in.
 - **Compare with another version** in the details panel shows the same shot from another
   run beside this one.
+- The canvas shows at most 200 shots at a time; a bigger run is split into pages, turned
+  with the arrows above the canvas or `[` and `]`. A page ends between two states, so a
+  state's devices stay side by side. Search, filters and the sidebar still cover every
+  page, a link to a shot opens on its page, and stepping past a page's last shot turns to
+  the next. This replaces the old cap of 2,500 shots with its **Show all** button.
 
 ### Update notice
 

@@ -51,8 +51,14 @@ export interface Layout {
   byRoute: Map<string, Bounds>;
   /** Routes with tiles matching the filters, in the data's own order. */
   routesWithTiles: string[];
-  /** Tiles matching the filters but left unplaced by `limit`. */
-  truncated: number;
+  /** The page on the canvas, from 0; a page asked for past the end is the last one. */
+  page: number;
+  /** How many pages the matching shots take: 1 unless `pageSize` splits them. */
+  pages: number;
+  /** Every shot in scope, across all pages, in canvas order. */
+  order: ViewerTile[];
+  /** The page each of those shots is on, by tile id. */
+  pageOf: Map<string, number>;
   /**
    * The route the canvas is scoped to, for the header above it. It isn't drawn on
    * the canvas: a title there would pan and zoom away with the shots.
@@ -67,8 +73,13 @@ export interface LayoutFilters {
   query?: string;
   /** Show only the captures that failed. */
   failedOnly?: boolean;
-  /** Cap on placed tiles, so a huge run can't lock up the canvas. */
-  limit?: number;
+  /**
+   * The most shots one page holds, so a huge run can't lock up the canvas. A page
+   * ends between two states, never inside one: a state's devices stay side by side.
+   */
+  pageSize?: number;
+  /** Which page to lay out, from 0. */
+  page?: number;
   /** Lay out only this route; the others still count toward `routesWithTiles`. */
   routeId?: string;
   /** Screen when absent. */
@@ -94,6 +105,9 @@ const HEADER_H = HEADER_BAND + CAPTION_H;
 /** Space between the screens of a stacked shot, so each reads as its own frame. */
 export const SCREEN_GAP = 20;
 const MAX_H = 1120; // cap very tall full-page shots so the overview stays tidy
+
+/** Shots on one canvas page. Past this, panning and zooming start to lag. */
+export const PAGE_SIZE = 200;
 
 /** Roughly the shape of a screen — what "fit to window" has to fill. */
 const TARGET_ASPECT = 1.6;
@@ -191,9 +205,15 @@ interface GroupBlock {
   routeId: string;
   title: string;
   path: string;
-  stateIds: string[];
-  rows: { stateId: string; tiles: (ViewerTile | undefined)[] }[];
+  /** The route's states across every page, for its "N states" label. */
+  states: number;
+  rows: Row[];
   height: number;
+}
+
+interface Row {
+  stateId: string;
+  tiles: (ViewerTile | undefined)[];
 }
 
 export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout {
@@ -202,7 +222,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
     kinds,
     query = "",
     failedOnly,
-    limit,
+    pageSize,
     routeId,
     mode = "screen",
   } = filters;
@@ -231,8 +251,6 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
 
   // The sidebar still lists every route the filters leave, so it can switch to them.
   const inScope = routeId ? matching.filter((t) => t.routeId === routeId) : matching;
-  const tiles = limit !== undefined && inScope.length > limit ? inScope.slice(0, limit) : inScope;
-  const truncated = inScope.length - tiles.length;
 
   const placed: Placed[] = [];
   const labels: GroupLabel[] = [];
@@ -253,7 +271,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   // Index once — per-group filter/find scans are O(routes × tiles) and this
   // recomputes on every search keystroke.
   const tilesByRoute = new Map<string, ViewerTile[]>();
-  for (const t of tiles) {
+  for (const t of inScope) {
     const arr = tilesByRoute.get(t.routeId);
     if (arr) arr.push(t);
     else tilesByRoute.set(t.routeId, [t]);
@@ -261,19 +279,52 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
 
   const rowWidth = Math.max(1, devices.reduce((sum, d) => sum + slotW(colW(d)) + GAP, 0) - GAP);
 
-  // Measure every section before placing any, so the column count can be chosen
-  // from the real total height rather than guessed.
-  const blocks: GroupBlock[] = [];
+  // Every row in canvas order first, so pages can be cut between rows.
+  const sections: { group: ViewerData["groups"][number]; rows: Row[] }[] = [];
   for (const g of data.groups) {
     const routeTiles = tilesByRoute.get(g.routeId) ?? [];
     if (!routeTiles.length) continue;
     const stateIds = [...new Set(routeTiles.map((t) => t.stateId))];
     const byStateDevice = new Map(routeTiles.map((t) => [`${t.stateId} ${t.device}`, t]));
+    sections.push({
+      group: g,
+      rows: stateIds.map((stateId) => ({
+        stateId,
+        tiles: devices.map((d) => byStateDevice.get(`${stateId} ${d.name}`)),
+      })),
+    });
+  }
 
-    const rows = stateIds.map((stateId) => ({
-      stateId,
-      tiles: devices.map((d) => byStateDevice.get(`${stateId} ${d.name}`)),
-    }));
+  const order: ViewerTile[] = [];
+  const pageOf = new Map<string, number>();
+  const rowPage = new Map<Row, number>();
+  let last = 0;
+  let onPage = 0;
+  for (const section of sections) {
+    for (const row of section.rows) {
+      const shots = row.tiles.filter((t): t is ViewerTile => !!t);
+      if (pageSize !== undefined && onPage > 0 && onPage + shots.length > pageSize) {
+        last++;
+        onPage = 0;
+      }
+      onPage += shots.length;
+      rowPage.set(row, last);
+      for (const t of shots) {
+        order.push(t);
+        pageOf.set(t.id, last);
+      }
+    }
+  }
+  const pages = last + 1;
+  const page = Math.max(0, Math.min(pages - 1, Math.floor(filters.page ?? 0) || 0));
+  const paging = { page, pages, order, pageOf };
+
+  // Measure every section before placing any, so the column count can be chosen
+  // from the real total height rather than guessed.
+  const blocks: GroupBlock[] = [];
+  for (const { group: g, rows: allRows } of sections) {
+    const rows = allRows.filter((row) => rowPage.get(row) === page);
+    if (!rows.length) continue;
     const height =
       HEADER_H +
       rows.reduce((sum, row) => {
@@ -287,7 +338,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
       routeId: g.routeId,
       title: g.title || g.path,
       path: g.path,
-      stateIds,
+      states: allRows.length,
       rows,
       height,
     });
@@ -326,16 +377,16 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
     const label: GroupLabel = {
       routeId: block.routeId,
       title: block.title,
-      subtitle: `${block.stateIds.length} state${block.stateIds.length === 1 ? "" : "s"}`,
+      subtitle: `${block.states} state${block.states === 1 ? "" : "s"}`,
       path: routePath(block.path),
       x: 0,
       y: 0,
       w: width,
     };
     if (routeId)
-      return { placed, labels, bounds, byRoute, routesWithTiles, truncated, heading: label };
+      return { placed, labels, bounds, byRoute, routesWithTiles, ...paging, heading: label };
     labels.push(label);
-    return { placed, labels, bounds, byRoute, routesWithTiles, truncated };
+    return { placed, labels, bounds, byRoute, routesWithTiles, ...paging };
   }
 
   const totalHeight = blocks.reduce((sum, b) => sum + b.height + SECTION_GAP, 0);
@@ -372,7 +423,7 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
     labels.push({
       routeId: block.routeId,
       title: block.title,
-      subtitle: `${block.stateIds.length} state${block.stateIds.length === 1 ? "" : "s"}`,
+      subtitle: `${block.states} state${block.states === 1 ? "" : "s"}`,
       path: routePath(block.path),
       x: x0,
       y: labelY,
@@ -382,5 +433,5 @@ export function computeLayout(data: ViewerData, filters: LayoutFilters): Layout 
   }
 
   if (!placed.length) Object.assign(bounds, { minX: 0, minY: 0, maxX: 1, maxY: 1 });
-  return { placed, labels, bounds, byRoute, routesWithTiles, truncated };
+  return { placed, labels, bounds, byRoute, routesWithTiles, ...paging };
 }

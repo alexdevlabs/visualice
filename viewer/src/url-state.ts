@@ -21,6 +21,8 @@ export interface UrlState {
   mode?: "continuous" | "scroll";
   /** The selected shot is open full screen. */
   full?: boolean;
+  /** The canvas page, from 1; absent is the first. */
+  page?: number;
 }
 
 const LIST_SEPARATOR = ",";
@@ -50,7 +52,13 @@ export function readUrlState(search: string): UrlState {
     kinds: list("kinds"),
     mode: modeOf(value("mode")),
     full: p.get("full") === "1" || undefined,
+    page: pageOf(value("page")),
   };
+}
+
+function pageOf(v: string | undefined): number | undefined {
+  const n = v && /^\d+$/.test(v) ? Number(v) : 0;
+  return n > 1 && Number.isSafeInteger(n) ? n : undefined;
 }
 
 function modeOf(v: string | undefined): UrlState["mode"] {
@@ -68,6 +76,7 @@ export function serializeUrlState(state: UrlState): string {
   if (state.kinds?.length) p.set("kinds", state.kinds.map(escapeItem).join(LIST_SEPARATOR));
   if (state.mode) p.set("mode", state.mode);
   if (state.full && state.tile) p.set("full", "1");
+  if (state.page && state.page > 1) p.set("page", String(state.page));
   if (state.tile) p.set("tile", state.tile);
   return p.toString();
 }

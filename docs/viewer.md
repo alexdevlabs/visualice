@@ -41,6 +41,13 @@ turn it on (the button in the zoom controls, or `M`); it shows where you are in 
 and jumps there on click. The path list virtualizes past a few dozen routes so a large run
 doesn't build a sidebar it never shows.
 
+The canvas shows at most 200 shots at a time, because more than that makes panning and
+zooming lag. A bigger selection is split into pages: the arrows above the canvas, or `[`
+and `]`, turn them, and the page is kept in the link. A page ends between two states, so
+a state's devices stay side by side, and a route cut by a page break carries on at the top
+of the next. Search, the filters and the sidebar count every page. Selecting a shot on
+another page (a link, the details panel's arrows) turns to it.
+
 `⌘K` or `/` focuses search, `+` `−` `0` zoom in, out and fit, `M` toggles the minimap, `F`
 opens the selected shot in full screen, `Esc` clears the selection, and `?` lists the
 shortcuts. The header's sun/moon button switches between the light (default) and dark

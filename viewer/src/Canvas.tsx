@@ -249,7 +249,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   }));
 
   // fit when the layout identity changes
-  const layoutKey = layout.placed.length + ":" + layout.bounds.maxX + ":" + layout.bounds.maxY;
+  const layoutKey =
+    layout.placed.length + ":" + layout.bounds.maxX + ":" + layout.bounds.maxY + ":" + layout.page;
   const fittedKey = useRef("");
   useEffect(() => {
     if (vp.w > 1 && layoutKey !== fittedKey.current) {
