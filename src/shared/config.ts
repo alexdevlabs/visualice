@@ -2,6 +2,7 @@ import { z } from "zod";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { RecipeStepSchema } from "./manifest-schema";
 import { validPattern } from "./pattern";
 
 // NOTE on defaults: zod's `.default(value)` does NOT re-parse the provided value,
@@ -124,7 +125,20 @@ const InteractionsSchema = z.object({
     ),
   denyLabels: z
     .array(z.string())
-    .default(["logout", "log out", "sign out", "delete", "remove", "unsubscribe", "pay"])
+    .default([
+      "logout",
+      "log out",
+      "sign out",
+      "delete",
+      "remove",
+      "unsubscribe",
+      "pay",
+      "generate",
+      "regenerate",
+      "send",
+      "submit",
+      "retry",
+    ])
     .describe(
       'Skip triggers whose accessible label has any of these as whole words (case-insensitive): `import` skips "Import CSV", not "Importers".',
     ),
@@ -132,6 +146,18 @@ const InteractionsSchema = z.object({
     .array(z.string())
     .default([])
     .describe("Skip triggers matching these selectors."),
+  blockWrites: z
+    .boolean()
+    .default(true)
+    .describe(
+      "While a trigger is probed, stop the requests it makes that would change data on the site (POST, PUT, PATCH, DELETE to the site or its subdomains; a GraphQL query isn't one) before they reach the server. A trigger that tries to write is never recorded as a state either way: capture would replay the write.",
+    ),
+  allowWrites: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Paths a probed trigger may write to, as globs (`/api/events`, `/ingest/**`): an analytics or logging endpoint. A write there is neither blocked nor a reason to leave the trigger out.",
+    ),
   extraTriggers: z
     .array(z.string())
     .default([])
@@ -269,10 +295,10 @@ const StabilizeSchema = z.object({
 
 const LoginSchema = z.object({
   url: z.string().optional().describe("Login page, absolute or relative to `target`."),
-  // steps are RecipeStep[]; validated loosely here and cast at runtime to keep the
-  // discriminated union out of the schema. Use ${ENV_VAR} in fill values for secrets.
+  // Checked like any recipe, so a mistyped step or target fails when the config is
+  // read, not halfway through a login.
   steps: z
-    .array(z.unknown())
+    .array(RecipeStepSchema)
     .default([])
     .describe("Recipe steps to sign in. Use ${ENV_VAR} in `fill` values for secrets."),
   maxAgeHours: z

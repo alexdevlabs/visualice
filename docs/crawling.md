@@ -77,9 +77,24 @@ are followed too, and the pages behind them mapped, within `scope.maxDepth`,
 doesn't open (a denied label, a login) still needs a `- /path` line in the routes file.
 
 Discovery never submits a form, and never clicks a trigger whose label has one of
-`discovery.interactions.denyLabels` in it (logout, delete, pay… by default). Labels are
-matched as whole words in any case: `import` stops "Import CSV" and leaves a menu group
-called "Importers" alone.
+`discovery.interactions.denyLabels` in it (logout, delete, pay, generate, send, retry… by
+default). Labels are matched as whole words in any case: `import` stops "Import CSV" and
+leaves a menu group called "Importers" alone.
+
+A label can't say everything a button does, so a probe also watches what each click
+asks the server to do. A request that changes data on the site (a POST, PUT, PATCH or
+DELETE to its host or a subdomain; a GraphQL query isn't one) is stopped before it gets
+there (`discovery.interactions.blockWrites`, on by default), and the trigger is left out:
+capture would replay the click, and the write, on every run. A trigger with the same
+label isn't clicked again on any other page. The dry run lists these triggers, as does
+the report's "Wrote to the server" section and `wrote` in `--json`. Deny the ones that do
+what their name says; for an analytics or logging endpoint that every click posts to,
+list its path in `discovery.interactions.allowWrites` (`/ingest/**`). A state you want
+behind such a trigger is authored by hand with `isolate`, against data you can reset.
+
+A trigger that opens the browser's own `alert`, `confirm` or `prompt` can't be shot: the
+dialog is drawn outside the page. It is dismissed (so what a `confirm` guards doesn't
+happen) and listed in the report as "browser dialog".
 
 Discovery is automatic — the cached site model is built on the first run and merged (never
 clobbered) on later ones, so hand-written or Explore-mode states survive a re-crawl. Its

@@ -1,6 +1,6 @@
 {
   "name": "visualice",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Crawl a website and capture every page and UI state across devices, then view them on a zoomable canvas.",
   "license": "MIT",
@@ -36,6 +36,7 @@
     },
     "./config.schema.json": "./config.schema.json",
     "./manifest.schema.json": "./manifest.schema.json",
+    "./explore.schema.json": "./explore.schema.json",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -113,6 +114,7 @@
     "tests/fixture",
     "config.schema.json",
     "manifest.schema.json",
+    "explore.schema.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

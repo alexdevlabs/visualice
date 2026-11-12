@@ -70,13 +70,13 @@ export function redactUrl(url: string, query = false): string {
   return out;
 }
 
-function redactSteps(steps: unknown[]): unknown[] {
+function redactSteps<T>(steps: T[]): T[] {
   return steps.map((step) => {
     if (!step || typeof step !== "object") return step;
     const s = step as Record<string, unknown>;
     // Only `fill` carries typed-in values; clicks and waits carry selectors.
     if (s.action === "fill" && typeof s.value === "string") {
-      return { ...s, value: keep(s.value) };
+      return { ...s, value: keep(s.value) } as T;
     }
     // A login may pick a tenant or an account by value, or start at a one-time link.
     if (s.action === "select") {
@@ -85,10 +85,10 @@ function redactSteps(steps: unknown[]): unknown[] {
         : typeof s.value === "string"
           ? keep(s.value)
           : s.value;
-      return { ...s, value };
+      return { ...s, value } as T;
     }
     if (s.action === "navigate" && typeof s.url === "string") {
-      return { ...s, url: redactUrl(s.url, true) };
+      return { ...s, url: redactUrl(s.url, true) } as T;
     }
     return step;
   });

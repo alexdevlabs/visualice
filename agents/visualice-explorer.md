@@ -24,7 +24,7 @@ The dispatch prompt gives you:
 
 - **Page type** and its **pages**: a representative to explore, and the other
   pages of the same kind.
-- **CLI**: how to run visualice (e.g. `visualice`, `npx -y visualice@0.2.0` or `npm run vc --`). Run
+- **CLI**: how to run visualice (e.g. `visualice`, `npx -y visualice@0.2.1` or `npm run vc --`). Run
   every command from the project directory you were given.
 - **Output file**: where to write your states (`.visualice/explore/<type>.json`).
 - **Shots dir**: where to put probe screenshots.

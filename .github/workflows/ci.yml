@@ -194,4 +194,4 @@ jobs:
       - name: Regenerate schemas and check for drift
         run: |
           npm run schema
-          git diff --exit-code config.schema.json manifest.schema.json
+          git diff --exit-code config.schema.json manifest.schema.json explore.schema.json

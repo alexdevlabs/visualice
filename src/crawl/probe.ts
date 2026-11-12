@@ -6,6 +6,7 @@ import { testIdAttribute, useTestIdAttribute } from "../shared/selectors";
 import { applyContextInit } from "./stabilize";
 import { deviceContextOptions } from "./context-options";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
+import { writeOf, writeRules } from "./writes";
 import { generatedIdSource, useUnstableIds } from "./generated-ids";
 import {
   addedLines,
@@ -88,7 +89,13 @@ export interface ProbeOutcome {
   disappeared: string[];
   /** What the recipe wrote to storage. Anything here wants `isolate: true`. */
   storage: { localStorage: string[]; sessionStorage: string[]; cookies: string[] };
-  /** True when `storage` changed: capturing this state should be isolated. */
+  /**
+   * Requests the recipe made that write to the site (`POST /api/jobs`). Nothing is
+   * blocked here: an explorer runs a recipe to see what it does. A state that needs
+   * these is isolated and shot against data that can be reset.
+   */
+  writes: string[];
+  /** True when `storage` changed or the recipe wrote to the server: isolate the state. */
   suggestIsolate: boolean;
   /** The screenshot, when one was asked for. */
   shot?: string;
@@ -333,6 +340,12 @@ export async function probePage(
     const linesBefore = await readLines(page);
     const storeBefore = await readStorage(page);
     const cookiesBefore = await readCookies(context);
+    const rules = writeRules(baseUrl, config.discovery.interactions.allowWrites);
+    const writes = new Set<string>();
+    page.on("request", (r) => {
+      const w = writeOf(r, rules);
+      if (w) writes.add(w);
+    });
 
     let error: ProbeOutcome["error"];
     for (let i = 0; i < opts.recipe.length; i++) {
@@ -392,7 +405,8 @@ export async function probePage(
       appeared,
       disappeared,
       storage,
-      suggestIsolate: Object.values(storage).some((keys) => keys.length > 0),
+      writes: [...writes],
+      suggestIsolate: writes.size > 0 || Object.values(storage).some((keys) => keys.length > 0),
       ...(opts.shotPath ? { shot: opts.shotPath } : {}),
       ...(opts.inventory ? { inventory: await readInventory(page, config) } : {}),
     };

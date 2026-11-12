@@ -165,7 +165,21 @@ export interface QuietTrigger {
   trigger: string;
   /** The mobile pass, when it was that pass's probe. */
   device?: string;
-  result: "no change" | "busy" | "click failed";
+  /** `browser dialog`: it opened a native alert, confirm or prompt, which can't be shot. */
+  result: "no change" | "busy" | "click failed" | "browser dialog";
+}
+
+/** A trigger discovery left out because clicking it wrote to the site's server. */
+export interface WroteTrigger {
+  route: string;
+  /** What the trigger says, or how it was found. */
+  trigger: string;
+  /** The mobile pass, when it was that pass's probe. */
+  device?: string;
+  /** The writes it made, at most a few: `POST /api/jobs`. */
+  requests: string[];
+  /** `blockWrites` stopped them before they reached the server. */
+  blocked?: boolean;
 }
 
 export interface StateNode {
@@ -276,6 +290,8 @@ export interface Manifest {
     wanted?: WantedState[];
     /** Triggers this run's discovery clicked that showed no change. */
     quiet?: QuietTrigger[];
+    /** Triggers this run's discovery left out because they wrote to the server. */
+    wrote?: WroteTrigger[];
     /** Accessibility violations by rule, when `checks.accessibility` is on. */
     accessibility?: {
       id: string;

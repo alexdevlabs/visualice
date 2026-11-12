@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ConfigSchema } from "./config";
-import { InputManifestSchema } from "./manifest-schema";
+import { AuthoredFileSchema, InputManifestSchema } from "./manifest-schema";
 
 /** A zod schema as a draft-7 JSON Schema, in "input" mode, under a header. */
 function jsonSchema(
@@ -54,4 +54,23 @@ export function manifestJsonSchema(): Record<string, unknown> {
 /** The exact bytes written to manifest.schema.json. */
 export function renderManifestJsonSchema(): string {
   return render(manifestJsonSchema());
+}
+
+/**
+ * JSON Schema for an explorer's state file (`.visualice/explore/<type>.json`), what
+ * `visualice author` merges. Pointing the file's `$schema` here lets an editor or an
+ * agent check a recipe's steps and targets as they are written.
+ */
+export function exploreJsonSchema(): Record<string, unknown> {
+  return jsonSchema(AuthoredFileSchema, {
+    $id: "https://unpkg.com/visualice/explore.schema.json",
+    title: "Visualice explorer state file",
+    description:
+      "States an explorer verified with `visualice probe`, each with the page it belongs on, for `visualice author` to merge into the site model.",
+  });
+}
+
+/** The exact bytes written to explore.schema.json. */
+export function renderExploreJsonSchema(): string {
+  return render(exploreJsonSchema());
 }

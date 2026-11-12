@@ -4,7 +4,7 @@ import {
   parseInputManifest,
   formatManifestIssues,
 } from "../src/shared/manifest-schema";
-import { renderManifestJsonSchema } from "../src/shared/schema";
+import { renderExploreJsonSchema, renderManifestJsonSchema } from "../src/shared/schema";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -114,5 +114,13 @@ describe("manifest.schema.json drift", () => {
     const file = path.resolve(__dirname, "..", "manifest.schema.json");
     const onDisk = await fs.readFile(file, "utf8");
     expect(onDisk).toBe(renderManifestJsonSchema());
+  });
+});
+
+describe("explore.schema.json drift", () => {
+  it("checked-in schema matches the zod schema", async () => {
+    const file = path.resolve(__dirname, "..", "explore.schema.json");
+    const onDisk = await fs.readFile(file, "utf8");
+    expect(onDisk).toBe(renderExploreJsonSchema());
   });
 });

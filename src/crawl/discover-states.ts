@@ -1,7 +1,8 @@
-import type { BrowserContext, Page, Request } from "playwright";
+import type { BrowserContext, Dialog, Page, Request } from "playwright";
 import type { Config } from "../shared/config";
 import type {
   QuietTrigger,
+  WroteTrigger,
   RouteNode,
   StateNode,
   StateKind,
@@ -21,6 +22,7 @@ import {
   needsStabilityCheck,
 } from "./generated-ids";
 import { createHash } from "node:crypto";
+import { writeOf, writeRules, type WriteRules } from "./writes";
 import {
   addedLines,
   addedRegions,
@@ -129,19 +131,32 @@ export async function collectCandidates(
       }
       return parts.join(" > ");
     };
+    const implicitRole = (el: Element): string | undefined => {
+      const tag = el.tagName;
+      if (tag === "BUTTON") return "button";
+      if (tag === "SELECT") return "combobox";
+      if (tag === "INPUT") {
+        const type = ((el as HTMLInputElement).type || "text").toLowerCase();
+        if (type === "button" || type === "submit" || type === "reset") return "button";
+        if (type === "checkbox" || type === "radio") return type;
+      }
+      return undefined;
+    };
     const targetFor = (el: Element): Record<string, unknown> => {
       const tid = el.getAttribute(cfg.testIdAttribute);
       if (tid) return { testId: tid };
       // A generated id (React's useId, a component library's counter) names a
       // different element, or none, on the next load.
       if (el.id && !generated.test(el.id)) return { selector: `#${CSS.escape(el.id)}` };
-      const role = el.getAttribute("role");
-      const al = el.getAttribute("aria-label");
+      // The role an element has without saying so: an icon `<button aria-label="Previous
+      // reply">` has no role attribute and no text, and was found by its place among
+      // its siblings, which moves as soon as the page has one more message.
+      const role = el.getAttribute("role") || implicitRole(el);
+      const al = el.getAttribute("aria-label")?.trim();
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
-      if (al && role) return { role, name: al };
-      if (role && text && text.length <= 40) return { role, name: text };
-      if (el.tagName === "BUTTON" && text && text.length <= 40)
-        return { role: "button", name: text };
+      const title = el.getAttribute("title")?.trim();
+      const name = al || (text.length <= 40 ? text : "") || title;
+      if (role && name) return { role, name };
       return { selector: cssPath(el) };
     };
     const hintFor = (el: Element): string | undefined => {
@@ -159,6 +174,8 @@ export async function collectCandidates(
     const seen = new Set<Element>();
     const out: {
       target: Record<string, unknown>;
+      /** Where the element is, for when `target` doesn't find it. */
+      fallback: Record<string, unknown>;
       label: string;
       hint?: string;
       controls?: string;
@@ -215,6 +232,7 @@ export async function collectCandidates(
       el.setAttribute(MARK, String(out.length));
       out.push({
         target: targetFor(el),
+        fallback: { selector: cssPath(el) },
         label,
         hint: hintFor(el),
         controls: controlledId(el),
@@ -241,6 +259,7 @@ export async function collectCandidates(
         a.setAttribute(MARK, String(out.length));
         out.push({
           target: targetFor(a),
+          fallback: { selector: cssPath(a) },
           label,
           hint: "menu",
           controls: controlledId(a),
@@ -262,9 +281,11 @@ export async function collectCandidates(
     return final;
   }, arg);
 
-  const candidates = raw as (RawCandidate & { mark: string })[];
+  const candidates = raw as (RawCandidate & { mark: string; fallback: Target })[];
   try {
-    for (const cand of candidates) cand.target = await uniqueTarget(page, cand.target, cand.mark);
+    for (const cand of candidates) {
+      cand.target = await uniqueTarget(page, cand.target, cand.mark, cand.fallback);
+    }
   } finally {
     await page
       .evaluate((mark) => {
@@ -274,7 +295,7 @@ export async function collectCandidates(
       }, CANDIDATE_MARK)
       .catch(() => {});
   }
-  return candidates.map(({ mark: _mark, ...cand }) => cand);
+  return candidates.map(({ mark: _mark, fallback: _fallback, ...cand }) => cand);
 }
 
 /** Marks each candidate element while its target is checked, then removed. */
@@ -285,14 +306,23 @@ const CANDIDATE_MARK = "data-vc-candidate";
  * contains it ("Menu" also finds "Close menu"), and a page may have the same button
  * twice (a "Details" on every card): a click on such a target is refused, in the
  * probe and in every capture after it. So match the name exactly, and where that
- * still finds several, say which one.
+ * still finds several, say which one. One it doesn't find at all is found by where it is.
  */
-async function uniqueTarget(page: Page, target: Target, mark: string): Promise<Target> {
+async function uniqueTarget(
+  page: Page,
+  target: Target,
+  mark: string,
+  fallback: Target,
+): Promise<Target> {
   const count = (t: Target) =>
     locatorFor(page, t)
       .count()
       .catch(() => 1);
-  if ((await count(target)) <= 1) return target;
+  const found = await count(target);
+  // The page names the element differently from how it was read here (a name from
+  // `aria-labelledby`, a role the browser doesn't give it): where it is still finds it.
+  if (found === 0 && target !== fallback && !target.selector) return fallback;
+  if (found <= 1) return target;
   let narrowed = target;
   if (target.role && target.name) {
     const exact = { ...target, exact: true };
@@ -306,7 +336,7 @@ async function uniqueTarget(page: Page, target: Target, mark: string): Promise<T
       mark,
     ] as const)
     .catch(() => -1);
-  return nth >= 0 ? { ...narrowed, nth } : target;
+  return nth >= 0 ? { ...narrowed, nth } : fallback;
 }
 
 export function classifyChange(
@@ -441,9 +471,31 @@ interface ProbeContext {
   onQuiet?: (q: Omit<QuietTrigger, "route" | "device">) => void;
   /** Told every link on the page while a state is open: some only exist then. */
   onLinks?: (hrefs: string[]) => void;
+  /** Told about each trigger that wrote, or tried to write, to the site's server. */
+  onWrote?: (w: Omit<WroteTrigger, "route" | "device">) => void;
+  /** Labels of triggers that wrote somewhere this discovery: not clicked again. */
+  avoid: Set<string>;
+  writes: WriteRules;
+  /** While on, `blockWrites` stops the writes a request makes (see `discoverStates`). */
+  guard: { on: boolean };
   /** What this page does with nobody touching it; measured the first time it matters. */
   ambient?: Ambient;
 }
+
+/** What `discoverStates` reports back while it probes, and what it is told to skip. */
+export interface StateHooks {
+  onQuiet?: ProbeContext["onQuiet"];
+  onLinks?: ProbeContext["onLinks"];
+  onWrote?: ProbeContext["onWrote"];
+  /** Shared across the pages and passes of one discovery; see `ProbeContext.avoid`. */
+  avoid?: Set<string>;
+}
+
+/** The key a trigger is avoided by: its label, as people read it. */
+export const avoidKey = (label: string): string => label.trim().toLowerCase();
+
+/** At most this many of a trigger's writes are listed: the first few say what it does. */
+const MAX_WRITES_LISTED = 5;
 
 /**
  * What a page does on its own: a carousel or an animation rewriting the DOM, a poll
@@ -665,6 +717,10 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     stored: boolean;
     /** Nothing showed, and the page was still busy when the probe stopped looking. */
     busy?: Busy;
+    /** Requests the probe made that write to the site: `POST /api/jobs`. */
+    writes: string[];
+    /** The click opened a native `alert`, `confirm` or `prompt`, which was dismissed. */
+    dialog: boolean;
   }
 
   const attempt = async (cand: RawCandidate, action: "click" | "hover"): Promise<ProbeAttempt> => {
@@ -674,36 +730,72 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     const loc = locatorFor(page, cand.target);
     const requests = trackRequests(page);
     await watchMutations(page);
-    const since = Date.now();
-    if (action === "hover") await loc.hover({ timeout: interactions.clickTimeoutMs });
-    else await loc.click({ timeout: interactions.clickTimeoutMs });
-    const clicked = Date.now();
-    await page.waitForTimeout(interactions.settleMs);
-    let after = await takeSnapshot(page);
-    // A new document is a navigation — a route, which route discovery owns — however
-    // much the page it landed on happens to have open.
-    let navigated = after.doc !== before.doc;
-    let kind = navigated ? null : classifyChange(before, after, cand, action);
-    // Nothing yet, but the page is still loading or rendering what the click did (a
-    // dialog's code, its data, a slow dev server): keep looking for a while. A
-    // trigger that does nothing leaves the page idle and costs no more than before.
-    let busy: Busy | undefined;
-    while (!kind && !navigated) {
-      busy = await stillBusy(page, requests, since, ctx.ambient);
-      if (!busy || Date.now() - clicked >= interactions.patienceMs) break;
-      await page.waitForTimeout(POLL_MS);
-      after = await takeSnapshot(page);
-      navigated = after.doc !== before.doc;
-      kind = navigated ? null : classifyChange(before, after, cand, action);
+    // Watched from the click until the probe stops looking: what the trigger asks the
+    // server to change, and a browser dialog it opens (dismissed: a `confirm` answered
+    // "no" cancels what it guards, and the page can't be shot while one is up).
+    const writes = new Set<string>();
+    let dialog = false;
+    const onRequest = (r: Request) => {
+      const w = writeOf(r, ctx.writes);
+      if (w) writes.add(w);
+    };
+    const onDialog = (d: Dialog) => {
+      dialog = true;
+      void d.dismiss().catch(() => {});
+    };
+    page.on("request", onRequest);
+    page.on("dialog", onDialog);
+    ctx.guard.on = true;
+    try {
+      return await watched();
+    } finally {
+      ctx.guard.on = false;
+      page.off("request", onRequest);
+      page.off("dialog", onDialog);
     }
-    if (kind || navigated) busy = undefined;
-    const appeared = kind ? addedLines(linesBefore, await readLines(page)) : [];
-    // What a trigger stores (a panel remembered open, an item added to a list)
-    // outlives the page: it would be showing in every later probe and every shot
-    // captured after it. Note it, then undo it.
-    const stored = !navigated && storageChanged(storeBefore, await readStorage(page));
-    if (stored) await restoreStorage(page, storeBefore);
-    return { action, before, after, kind, appeared, stored, busy };
+
+    async function watched(): Promise<ProbeAttempt> {
+      const since = Date.now();
+      if (action === "hover") await loc.hover({ timeout: interactions.clickTimeoutMs });
+      else await loc.click({ timeout: interactions.clickTimeoutMs });
+      const clicked = Date.now();
+      await page.waitForTimeout(interactions.settleMs);
+      let after = await takeSnapshot(page);
+      // A new document is a navigation — a route, which route discovery owns — however
+      // much the page it landed on happens to have open.
+      let navigated = after.doc !== before.doc;
+      let kind = navigated ? null : classifyChange(before, after, cand, action);
+      // Nothing yet, but the page is still loading or rendering what the click did (a
+      // dialog's code, its data, a slow dev server): keep looking for a while. A
+      // trigger that does nothing leaves the page idle and costs no more than before.
+      let busy: Busy | undefined;
+      while (!kind && !navigated) {
+        busy = await stillBusy(page, requests, since, ctx.ambient);
+        if (!busy || Date.now() - clicked >= interactions.patienceMs) break;
+        await page.waitForTimeout(POLL_MS);
+        after = await takeSnapshot(page);
+        navigated = after.doc !== before.doc;
+        kind = navigated ? null : classifyChange(before, after, cand, action);
+      }
+      if (kind || navigated) busy = undefined;
+      const appeared = kind ? addedLines(linesBefore, await readLines(page)) : [];
+      // What a trigger stores (a panel remembered open, an item added to a list)
+      // outlives the page: it would be showing in every later probe and every shot
+      // captured after it. Note it, then undo it.
+      const stored = !navigated && storageChanged(storeBefore, await readStorage(page));
+      if (stored) await restoreStorage(page, storeBefore);
+      return {
+        action,
+        before,
+        after,
+        kind,
+        appeared,
+        stored,
+        busy,
+        writes: [...writes].slice(0, MAX_WRITES_LISTED),
+        dialog,
+      };
+    }
   };
   const quietLabel = (cand: RawCandidate) => {
     const what = cand.label ? `"${cand.label}"` : describeTarget(cand.target);
@@ -720,15 +812,47 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
       }
       break;
     }
+    // A label that wrote somewhere this discovery ("Regenerate" under every reply)
+    // writes the same way here.
+    if (cand.label && ctx.avoid.has(avoidKey(cand.label))) continue;
     let probed = false;
     try {
       let probe = await attempt(cand, cand.probe ?? "click");
       // A menu-hinted trigger whose click changed nothing may be a hover dropdown.
-      if (!probe.kind && !cand.probe && interactions.hover && cand.hint === "menu") {
+      if (
+        !probe.kind &&
+        !probe.writes.length &&
+        !probe.dialog &&
+        !cand.probe &&
+        interactions.hover &&
+        cand.hint === "menu"
+      ) {
         if (!(await enterParent())) break;
         probe = await attempt(cand, "hover");
       }
       probed = true;
+
+      // A state capture would reach by writing to the server isn't one to keep: each
+      // run would write again (start a job, send a message). Leave it to the user.
+      if (probe.writes.length) {
+        if (cand.label) ctx.avoid.add(avoidKey(cand.label));
+        ctx.onWrote?.({
+          trigger: quietLabel(cand),
+          requests: probe.writes,
+          ...(interactions.blockWrites ? { blocked: true } : {}),
+        });
+        log(
+          `    ⚠ ${ctx.route.id}: ${quietLabel(cand)} wrote to the server (${probe.writes.join(", ")})` +
+            `${interactions.blockWrites ? ", blocked" : ""} — not recorded`,
+        );
+        if (!(await enterParent())) break;
+        continue;
+      }
+      if (probe.dialog) {
+        ctx.onQuiet?.({ trigger: quietLabel(cand), result: "browser dialog" });
+        if (!(await enterParent())) break;
+        continue;
+      }
 
       const { kind, before, after, action, appeared, stored } = probe;
       if (!kind && after.doc === before.doc) {
@@ -850,16 +974,24 @@ export async function discoverStates(
   route: RouteNode,
   config: Config,
   log: (msg: string) => void,
-  onQuiet?: ProbeContext["onQuiet"],
-  onLinks?: ProbeContext["onLinks"],
+  hooks: StateHooks = {},
 ): Promise<StateNode[]> {
   const states: StateNode[] = [defaultState()];
   const interactions = config.discovery.interactions;
   if (!interactions.auto) return states;
 
   const waitUntil = config.stabilize.waitStrategy;
+  const writes = writeRules(routeUrl, interactions.allowWrites);
+  const guard = { on: false };
   const page = await context.newPage();
   try {
+    // Only while a trigger is probed: the page's own loading may well POST (a GraphQL
+    // client, a session refresh), and a page that can't load has nothing to probe.
+    if (interactions.blockWrites) {
+      await page.route("**/*", (route, request) =>
+        guard.on && writeOf(request, writes) ? route.abort("blockedbyclient") : route.fallback(),
+      );
+    }
     await gotoRoute(page, routeUrl, waitUntil);
     const doc = await markDocument(page);
     const baseline = await takeSnapshot(page);
@@ -881,8 +1013,12 @@ export async function discoverStates(
       capLogged: false,
       stats: { navigations: 0, reused: 0 },
       log,
-      onQuiet,
-      onLinks,
+      onQuiet: hooks.onQuiet,
+      onLinks: hooks.onLinks,
+      onWrote: hooks.onWrote,
+      avoid: hooks.avoid ?? new Set(),
+      writes,
+      guard,
     };
 
     let frontier = [states[0]];
