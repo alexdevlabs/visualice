@@ -2,6 +2,7 @@ import { z } from "zod";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { validPattern } from "./pattern";
 
 // NOTE on defaults: zod's `.default(value)` does NOT re-parse the provided value,
 // so attaching `.default({})` to a nested object schema would yield a bare `{}`
@@ -99,6 +100,14 @@ const InteractionsSchema = z.object({
     .nonnegative()
     .default(250)
     .describe("Settle delay after a probe before diffing the DOM."),
+  patienceMs: z
+    .number()
+    .int()
+    .nonnegative()
+    .default(1500)
+    .describe(
+      "How long a probe keeps looking for what a click opened while the page is still busy after `settleMs` (requests the click started still loading, the DOM still changing). A slow server or a dev build can take longer than `settleMs` to show a dialog. 0 looks once, after `settleMs`.",
+    ),
   nestDepth: z
     .number()
     .int()
@@ -115,8 +124,10 @@ const InteractionsSchema = z.object({
     ),
   denyLabels: z
     .array(z.string())
-    .default(["logout", "sign out", "delete", "remove", "unsubscribe", "pay"])
-    .describe("Skip triggers whose accessible label contains any of these (case-insensitive)."),
+    .default(["logout", "log out", "sign out", "delete", "remove", "unsubscribe", "pay"])
+    .describe(
+      'Skip triggers whose accessible label has any of these as whole words (case-insensitive): `import` skips "Import CSV", not "Importers".',
+    ),
   denySelectors: z
     .array(z.string())
     .default([])
@@ -153,6 +164,12 @@ const DiscoverySchema = z.object({
       "Also probe at the first mobile device's viewport, so mobile-only states (hamburger nav) are discovered; those states capture only on mobile devices.",
     ),
   interactions: InteractionsSchema.default(InteractionsSchema.parse({})),
+  unstableIds: z
+    .array(z.string().refine(validPattern, { message: "not a valid regular expression" }))
+    .default([])
+    .describe(
+      "Element ids this site generates at render time, as regular expressions (`^mat-dialog-\\d+$`, `^ember\\d+$`). Such an id is different on the next load, on another device or after another click, so recipes and state signatures never use one. React's useId and common component libraries are known already, and each crawl lists the ones it noticed changing; add those here to keep them.",
+    ),
 });
 
 const ThumbnailSchema = z.object({

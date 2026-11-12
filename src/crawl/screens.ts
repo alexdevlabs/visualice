@@ -135,8 +135,20 @@ async function pickScroller(page: Page): Promise<boolean> {
     const rootLocked =
       locked(html) || (getComputedStyle(html).overflowY === "visible" && locked(document.body));
     const root = document.scrollingElement ?? html;
-    if (rootLocked) return false;
-    if (root.scrollHeight > root.clientHeight && canScroll(root)) return true;
+    const rootOverflows = root.scrollHeight > root.clientHeight + 1;
+    // A locked page with more below the fold is a scroll lock (a modal is open):
+    // one screen, as the user sees it. So is anything with a modal showing. A locked
+    // root with nothing below the fold is an app shell, which scrolls inside.
+    const modal = Array.from(
+      document.querySelectorAll(
+        'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]',
+      ),
+    ).some((el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+    });
+    if (rootLocked && (rootOverflows || modal)) return false;
+    if (!rootLocked && rootOverflows && canScroll(root)) return true;
     let best: Element | null = null;
     let extra = 0;
     for (const el of Array.from(document.querySelectorAll("body *"))) {

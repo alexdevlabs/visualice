@@ -38,7 +38,7 @@ fixture's in `tests/fixture-src/tailwind.input.css`.
 
 ## Tests
 
-The 497 unit tests are pure and fast. The 80 browser-driven tests in `tests/integration/`
+The unit tests are pure and fast. The browser-driven tests in `tests/integration/`
 cover the end-to-end crawl against the fixture, robots enforcement, nested state discovery,
 the routes-file steering loop (edit → rerun respects it), the determinism guarantee
 (identical pixels across two runs of a deliberately volatile page), the packaged `cli/`

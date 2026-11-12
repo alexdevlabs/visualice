@@ -1,6 +1,6 @@
 {
   "name": "visualice",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Crawl a website, capture every page and UI state (modals, menus, drawers, accordions, tabs) across device profiles, and browse the screenshots on a zoomable canvas.",
   "icon": "assets/logo/visualice-app-icon-1024.png",
   "author": {

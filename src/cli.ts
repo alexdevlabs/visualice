@@ -4,16 +4,29 @@ import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 import { ConfigLoadError, loadConfig, type Config } from "./shared/config";
-import { isCommand, UsageError, applyOverrides, parseFlags, str, type Flags } from "./cli-args";
+import {
+  isCommand,
+  UsageError,
+  applyOverrides,
+  csv,
+  parseFlags,
+  str,
+  type Flags,
+} from "./cli-args";
 import { countStates, loadInputManifest, modelCachePath } from "./crawl/manifest";
+import { applyHints } from "./shared/hints";
 import { InputManifestSchema, formatManifestIssues } from "./shared/manifest-schema";
 import {
   capturePipeline,
   crawlPipeline,
   discoverOnlyPipeline,
   planCrawl,
+  previewRoutes,
+  crawlOwnFiles,
   type CrawlPlan,
 } from "./crawl/orchestrator";
+import { computeChanges, type ChangesReport } from "./crawl/changes";
+import { findConfigFile, hashFile } from "./crawl/source";
 import { setHeaded } from "./shared/launch";
 import {
   computeWanted,
@@ -23,12 +36,19 @@ import {
 } from "./crawl/routes-file";
 import { ensureStorageState } from "./crawl/auth";
 import { pathExists } from "./shared/fsx";
+import {
+  knownUpdate,
+  startUpdateCheck,
+  updateCheckDisabled,
+  type UpdateCheck,
+} from "./shared/update-check";
 import { nodeBinCommand } from "./shared/node-bin";
 import { serveDirectory } from "./shared/static-server";
 import { serveViewer } from "./serve";
 import { formatDoctor, runDoctor } from "./doctor";
 import {
   latestRunId,
+  listRuns,
   listSites,
   migrateFlatRuns,
   newestSite,
@@ -36,7 +56,7 @@ import {
   siteDir,
   siteKey,
 } from "./crawl/runs";
-import type { Manifest, RecipeStep } from "./shared/types";
+import type { Manifest, RecipeStep, SourceInfo } from "./shared/types";
 import { exportRun } from "./export";
 import { probePage } from "./crawl/probe";
 import { listAuthoredFiles, mergeAuthored, readAuthoredFile } from "./crawl/author";
@@ -49,22 +69,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, "..");
 const FIXTURE_DIR = path.join(PROJECT_ROOT, "tests", "fixture");
 
-/** Config files picked up automatically from the working directory. */
-const CONFIG_CANDIDATES = [
-  "visualice.config.ts",
-  "visualice.config.mjs",
-  "visualice.config.js",
-  "visualice.config.json",
-];
-
-async function detectConfigFile(): Promise<string | undefined> {
-  for (const c of CONFIG_CANDIDATES) if (await pathExists(path.resolve(c))) return c;
-  return undefined;
-}
-
 /** Explicit --config wins; otherwise a visualice.config.* in the cwd is picked up. */
 async function resolveConfigPath(flags: Flags): Promise<string | undefined> {
-  return str(flags, "config") ?? (await detectConfigFile());
+  return findConfigFile(process.cwd(), str(flags, "config"));
 }
 
 async function loadConfigWithOverrides(flags: Flags): Promise<Config> {
@@ -92,8 +99,12 @@ Usage:
   visualice export <dir>      Write the viewer + a run as a static folder to share
   visualice probe <path>      Report a page's inventory, or what a recipe does on it (JSON)
   visualice author [dir|file] Merge explorer state files (.visualice/explore/) into the cache
+  visualice changes [opts]    What changed in git since the catalogue was shot, and what to rerun
   visualice serve [opts]      Launch the zoomable results viewer
   visualice --version         Print the version
+
+An installed CLI says on stderr when a newer version is out (checked at most daily);
+VISUALICE_NO_UPDATE_CHECK=1, --quiet or CI turns that off.
 
 Project files: visualice.config.json controls behavior; visualice.routes.md lists
 pages + UI states and is regenerated after every crawl (edit it: 'skip:' excludes,
@@ -109,6 +120,9 @@ Options (flags accept --name=value or --name value):
   --manifest=<path>    input manifest for 'capture' / 'validate'
   --replay             for 'crawl'/'demo-crawl': reuse cached site model, skip discovery
   --resume             for 'crawl': continue the newest interrupted run
+  --only=<paths>       for 'crawl': shoot only these pages (paths or globs, comma-separated);
+                       every other page's shots are carried over from the last run
+  --discover           for 'changes': also map the site's pages, to list new and removed ones
   --json               print a machine-readable JSON summary to stdout
   --quiet              suppress progress output on stderr
   --fail-on-error      exit 3 if any capture failed
@@ -156,16 +170,30 @@ function reportDone(runDir: string, manifest: Manifest, flags: Flags, log: Log):
         routes: stats?.routes ?? 0,
         states: stats?.states ?? 0,
         shots: stats?.shots ?? 0,
+        ...(stats?.carried !== undefined ? { carried: stats.carried } : {}),
+        // `--only` paths that matched no page: nothing was shot for them.
+        ...(manifest.partial?.unmatched?.length
+          ? { unmatchedOnly: manifest.partial.unmatched }
+          : {}),
         failed: stats?.failed ?? 0,
         failures: stats?.failures ?? [],
         wanted: stats?.wanted ?? [],
+        // Generated-id patterns crawls noticed, not yet in the config.
+        ...(manifest.hints?.unstableIds?.length ? { unstableIds: manifest.hints.unstableIds } : {}),
         ...(stats?.accessibility ? { accessibility: stats.accessibility } : {}),
+        // Triggers that showed nothing while the page was still loading: where a slow
+        // server may have hidden a state (the full list is in the report).
+        ...(stats?.quiet?.some((q) => q.result === "busy")
+          ? { stillLoading: stats.quiet.filter((q) => q.result === "busy") }
+          : {}),
       }),
     );
   } else {
     log("");
     log(
-      `done — ${stats?.shots ?? 0} screenshots${stats?.failed ? `, ${stats.failed} FAILED` : ""}`,
+      `done — ${stats?.shots ?? 0} screenshots` +
+        (stats?.carried ? ` (+${stats.carried} carried over)` : "") +
+        (stats?.failed ? `, ${stats.failed} FAILED` : ""),
     );
     console.log(runDir);
     log(`  manifest : ${path.join(runDir, "crawl-map.json")}`);
@@ -186,7 +214,14 @@ async function cmdCapture(flags: Flags): Promise<void> {
   if (!baseUrl) throw new UsageError("no target URL: pass --target=<url> or set target in config");
 
   const inputManifest = await loadInputManifest(manifestPath);
-  const { runDir, manifest } = await capturePipeline({ config, inputManifest, baseUrl, log });
+  const configFile = await resolveConfigPath(flags);
+  const { runDir, manifest } = await capturePipeline({
+    config,
+    inputManifest,
+    baseUrl,
+    configFile,
+    log,
+  });
   reportDone(runDir, manifest, flags, log);
 }
 
@@ -289,11 +324,23 @@ async function shootViewer(url: string, outFile: string): Promise<void> {
   }
 }
 
+/** A target must be an http(s) URL; anything else is a usage error, not a crash later. */
+function requireHttpUrl(target: string): void {
+  let ok = false;
+  try {
+    ok = /^https?:$/.test(new URL(target).protocol);
+  } catch {
+    /* not a URL */
+  }
+  if (!ok)
+    throw new UsageError(`"${target}" is not a URL — a target looks like https://example.com`);
+}
+
 /** Parse and validate an optional --port flag. */
 function parsePort(flags: Flags): number | undefined {
   const v = str(flags, "port");
   if (v === undefined) return undefined;
-  const port = Number(v);
+  const port = v.trim() === "" ? NaN : Number(v);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new UsageError(`invalid --port=${v}`);
   }
@@ -306,7 +353,8 @@ function openInBrowser(url: string): void {
     process.platform === "darwin"
       ? ["open", [url]]
       : process.platform === "win32"
-        ? ["cmd", ["/c", "start", "", url]]
+        ? // Not `cmd /c start`: cmd would cut the URL at its first `&`.
+          ["rundll32", ["url.dll,FileProtocolHandler", url]]
         : ["xdg-open", [url]];
   spawn(cmd as string, args as string[], { detached: true, stdio: "ignore" }).unref();
 }
@@ -412,6 +460,14 @@ async function cmdServe(flags: Flags): Promise<void> {
   const viewerDist = path.join(PROJECT_ROOT, "viewer", "dist");
   await ensureViewerBuilt(viewerDist, log);
 
+  // The viewer's update banner, from the same check as the terminal notice. Not in
+  // a --screenshot, which is a picture of the catalogue, not of this install.
+  const version = await readVersion();
+  const update =
+    str(flags, "screenshot") === undefined && (await updatesOn(flags))
+      ? () => knownUpdate(version)
+      : undefined;
+
   const server = await serveViewer({
     runDir: dir,
     viewerDist,
@@ -420,6 +476,7 @@ async function cmdServe(flags: Flags): Promise<void> {
     site,
     runId,
     port: parsePort(flags),
+    update,
   });
 
   // Naming a site or run opens it; otherwise the page decides (the dashboard, when
@@ -491,6 +548,8 @@ async function cmdCrawl(flags: Flags): Promise<void> {
     throw new UsageError(
       "no base URL: pass a url (visualice crawl <url>) or run 'visualice init <url>'",
     );
+  // Before anything is written: a mistyped target must not become the saved one.
+  requireHttpUrl(baseUrl);
   // First crawl in a fresh project: persist the target so `visualice crawl` alone
   // works from now on. --no-save opts out, and a dry run only looks.
   if (
@@ -502,6 +561,9 @@ async function cmdCrawl(flags: Flags): Promise<void> {
     await scaffoldProject(baseUrl, log);
   }
   const pagesOnly = flags["no-states"] === true;
+  const onlyFlag = str(flags, "only");
+  const only = onlyFlag === undefined ? undefined : csv(onlyFlag);
+  if (only && !only.length) throw new UsageError("--only needs at least one path or glob");
   if (flags["dry-run"] === true) {
     if (flags.resume === true) throw new UsageError("pass --dry-run or --resume, not both");
     const plan = await planCrawl({
@@ -509,6 +571,7 @@ async function cmdCrawl(flags: Flags): Promise<void> {
       baseUrl,
       replay: flags.replay === true,
       pagesOnly,
+      only,
       log,
     });
     reportPlan(plan, flags, log);
@@ -520,6 +583,8 @@ async function cmdCrawl(flags: Flags): Promise<void> {
     replay: flags.replay === true,
     resume: flags.resume === true,
     pagesOnly,
+    only,
+    configFile: configPath,
     log,
   });
   reportDone(runDir, manifest, flags, log);
@@ -540,7 +605,141 @@ function reportPlan(plan: CrawlPlan, flags: Flags, log: Log): void {
     `dry run — ${plan.routes.length} page(s), ${plan.states} state(s), ` +
       `${plan.shots} screenshot(s) across ${plan.devices.join(", ")}; nothing captured`,
   );
+  const p = plan.partial;
+  if (p) {
+    if (p.carriedFrom) {
+      log(
+        `  --only: shoot ${p.capture.length} page(s), carry ${p.carry.length} page(s) ` +
+          `(${p.carriedShots} screenshot(s)) from run ${p.carriedFrom}`,
+      );
+      for (const f of p.forced)
+        log(`    + ${f.url} shot too (${f.reason === "new" ? "new" : "incomplete in that run"})`);
+    } else {
+      log("  --only: no finished run to carry from, so every page would be shot");
+    }
+  }
   log(`  model : ${plan.cachePath}`);
+}
+
+/** The commit records in a site's runs, newest first. */
+async function runSources(
+  config: Config,
+  baseUrl: string | undefined,
+): Promise<{ source: SourceInfo; complete: boolean }[]> {
+  const outRoot = path.resolve(config.output.dir);
+  const site = baseUrl ? siteKey(baseUrl, config.output.site) : config.output.site;
+  if (!site) return [];
+  const root = siteDir(outRoot, site);
+  const out: { source: SourceInfo; complete: boolean }[] = [];
+  for (const id of [...(await listRuns(root))].reverse()) {
+    try {
+      const m = JSON.parse(
+        await fs.readFile(path.join(runDir(root, id), "crawl-map.json"), "utf8"),
+      ) as Manifest;
+      if (m.source?.commit) out.push({ source: m.source, complete: m.stats?.complete === true });
+    } catch {
+      // An unfinished or unreadable run has no record to offer.
+    }
+  }
+  return out;
+}
+
+async function cmdChanges(flags: Flags): Promise<void> {
+  const log = makeLog(flags);
+  const config = await loadConfigWithOverrides(flags);
+  const intent = await loadRoutesIntent(config);
+  const baseUrl = str(flags, "target") ?? config.target ?? intent.target;
+  const recorded = intent.source;
+  // The run that matches the routes file's record holds its list of dirty files; with
+  // no record in the file (not committed, or an older catalogue), the newest run's.
+  const runs = await runSources(config, baseUrl);
+  const sources = runs.map((r) => r.source);
+  const runSource =
+    (recorded &&
+      (sources.find((s) => s.commit === recorded.commit && s.capturedAt === recorded.capturedAt) ??
+        sources.find((s) => s.commit === recorded.commit))) ||
+    (recorded ? undefined : sources[0]);
+  // The newest run is the one a partial run carries from: the baseline, when it was
+  // shot at another commit than the routes file says (a file pulled from a teammate).
+  // Only when that run stands for its commit: one with failed shots, without the
+  // states, or with a path it shot nothing for leaves the routes file's record be.
+  const localRun = runs[0]?.complete ? runs[0].source : undefined;
+
+  const cachePath = modelCachePath(path.resolve(config.output.dir));
+  const model = (await pathExists(cachePath)) ? await loadInputManifest(cachePath) : undefined;
+  const pages = model?.routes.map((r) => r.url) ?? intent.routes.map((r) => r.path);
+
+  let routes: ChangesReport["routes"];
+  if (flags.discover === true) {
+    if (!baseUrl)
+      throw new UsageError("--discover needs a target: pass --target=<url> or set target");
+    const preview = await previewRoutes({ config, baseUrl, log });
+    routes = { added: preview.added, removed: preview.removed };
+    if (preview.capped)
+      log(
+        `⚠ discovery stopped at scope.maxPages (${config.scope.maxPages}): only pages the site answers as gone (404) are listed as removed`,
+      );
+  }
+
+  const configFile = (await resolveConfigPath(flags)) ?? path.resolve("visualice.config.json");
+  const report = await computeChanges({
+    cwd: process.cwd(),
+    recorded,
+    runSource,
+    localRun,
+    ignore: crawlOwnFiles(config, configFile),
+    config: { file: configFile, hash: await hashFile(configFile) },
+    pages,
+    routes,
+  });
+  if (flags.json === true) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  printChanges(report);
+}
+
+function printChanges(r: ChangesReport): void {
+  const short = (c: string) => c.slice(0, 12);
+  if (r.baseline) {
+    const b = r.baseline;
+    console.log(
+      `catalogue: ${short(b.commit)}${b.branch ? ` (${b.branch})` : ""}` +
+        `${b.dirty ? `, ${b.dirty} uncommitted change(s)` : ""}` +
+        `${b.capturedAt ? `, shot ${b.capturedAt}` : ""}`,
+    );
+  }
+  if (r.head) {
+    console.log(
+      `now:       ${short(r.head.commit)}${r.head.branch ? ` (${r.head.branch})` : ""}` +
+        `${r.head.dirty ? `, ${r.head.dirty} uncommitted change(s)` : ""}` +
+        (r.baseline ? ` — ${r.commitCount} commit(s) later` : ""),
+    );
+  }
+  console.log(`verdict:   ${r.verdict}`);
+  for (const reason of r.reasons) console.log(`  · ${reason}`);
+  if (r.global.length) {
+    console.log("\nchanges every page:");
+    for (const g of r.global) console.log(`  ${g.path}  (${g.reason})`);
+  }
+  if (r.candidates.length) {
+    console.log("\npages by file:");
+    for (const c of r.candidates) {
+      const pages = c.pages.length ? c.pages.join(", ") : "no page in the catalogue yet";
+      console.log(
+        `  ${c.file}  →  ${c.pattern}${c.kind === "layout" ? " (layout)" : ""}: ${pages}`,
+      );
+    }
+  }
+  if (r.unmapped.length) {
+    console.log("\nno page on their own (trace who imports them):");
+    for (const f of r.unmapped) console.log(`  ${f}`);
+  }
+  if (r.routes) {
+    if (r.routes.added.length) console.log(`\nnew pages: ${r.routes.added.join(", ")}`);
+    if (r.routes.removed.length) console.log(`gone pages: ${r.routes.removed.join(", ")}`);
+  }
+  if (r.suggest) console.log(`\nnext: ${r.suggest.command}`);
 }
 
 async function cmdRoutes(flags: Flags): Promise<void> {
@@ -717,7 +916,7 @@ async function cmdProbe(flags: Flags): Promise<void> {
     recipe = state.recipe;
   }
 
-  const storageState = await ensureStorageState(config, log);
+  const storageState = await ensureStorageState(config, log, baseUrl);
   const shot = str(flags, "shot");
   const allDevices = flags["all-devices"] === true;
   if (allDevices && !recipe) {
@@ -728,7 +927,9 @@ async function cmdProbe(flags: Flags): Promise<void> {
   }
   const probeOn = (device: string | undefined, shotPath: string | undefined) =>
     probePage({
-      config,
+      // The model's hints (generated-id patterns a crawl learned, masks) apply here
+      // as in capture, so a probe's verdict is the one capture will reach.
+      config: applyHints(config, model?.hints),
       baseUrl,
       url: route?.url ?? page,
       recipe,
@@ -857,6 +1058,10 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "--version" || cmd === "-v") return printVersion();
+  if (rest.includes("--help") || rest.includes("-h")) {
+    printHelp();
+    return;
+  }
   if (!isCommand(cmd)) {
     console.error(`unknown command: ${cmd}`);
     printHelp();
@@ -865,6 +1070,39 @@ async function main(): Promise<void> {
   }
   const flags = parseFlags(cmd, rest);
   setHeaded(flags.headed === true);
+  const update = await updateCheck(flags);
+  if (update?.notice) console.error(`ℹ ${update.notice}`);
+  try {
+    await runCommand(cmd, flags);
+  } finally {
+    // Let a background registry lookup save its answer, but never hold a finished
+    // command up for long: an unanswered lookup is simply tried again next time.
+    if (update) await Promise.race([update.refreshed, delay(1500)]);
+  }
+}
+
+/**
+ * The update check, for an installed CLI. A source checkout (this repo, or one
+ * `npm link`ed) is never "behind" in a way worth telling, and `--quiet` asks for silence.
+ */
+async function updateCheck(flags: Flags): Promise<UpdateCheck | undefined> {
+  if (!(await updatesOn(flags))) return undefined;
+  try {
+    return await startUpdateCheck(await readVersion());
+  } catch {
+    return undefined;
+  }
+}
+
+/** Is the update check (terminal notice and viewer banner) on for this run? */
+async function updatesOn(flags: Flags): Promise<boolean> {
+  if (flags.quiet === true || updateCheckDisabled()) return false;
+  return !(await pathExists(path.join(PROJECT_ROOT, ".git")));
+}
+
+const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref());
+
+async function runCommand(cmd: string, flags: Flags): Promise<void> {
   switch (cmd) {
     case "init":
       return cmdInit(flags);
@@ -896,6 +1134,8 @@ async function main(): Promise<void> {
       return cmdProbe(flags);
     case "author":
       return cmdAuthor(flags);
+    case "changes":
+      return cmdChanges(flags);
   }
 }
 
@@ -908,6 +1148,12 @@ main().catch((e) => {
     console.error(e.message);
     process.exit(1);
   }
-  console.error(e instanceof Error ? (e.stack ?? e.message) : e);
+  // An error raised on purpose (a plain `Error`) is its message. Anything else is a
+  // bug, and its stack is what a report needs.
+  const plain = e instanceof Error && e.name === "Error";
+  const debug = process.env.VISUALICE_DEBUG === "1";
+  console.error(
+    e instanceof Error ? (plain && !debug ? `error: ${e.message}` : (e.stack ?? e.message)) : e,
+  );
   process.exit(1);
 });

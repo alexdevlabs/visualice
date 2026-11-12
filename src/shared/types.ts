@@ -98,6 +98,45 @@ export interface ShotRef {
   /** Accessibility rules this state broke, when `checks.accessibility` is on. */
   a11y?: number;
   error?: string; // capture was attempted but failed (after retries); no image written
+  /**
+   * Not shot by this run: copied from an earlier one by a partial crawl (`--only`),
+   * because nothing that changed touched this page. Says where it really comes from.
+   */
+  carried?: CarriedFrom;
+}
+
+/** The run (and commit) a carried-over shot was really taken in. */
+export interface CarriedFrom {
+  runId: string;
+  /** The commit that run was shot from, when it recorded one. */
+  commit?: string;
+  capturedAt?: string;
+}
+
+/**
+ * The code a run was shot from: the git commit checked out in the project. Written to
+ * the routes file and each run's manifest; `visualice changes` diffs against it.
+ */
+export interface SourceInfo {
+  /** Full commit hash of HEAD. */
+  commit: string;
+  branch?: string;
+  /** The commit's committer date (ISO 8601). */
+  committedAt?: string;
+  /** Files with uncommitted changes at capture time (0 = a clean tree). */
+  dirty: number;
+  /** Which files those were (capped). */
+  dirtyFiles?: string[];
+  /** A hash of that list, kept in the routes file, where the list itself isn't. */
+  dirtyHash?: string;
+  /** When the run captured (ISO 8601). */
+  capturedAt: string;
+  /** The URL that was shot. */
+  target?: string;
+  /** A hash of the visualice config file, so a settings change since is noticed. */
+  config?: string;
+  /** The target was served from this machine, so HEAD is known to be what was shot. */
+  local?: boolean;
 }
 
 /** One route×state×device capture that failed after all retries. */
@@ -113,6 +152,20 @@ export interface WantedState {
   route: string;
   state: string;
   description?: string;
+}
+
+/**
+ * A trigger state discovery clicked that showed nothing it could record. Most do
+ * nothing visible by design (sort, refresh, pagination); `busy` ones were still
+ * loading when discovery stopped looking, which is where a slow page hides states.
+ */
+export interface QuietTrigger {
+  route: string;
+  /** What the trigger says, or how it was found. */
+  trigger: string;
+  /** The mobile pass, when it was that pass's probe. */
+  device?: string;
+  result: "no change" | "busy" | "click failed";
 }
 
 export interface StateNode {
@@ -159,6 +212,8 @@ export interface StateNode {
 export interface RouteNode {
   id: string;
   url: string; // path or absolute, as authored
+  /** The page is served at the path with a trailing slash (`/docs/`), which `url` drops. */
+  trailingSlash?: boolean;
   finalUrl?: string; // post-redirect location: an origin-relative path, or an absolute url if it left the origin
   title?: string;
   status?: number;
@@ -186,6 +241,18 @@ export interface SiteInfo {
 export interface Manifest {
   version: number;
   site: SiteInfo;
+  /** The commit the run was shot from, when the project is a git repository. */
+  source?: SourceInfo;
+  /**
+   * A partial run (`crawl --only`): the routes it shot, and the run every other
+   * route's shots were carried over from.
+   */
+  partial?: {
+    only: string[];
+    carriedFrom?: string;
+    /** `--only` paths that matched no page: what they named was not shot. */
+    unmatched?: string[];
+  };
   configSnapshot?: unknown;
   devices: Device[];
   auth?: { method: string; notes?: string };
@@ -195,10 +262,20 @@ export interface Manifest {
     states: number;
     shots: number;
     failed: number;
+    /** Shots copied from an earlier run instead of shot (partial runs). */
+    carried?: number;
+    /**
+     * The run stands for the commit it was shot at: every state of every page, no
+     * failed shot, and (a partial run) a page for each path it was given. Only such a
+     * run moves the routes file's commit record, or is a baseline for `changes`.
+     */
+    complete?: boolean;
     durationMs: number;
     failures: CaptureFailure[];
     /** Routes-file requests still unmet after this run (the Explore-mode queue). */
     wanted?: WantedState[];
+    /** Triggers this run's discovery clicked that showed no change. */
+    quiet?: QuietTrigger[];
     /** Accessibility violations by rule, when `checks.accessibility` is on. */
     accessibility?: {
       id: string;
@@ -213,6 +290,8 @@ export interface Manifest {
     stableSelectors?: string[];
     flakyRegions?: string[];
     skipTriggers?: string[];
+    /** Id patterns the site generates at render time (see `discovery.unstableIds`). */
+    unstableIds?: string[];
     notes?: string;
   };
 }
@@ -257,10 +336,18 @@ export interface ViewerTile {
   a11y?: number;
   /** Capture failed after retries; the tile is a placeholder carrying the reason. */
   error?: string;
+  /** Copied from an earlier run, not shot by this one; see `ShotRef.carried`. */
+  carried?: CarriedFrom;
+  /** Shot by a partial run, where the other pages' shots were carried over. */
+  updated?: boolean;
 }
 
 export interface ViewerData {
   site: SiteInfo;
+  /** The commit the run was shot from. */
+  source?: SourceInfo;
+  /** Set on a partial run; see `Manifest.partial`. */
+  partial?: Manifest["partial"];
   devices: Device[];
   tiles: ViewerTile[];
   groups: { path: string; routeId: string; title?: string }[];

@@ -1,5 +1,8 @@
 import type { Manifest } from "../shared/types";
 
+/** Text for a Markdown table cell: a `|` would end the cell, a backslash would undo the escape. */
+const cell = (text: string): string => text.replace(/[\\|]/g, "\\$&");
+
 export function renderReport(m: Manifest): string {
   const lines: string[] = [];
   lines.push(`# Crawl report — ${m.site.title ?? m.site.origin}`);
@@ -41,6 +44,11 @@ export function renderReport(m: Manifest): string {
       `- **Clamped:** ${clamped} shot(s) hit the \`screenshot.maxHeight\` limit and were cut off`,
     );
   }
+  if (m.partial?.unmatched?.length) {
+    lines.push(
+      `- **Not shot:** \`--only\` matched no page for ${m.partial.unmatched.map((p) => `\`${p}\``).join(", ")}`,
+    );
+  }
   lines.push("");
   lines.push(`## Routes`);
   lines.push("");
@@ -51,7 +59,8 @@ export function renderReport(m: Manifest): string {
     const shots = refs.filter((ref) => ref.full).length;
     const failed = refs.filter((ref) => ref.error).length;
     const states = r.states.map((s) => s.id).join(", ");
-    lines.push(`| \`${r.url}\` | ${r.title ?? ""} | ${states} | ${shots} | ${failed || ""} |`);
+    const title = cell(r.title ?? "").replace(/\s+/g, " ");
+    lines.push(`| \`${r.url}\` | ${title} | ${states} | ${shots} | ${failed || ""} |`);
   }
   lines.push("");
 
@@ -71,6 +80,21 @@ export function renderReport(m: Manifest): string {
         `| \`${f.route}\` | ${f.state} | ${f.device} | ${f.error.replace(/\|/g, "\\|")} |`,
       );
     }
+    lines.push("");
+  }
+
+  const generated = m.hints?.unstableIds ?? [];
+  if (generated.length) {
+    lines.push(`## Generated ids`);
+    lines.push("");
+    lines.push(
+      `Ids that changed between two loads of a page, or between two openings of the same`,
+      `dialog, so the site generates them at render time. Recipes and state signatures`,
+      `don't use them. Crawls remember them in the cached model; to keep them for good`,
+      `(and share them with the project), add them to \`discovery.unstableIds\` in the config:`,
+    );
+    lines.push("");
+    for (const p of generated) lines.push(`- \`${p}\``);
     lines.push("");
   }
 
@@ -114,6 +138,39 @@ export function renderReport(m: Manifest): string {
       lines.push(
         `| \`${w.route}\` | ${w.state} | ${(w.description ?? "").replace(/\|/g, "\\|")} |`,
       );
+    }
+    lines.push("");
+  }
+
+  const quiet = m.stats?.quiet ?? [];
+  if (quiet.length) {
+    const busy = quiet.filter((q) => q.result === "busy");
+    const failed = quiet.filter((q) => q.result === "click failed");
+    lines.push(`## Clicked, nothing opened`);
+    lines.push("");
+    lines.push(
+      `Discovery clicked ${quiet.length} trigger(s) that showed nothing it could record. Most`,
+      `do nothing visible by design (sorting, refresh, pagination). Worth a look:`,
+    );
+    lines.push("");
+    lines.push(
+      `- **still loading** (${busy.length}): the page was still busy when discovery stopped`,
+      `  looking, so a slow server may have hidden a state there. Raise`,
+      `  \`discovery.interactions.patienceMs\`, or author the state (Explore mode).`,
+      `- **click failed** (${failed.length}): covered, disabled or gone before the click landed.`,
+    );
+    lines.push("");
+    lines.push(`| Path | Trigger | Result |`);
+    lines.push(`|---|---|---|`);
+    const rank = { busy: 0, "click failed": 1, "no change": 2 } as const;
+    const label = {
+      busy: "**still loading**",
+      "click failed": "click failed",
+      "no change": "no change",
+    };
+    for (const q of [...quiet].sort((a, b) => rank[a.result] - rank[b.result])) {
+      const where = q.device ? `\`${q.route}\` (${q.device})` : `\`${q.route}\``;
+      lines.push(`| ${where} | ${cell(q.trigger)} | ${label[q.result]} |`);
     }
     lines.push("");
   }

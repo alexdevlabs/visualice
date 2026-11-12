@@ -21,6 +21,7 @@ function fakePage() {
         void calls.push(`select(${desc},${[v].flat().join("+")})`),
       press: async (k: string) => void calls.push(`press(${desc},${k})`),
       first: () => l,
+      filter: () => l,
       nth: (n: number) => locator(`${desc}#${n}`),
       waitFor: async (o: { state?: string; timeout?: number }) =>
         void calls.push(`waitFor(${desc},${o.state ?? "visible"})`),
@@ -132,6 +133,8 @@ describe("applyRecipe", () => {
     const p = fakePage();
     await applyRecipe(p, restored);
     expect(p.calls).toEqual([
+      // What's open before the click, in case the id it waits for has changed.
+      "evaluate()",
       'click(role=button[Open "Search"])',
       'waitFor(css=[id="search-modal"],visible)',
     ]);

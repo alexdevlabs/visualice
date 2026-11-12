@@ -1,9 +1,19 @@
+import { canonicalPath } from "../shared/url";
+import { redactUrl } from "../shared/redact";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import type { Config } from "../shared/config";
-import type { InputManifest, RouteNode, StateNode, Target, WantedState } from "../shared/types";
-import { matchesAny } from "../shared/glob";
+import type {
+  InputManifest,
+  RouteNode,
+  SourceInfo,
+  StateNode,
+  Target,
+  WantedState,
+} from "../shared/types";
+import { routeMatches } from "../shared/glob";
 import { isAuthored } from "./manifest";
+import { parseSourceLine, renderSourceLine } from "./source";
 
 // The routes file (`visualice.routes.md`) is the human/LLM-facing site index: a
 // two-level markdown list where only two tokens are load-bearing — the route path
@@ -32,6 +42,8 @@ export interface RoutesIntent {
   routes: RoutesFileRoute[];
   /** Top-level `skip:` globs — excluded from discovery and capture. */
   skipRoutes: string[];
+  /** The commit the catalogue was last captured from (the `visualice-source` line). */
+  source?: SourceInfo;
   warnings: string[];
 }
 
@@ -58,20 +70,36 @@ function splitDash(content: string): { head: string; rest?: string } {
  * Parse a routes file. Tolerant by design: unknown lines (prose, comments, junk)
  * are ignored — only route/state bullets and `skip:` markers carry meaning.
  */
-export function parseRoutesFile(text: string): RoutesIntent {
+export function parseRoutesFile(
+  text: string,
+  /**
+   * How discovery writes a path (trailing slash dropped, query sorted), so a page
+   * typed as `/pricing/` is the model's `/pricing` and not a second page beside it.
+   */
+  canonical: (path: string) => string = (p) => p,
+): RoutesIntent {
   const intent = emptyRoutesIntent();
-  const seenRoutes = new Set<string>();
+  const seenRoutes = new Map<string, RoutesFileRoute>();
   let current: RoutesFileRoute | undefined;
 
   for (const raw of text.split("\n")) {
-    const header = /^#\s+Routes\s+—\s+(.+?)\s*$/.exec(raw);
-    if (header) {
-      intent.target ??= header[1];
+    const source = parseSourceLine(raw.trim());
+    if (source) {
+      intent.source ??= source;
       continue;
     }
-    const bullet = /^(\s*)-\s+(.+?)\s*$/.exec(raw);
-    if (!bullet) continue;
-    const [, indent, content] = bullet;
+    // Matched on the line without its trailing space, and the text trimmed after: a
+    // pattern that takes "spaces, then anything, then spaces" is slow on a long run.
+    const line = raw.trimEnd();
+    const header = /^#\s+Routes\s+—\s(.*)$/.exec(line);
+    if (header?.[1].trim()) {
+      intent.target ??= header[1].trim();
+      continue;
+    }
+    const bullet = /^(\s*)-\s(.*)$/.exec(line);
+    const content = bullet?.[2].trim();
+    if (!bullet || !content) continue;
+    const indent = bullet[1];
 
     if (indent.length === 0) {
       current = undefined;
@@ -81,17 +109,21 @@ export function parseRoutesFile(text: string): RoutesIntent {
         continue;
       }
       const { head, rest } = splitDash(content);
-      const path = head.split(/\s+/)[0];
-      if (!isRoutePath(path)) {
+      const written = head.split(/\s+/)[0];
+      if (!isRoutePath(written)) {
         intent.warnings.push(`ignored route line (not a path): "${content}"`);
         continue;
       }
-      if (seenRoutes.has(path)) {
-        intent.warnings.push(`duplicate route "${path}" — first entry wins`);
+      const path = written.startsWith("/") ? safely(canonical, written) : written;
+      const seen = seenRoutes.get(path);
+      if (seen) {
+        // One page: what is listed under the second line belongs to the first.
+        intent.warnings.push(`duplicate route "${written}" — merged into the first`);
+        current = seen;
         continue;
       }
-      seenRoutes.add(path);
       current = { path, label: rest, states: [] };
+      seenRoutes.set(path, current);
       intent.routes.push(current);
       continue;
     }
@@ -104,10 +136,10 @@ export function parseRoutesFile(text: string): RoutesIntent {
       skip = true;
       body = body.slice(5).trim();
     } else {
-      const box = /^\[( |x|X)?\]\s+(.*)$/.exec(body);
+      const box = /^\[( |x|X)?\]\s(.*)$/.exec(body);
       if (box) {
         wanted = box[1] !== "x" && box[1] !== "X";
-        body = box[2];
+        body = box[2].trimStart();
       }
     }
     const { head, rest } = splitDash(body);
@@ -116,7 +148,16 @@ export function parseRoutesFile(text: string): RoutesIntent {
       intent.warnings.push(`ignored state line under "${current.path}": "${content}"`);
       continue;
     }
-    if (current.states.some((s) => s.id === id)) continue; // first entry wins
+    const listed = current.states.find((s) => s.id === id);
+    if (listed) {
+      // First entry wins, except that a `skip:` added under a state's own line (as
+      // the legend says to) is the newer word on it.
+      if (skip) {
+        listed.skip = true;
+        listed.wanted = undefined;
+      }
+      continue;
+    }
     current.states.push({
       id,
       description: rest,
@@ -125,6 +166,14 @@ export function parseRoutesFile(text: string): RoutesIntent {
     });
   }
   return intent;
+}
+
+function safely(map: (p: string) => string, path: string): string {
+  try {
+    return map(path) || path;
+  } catch {
+    return path;
+  }
 }
 
 /** `skip:`-ed state ids per route path. */
@@ -145,7 +194,7 @@ export function computeWanted(model: InputManifest, intent: RoutesIntent): Wante
   const byUrl = new Map(model.routes.map((r) => [r.url, r]));
   const wanted: WantedState[] = [];
   for (const r of intent.routes) {
-    if (matchesAny(r.path, intent.skipRoutes)) continue;
+    if (routeMatches(r.path, intent.skipRoutes)) continue;
     const existing = new Set(byUrl.get(r.path)?.states.map((s) => s.id) ?? []);
     for (const s of r.states) {
       if (s.skip || existing.has(s.id)) continue;
@@ -163,7 +212,7 @@ export function unmappedRoutes(model: InputManifest, intent: RoutesIntent): stri
   const known = new Set(model.routes.map((r) => r.url));
   return intent.routes
     .map((r) => r.path)
-    .filter((p) => !known.has(p) && !matchesAny(p, intent.skipRoutes));
+    .filter((p) => !known.has(p) && !routeMatches(p, intent.skipRoutes));
 }
 
 /**
@@ -188,7 +237,7 @@ export function applyStateSkips(model: InputManifest, intent: RoutesIntent): Inp
   if (!intent.routes.length && !intent.skipRoutes.length) return model;
   const skips = stateSkips(intent);
   const routes = model.routes
-    .filter((r) => !matchesAny(r.url, intent.skipRoutes))
+    .filter((r) => !routeMatches(r.url, intent.skipRoutes))
     .map((r) => {
       const skipped = skips.get(r.url);
       if (!skipped) return r;
@@ -227,21 +276,28 @@ Generated by visualice — edit freely; regenerated after every crawl.
 /**
  * Render the routes file from the cached model + prior intent. Deterministic and
  * idempotent: an unchanged model re-renders byte-identically, so diffs mean change.
+ *
+ * `source` is the commit a capture just shot; without one (a discovery, a dry run,
+ * `visualice routes`) the line the file already had is kept, since the catalogue is
+ * still the one shot then.
  */
 export function renderRoutesFile(
   model: InputManifest,
   intent: RoutesIntent,
   target: string,
+  source: SourceInfo | undefined = intent.source,
 ): string {
   const skips = stateSkips(intent);
   const intentByPath = new Map(intent.routes.map((r) => [r.path, r]));
   const modelByUrl = new Map(model.routes.map((r) => [r.url, r]));
 
   const paths = new Set<string>();
-  for (const r of model.routes) if (!matchesAny(r.url, intent.skipRoutes)) paths.add(r.url);
-  for (const r of intent.routes) if (!matchesAny(r.path, intent.skipRoutes)) paths.add(r.path);
+  for (const r of model.routes) if (!routeMatches(r.url, intent.skipRoutes)) paths.add(r.url);
+  for (const r of intent.routes) if (!routeMatches(r.path, intent.skipRoutes)) paths.add(r.path);
 
-  const lines: string[] = [`# Routes — ${target}`, "", LEGEND, ""];
+  const lines: string[] = [`# Routes — ${target}`, ""];
+  if (source) lines.push(renderSourceLine(source), "");
+  lines.push(LEGEND, "");
 
   for (const p of [...paths].sort(routeOrder)) {
     const route: RouteNode | undefined = modelByUrl.get(p);
@@ -291,7 +347,8 @@ export async function loadRoutesIntent(config: Config): Promise<RoutesIntent> {
   } catch {
     return emptyRoutesIntent();
   }
-  return parseRoutesFile(text);
+  const { hashRoutes } = config.scope;
+  return parseRoutesFile(text, (p) => canonicalPath(new URL(p, "http://_local_"), hashRoutes));
 }
 
 /** Regenerate the routes file from the cached model + prior intent. */
@@ -301,9 +358,14 @@ export async function writeRoutesFile(
   intent: RoutesIntent,
   target: string,
   log: (msg: string) => void = () => {},
+  source?: SourceInfo,
 ): Promise<void> {
   const file = routesFilePath(config);
   if (!file) return;
-  await fs.writeFile(file, renderRoutesFile(model, intent, target));
+  // A file people commit: never the `user:pass@` a target URL may carry.
+  await fs.writeFile(
+    file,
+    renderRoutesFile(model, intent, redactUrl(target), source ?? intent.source),
+  );
   log(`routes file → ${file}`);
 }

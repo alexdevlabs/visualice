@@ -17,6 +17,10 @@ configured in `visualice.config.json` in the current directory.
      map with a dry run, show the user the page types, shot count and any writes and
      confirm once, dispatch one `visualice:visualice-explorer` agent per page type,
      then `visualice author` and `visualice crawl --replay`.
+   - **Already mapped, and the routes file records a commit** (a `visualice-source`
+     line) → run `visualice changes --json` first and follow the skill's
+     `references/update-mode.md`: trace the affected pages, ask the user whether to
+     rerun just those (`crawl --replay --only=…`, carrying the rest over) or everything.
    - **Already mapped** → `visualice crawl --replay --json --quiet`, then explore only
      what's new (pages added to the routes file, `wanted` lines), per "Later runs" in
      the same reference. `/visualice-explore` is for widening it on purpose.

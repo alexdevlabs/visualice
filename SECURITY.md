@@ -23,10 +23,14 @@ Worth knowing when you assess a report, or decide where to run it:
   Never write a real credential into a config or a state recipe: state recipes are
   stored as written.
 - **The viewer server.** `visualice serve` listens on every interface, so a phone on the
-  same network can browse the runs; anyone who can reach the port can read them. Its one
+  same network can browse the runs; anyone who can reach the port can read them. It
+  answers only to a host name that is this machine's (`localhost`, an IP address, the
+  computer's name, or one listed in `VISUALICE_ALLOWED_HOSTS`), so a page on another site
+  can't read runs by pointing its own name at the server (DNS rebinding). Its one
   write action, deleting a site's runs, is accepted only from this machine (a loopback
   address and host, and a same-origin page), and is confined to direct children of
   `<dir>/sites/`. Don't serve runs of a private site on an untrusted network.
 - **Crawling.** A crawl clicks through the target site in a real browser. Discovery
-  avoids triggers that look destructive (`discovery.interactions.denyLabels`) and never
-  submits non-idempotent forms, but only crawl sites you own or are allowed to test.
+  avoids triggers that look destructive (`discovery.interactions.denyLabels`), never
+  clicks a form's submit button (a `<button>` in a form with no `type` is one), and
+  leaves alone a page that redirects to another site, but only crawl sites you own or are allowed to test.

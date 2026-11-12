@@ -50,7 +50,7 @@ settings.
 per type, all in a single message (at most 6 at a time; queue the rest). Give each:
 
 - page type, representative page(s), the other pages of the type
-- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.1.1`,
+- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.2.0`,
   or `npm run vc --` in a visualice checkout) and the project directory to run it from
 - output file `.visualice/explore/<type-slug>.json` and a shots dir
   (`.visualice/explore/shots/`)
@@ -150,9 +150,10 @@ that's what `author` is for.
 
 ## Adding a missing page
 
-Discovery only finds pages something links to. For one it can't reach (behind a login,
-or never linked, like a dashboard or a `?id=99` not-found page), don't edit the cache by
-hand:
+Discovery only finds pages something links to, including links that show once a menu
+group or drawer is opened. For one it can't reach (behind a login, behind a trigger with a
+denied label, or never linked, like a dashboard or a `?id=99` not-found page), don't edit
+the cache by hand:
 
 1. Add `- /path` as a top-level bullet in `visualice.routes.md`, or list it in an
    explore file's `"pages"` (`visualice author` seeds those into the routes file).
@@ -185,6 +186,9 @@ exploring keeps paying off:
   (`stabilize.waitForSelectorsTimeoutMs`, 5 s by default); one that never appears
   costs that wait on every shot and logs a warning — don't leave a stale one in place.
 - `skipTriggers` → merged into `discovery.interactions.denySelectors`: never probed.
+- `unstableIds` → merged into `discovery.unstableIds`: id patterns the site generates
+  at render time, never used in a recipe or a signature. Crawls write the ones they
+  notice here themselves; move them into the config to keep them with the project.
 
 Hints only ever add to the config; they can't remove what the user set, and applying
 them twice changes nothing. Put site-specific knowledge here rather than in the

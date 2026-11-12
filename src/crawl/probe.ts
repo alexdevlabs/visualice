@@ -6,6 +6,7 @@ import { testIdAttribute, useTestIdAttribute } from "../shared/selectors";
 import { applyContextInit } from "./stabilize";
 import { deviceContextOptions } from "./context-options";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
+import { generatedIdSource, useUnstableIds } from "./generated-ids";
 import {
   addedLines,
   addedRegions,
@@ -140,89 +141,93 @@ async function readFormsAndControls(
   page: Page,
 ): Promise<{ forms: InventoryForm[]; controls: InventoryField[] }> {
   return page
-    .evaluate((testIdAttr) => {
-      const forms: { fields: unknown[]; submit?: unknown }[] = [];
-      const formIndex = new Map<Element, number>();
-      const controls: unknown[] = [];
-      const all = Array.from(
-        document.querySelectorAll(
-          "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]), select, textarea",
-        ),
-      ) as (HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)[];
-      for (const el of all) {
-        const r = el.getBoundingClientRect();
-        if (r.width <= 0 || r.height <= 0) continue;
-        const tid = el.getAttribute(testIdAttr);
-        const labelEl = el.labels && el.labels[0];
-        const label = (
-          el.getAttribute("aria-label") ||
-          (labelEl ? labelEl.textContent : "") ||
-          el.getAttribute("placeholder") ||
-          el.getAttribute("name") ||
-          ""
-        )
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 60);
-        const target = tid
-          ? { testId: tid }
-          : el.id && /^[A-Za-z][\w-]*$/.test(el.id)
-            ? { selector: `#${el.id}` }
-            : el.getAttribute("name")
-              ? { selector: `[name="${el.getAttribute("name")}"]` }
-              : label
-                ? { label }
-                : { selector: el.tagName.toLowerCase() };
-        const field: Record<string, unknown> = {
-          target,
-          label,
-          type:
-            el.tagName === "SELECT"
-              ? "select"
-              : el.getAttribute("type") || el.tagName.toLowerCase(),
-          required: el.required || el.getAttribute("aria-required") === "true",
-        };
-        if (el.tagName === "SELECT") {
-          field.options = Array.from((el as HTMLSelectElement).options)
-            .slice(0, 30)
-            .map((o) => ({ value: o.value, label: o.text.trim() }));
-        }
-        const form = el.closest("form");
-        if (!form) {
-          controls.push(field);
-          continue;
-        }
-        let i = formIndex.get(form);
-        if (i === undefined) {
-          i = forms.length;
-          formIndex.set(form, i);
-          const btn = form.querySelector(
-            "button[type=submit], button:not([type]), input[type=submit]",
-          ) as HTMLElement | null;
-          const entry: { fields: unknown[]; submit?: unknown } = { fields: [] };
-          if (btn) {
-            const btid = btn.getAttribute(testIdAttr);
-            const text = (btn.textContent || (btn as HTMLInputElement).value || "")
-              .replace(/\s+/g, " ")
-              .trim()
-              .slice(0, 40);
-            entry.submit = {
-              target: btid
-                ? { testId: btid }
-                : btn.id
-                  ? { selector: `#${btn.id}` }
-                  : text
-                    ? { role: "button", name: text }
-                    : { selector: "form [type=submit]" },
-              label: text,
-            };
+    .evaluate(
+      ([testIdAttr, generatedId]) => {
+        const generated = new RegExp(generatedId);
+        const forms: { fields: unknown[]; submit?: unknown }[] = [];
+        const formIndex = new Map<Element, number>();
+        const controls: unknown[] = [];
+        const all = Array.from(
+          document.querySelectorAll(
+            "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=image]), select, textarea",
+          ),
+        ) as (HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)[];
+        for (const el of all) {
+          const r = el.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) continue;
+          const tid = el.getAttribute(testIdAttr);
+          const labelEl = el.labels && el.labels[0];
+          const label = (
+            el.getAttribute("aria-label") ||
+            (labelEl ? labelEl.textContent : "") ||
+            el.getAttribute("placeholder") ||
+            el.getAttribute("name") ||
+            ""
+          )
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 60);
+          const target = tid
+            ? { testId: tid }
+            : el.id && /^[A-Za-z][\w-]*$/.test(el.id) && !generated.test(el.id)
+              ? { selector: `#${el.id}` }
+              : el.getAttribute("name")
+                ? { selector: `[name="${el.getAttribute("name")}"]` }
+                : label
+                  ? { label }
+                  : { selector: el.tagName.toLowerCase() };
+          const field: Record<string, unknown> = {
+            target,
+            label,
+            type:
+              el.tagName === "SELECT"
+                ? "select"
+                : el.getAttribute("type") || el.tagName.toLowerCase(),
+            required: el.required || el.getAttribute("aria-required") === "true",
+          };
+          if (el.tagName === "SELECT") {
+            field.options = Array.from((el as HTMLSelectElement).options)
+              .slice(0, 30)
+              .map((o) => ({ value: o.value, label: o.text.trim() }));
           }
-          forms.push(entry);
+          const form = el.closest("form");
+          if (!form) {
+            controls.push(field);
+            continue;
+          }
+          let i = formIndex.get(form);
+          if (i === undefined) {
+            i = forms.length;
+            formIndex.set(form, i);
+            const btn = form.querySelector(
+              "button[type=submit], button:not([type]), input[type=submit]",
+            ) as HTMLElement | null;
+            const entry: { fields: unknown[]; submit?: unknown } = { fields: [] };
+            if (btn) {
+              const btid = btn.getAttribute(testIdAttr);
+              const text = (btn.textContent || (btn as HTMLInputElement).value || "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .slice(0, 40);
+              entry.submit = {
+                target: btid
+                  ? { testId: btid }
+                  : btn.id && /^[A-Za-z][\w-]*$/.test(btn.id) && !generated.test(btn.id)
+                    ? { selector: `#${btn.id}` }
+                    : text
+                      ? { role: "button", name: text }
+                      : { selector: "form [type=submit]" },
+                label: text,
+              };
+            }
+            forms.push(entry);
+          }
+          forms[i].fields.push(field);
         }
-        forms[i].fields.push(field);
-      }
-      return { forms, controls };
-    }, testIdAttribute())
+        return { forms, controls };
+      },
+      [testIdAttribute(), generatedIdSource()] as const,
+    )
     .catch(() => ({ forms: [], controls: [] })) as Promise<{
     forms: InventoryForm[];
     controls: InventoryField[];
@@ -298,6 +303,7 @@ export async function probePage(
 ): Promise<{ inventory: PageInventory } | ProbeOutcome> {
   const { config, baseUrl } = opts;
   useTestIdAttribute(config.testIdAttribute);
+  useUnstableIds(config.discovery.unstableIds);
   const device = pickDevice(config, opts.device);
   const engines = { chromium, firefox, webkit };
   const browser = await engines[device.browser ?? "chromium"].launch(launchOptions());

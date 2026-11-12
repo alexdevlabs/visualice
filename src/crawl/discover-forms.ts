@@ -1,6 +1,7 @@
 import type { Page } from "playwright";
 import type { RecipeStep, StateNode, Target } from "../shared/types";
 import { describeTarget, locatorFor, testIdAttribute } from "../shared/selectors";
+import { isGeneratedId } from "./generated-ids";
 
 /**
  * Form states: focus rings and validation errors.
@@ -80,7 +81,8 @@ export interface FieldInfo {
  */
 export function targetFor(info: FieldInfo): Target {
   if (info.testId) return { testId: info.testId };
-  if (info.id && SIMPLE_ID.test(info.id)) return { selector: `#${info.id}` };
+  if (info.id && SIMPLE_ID.test(info.id) && !isGeneratedId(info.id))
+    return { selector: `#${info.id}` };
   if (info.name) return { selector: `form [name="${info.name}"]` };
   // Positional fallback: the field has no stable handle of its own.
   return { selector: FIELD_SELECTOR, nth: info.index };

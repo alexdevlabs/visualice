@@ -48,6 +48,8 @@ const FLAG_TYPES: Record<string, FlagType> = {
   inventory: "boolean",
   from: "string",
   "all-devices": "boolean",
+  only: "string",
+  discover: "boolean",
 };
 
 /**
@@ -93,6 +95,7 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
     "dry-run",
     "replay",
     "resume",
+    "only",
     "json",
     "quiet",
     "fail-on-error",
@@ -112,6 +115,7 @@ export const COMMAND_FLAGS: Record<string, string[]> = {
   doctor: ["json", "quiet", "no-fix"],
   export: ["config", "site", "run", "dest", "json", "quiet", "dir"],
   author: ["config", "target", "from", "json", "quiet", "dir"],
+  changes: ["config", "target", "discover", "site", "headed", "json", "quiet", "dir"],
   probe: [
     "config",
     "target",
@@ -159,6 +163,10 @@ export function parseFlags(
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (!token.startsWith("--")) {
+      // `-q`, `-x`: a flag, mistyped. Never the page or the URL the command takes.
+      if (/^-[a-zA-Z]/.test(token)) {
+        throw new UsageError(`unknown flag ${token} — flags look like --name=value`);
+      }
       const positional = own(POSITIONAL, cmd);
       if (positional && flags[positional] === undefined) {
         flags[positional] = token;

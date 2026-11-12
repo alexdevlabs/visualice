@@ -114,10 +114,12 @@
           "maxCandidates": 40,
           "clickTimeoutMs": 4000,
           "settleMs": 250,
+          "patienceMs": 1500,
           "nestDepth": 1,
           "siteWideOnce": true,
           "denyLabels": [
             "logout",
+            "log out",
             "sign out",
             "delete",
             "remove",
@@ -127,7 +129,8 @@
           "denySelectors": [],
           "extraTriggers": [],
           "formStates": true
-        }
+        },
+        "unstableIds": []
       },
       "type": "object",
       "properties": {
@@ -171,10 +174,12 @@
             "maxCandidates": 40,
             "clickTimeoutMs": 4000,
             "settleMs": 250,
+            "patienceMs": 1500,
             "nestDepth": 1,
             "siteWideOnce": true,
             "denyLabels": [
               "logout",
+              "log out",
               "sign out",
               "delete",
               "remove",
@@ -225,6 +230,13 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "patienceMs": {
+              "default": 1500,
+              "description": "How long a probe keeps looking for what a click opened while the page is still busy after `settleMs` (requests the click started still loading, the DOM still changing). A slow server or a dev build can take longer than `settleMs` to show a dialog. 0 looks once, after `settleMs`.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "nestDepth": {
               "default": 1,
               "description": "How deep to probe: 1 = states one interaction away, >1 = also probe inside opened states (expensive). Turn states off with `auto: false`.",
@@ -240,13 +252,14 @@
             "denyLabels": {
               "default": [
                 "logout",
+                "log out",
                 "sign out",
                 "delete",
                 "remove",
                 "unsubscribe",
                 "pay"
               ],
-              "description": "Skip triggers whose accessible label contains any of these (case-insensitive).",
+              "description": "Skip triggers whose accessible label has any of these as whole words (case-insensitive): `import` skips \"Import CSV\", not \"Importers\".",
               "type": "array",
               "items": {
                 "type": "string"
@@ -273,6 +286,14 @@
               "description": "Also probe forms for a focused state (when the page styles a focus ring) and a validation-error state (by touching required fields, never by submitting).",
               "type": "boolean"
             }
+          }
+        },
+        "unstableIds": {
+          "default": [],
+          "description": "Element ids this site generates at render time, as regular expressions (`^mat-dialog-\\d+$`, `^ember\\d+$`). Such an id is different on the next load, on another device or after another click, so recipes and state signatures never use one. React's useId and common component libraries are known already, and each crawl lists the ones it noticed changing; add those here to keep them.",
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
       }

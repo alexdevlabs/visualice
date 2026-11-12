@@ -46,3 +46,13 @@ export function describeTarget(t: Target): string {
   if (t.selector) return t.selector;
   return "?";
 }
+
+/**
+ * What a "wait until visible" step waits on: the first match that is visible, not
+ * the first match. A page that keeps a hidden tab panel or a closed drawer mounted
+ * has matches that never show, and if one comes first in the document the step
+ * would wait on it until it timed out, while the one it meant was on screen.
+ */
+export function visibleMatch(page: Pick<Page, "locator">, selector: string): Locator {
+  return page.locator(selector).filter({ visible: true }).first();
+}

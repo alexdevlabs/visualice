@@ -52,3 +52,12 @@ describe("describeHints", () => {
     expect(describeHints(undefined)).toBeUndefined();
   });
 });
+
+describe("generated id hints", () => {
+  it("adds learned id patterns to the configured ones", () => {
+    const config = ConfigSchema.parse({ discovery: { unstableIds: ["^ember\\d+$"] } });
+    const out = applyHints(config, { unstableIds: ["^dlg\\-\\d+$", "^ember\\d+$"] });
+    expect(out.discovery.unstableIds).toEqual(["^ember\\d+$", "^dlg\\-\\d+$"]);
+    expect(describeHints({ unstableIds: ["^dlg\\-\\d+$"] })).toMatch(/1 generated id pattern/);
+  });
+});

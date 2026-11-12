@@ -14,12 +14,21 @@ import type {
 } from "../shared/types";
 import { pathSlug, stateSlug } from "../shared/slug";
 import { applyContextInit, stabilizePage } from "./stabilize";
-import { makeThumb, imageSize, stackScreens, writeFull, writeViewportCrop } from "./thumbnails";
+import {
+  MAX_SIDE,
+  makeThumb,
+  imageSize,
+  stackScreens,
+  writeFull,
+  writeViewportCrop,
+} from "./thumbnails";
+import { routeHref } from "../shared/url";
 import { captureScreens } from "./screens";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
 import { takeSnapshot } from "./snapshot";
 import { deviceContextOptions } from "./context-options";
 import { useTestIdAttribute } from "../shared/selectors";
+import { useUnstableIds } from "./generated-ids";
 import { createProgress } from "../shared/progress";
 import { pathExists } from "../shared/fsx";
 import { mapPoolWithResource, sleep } from "../shared/pool";
@@ -106,7 +115,7 @@ async function holdsNow(
   const all = page.locator(step.selector);
   switch (step.state ?? "visible") {
     case "visible":
-      return all.first().isVisible();
+      return (await all.filter({ visible: true }).count()) > 0;
     case "hidden":
       return all.first().isHidden();
     case "attached":
@@ -250,18 +259,26 @@ async function fullPageClip(
  */
 async function adoptExistingShot(
   ctx: Pick<StateCtx, "route" | "state" | "device" | "shotsDir" | "runDir">,
-): Promise<ShotRef | undefined> {
+): Promise<{ ref: ShotRef; violations?: AccessibilityViolation[] } | undefined> {
   const { route, state, device, shotsDir, runDir } = ctx;
   const metaPath = path.join(stateDir(shotsDir, route, state), `${device.name}.json`);
   const raw = await fs.readFile(metaPath, "utf8").catch(() => undefined);
   if (raw === undefined) return undefined;
   try {
-    const sidecar = JSON.parse(raw) as { shot?: ShotRef };
+    const sidecar = JSON.parse(raw) as {
+      shot?: ShotRef;
+      routeUrl?: string;
+      state?: string;
+      accessibility?: AccessibilityViolation[];
+    };
     const ref = sidecar.shot;
     if (!ref?.full) return undefined;
+    // Another page's shot, should two ever share a folder, is not this one's.
+    if (sidecar.routeUrl !== undefined && sidecar.routeUrl !== route.url) return undefined;
+    if (sidecar.state !== undefined && sidecar.state !== state.id) return undefined;
     // The sidecar points at the image by a run-relative path; make sure it's there.
     if (!(await pathExists(path.join(runDir, ref.full)))) return undefined;
-    return ref;
+    return { ref, violations: sidecar.accessibility };
   } catch {
     return undefined;
   }
@@ -305,7 +322,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
 
   // Navigate by the (relative) route path resolved against the *current* base, not a
   // stored absolute finalUrl — that keeps a cached site model portable across runs/hosts.
-  const url = resolveUrl(baseUrl, route.url);
+  const url = resolveUrl(baseUrl, routeHref(route));
   const reuse = config.politeness.reuseNavigation;
   // A component is photographed out of a page that is already showing what it
   // needs, so an identical recipe is reusable for it where a page state's isn't.
@@ -417,6 +434,18 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
         keepScroll,
       })
     : undefined;
+
+  // A JPEG holds 65535px: a long page on a dense screen stacks past that, and the
+  // encoder would refuse the whole shot. Keep the screens that fit, and say so.
+  if (taken && shotType === "jpeg") {
+    const frameHeight = Math.max(1, Math.round(device.height * device.dpr));
+    const fits = Math.max(1, Math.floor(MAX_SIDE.jpeg / frameHeight));
+    if (taken.frames.length > fits) {
+      taken.frames.length = fits;
+      if (taken.stops) taken.stops.length = fits;
+      taken.clamped = true;
+    }
+  }
 
   const buf = taken
     ? await stackScreens(taken.frames, shotType, config.screenshot.quality)
@@ -562,6 +591,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
   const { config, manifest, baseUrl, runDir } = opts;
   const log = opts.log ?? (() => {});
   useTestIdAttribute(config.testIdAttribute);
+  useUnstableIds(config.discovery.unstableIds);
   const started = Date.now();
   const shotsDir = path.join(runDir, "screenshots");
   await fs.mkdir(shotsDir, { recursive: true });
@@ -649,7 +679,9 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
             if (opts.resume) {
               const existing = await adoptExistingShot({ route, state, device, shotsDir, runDir });
               if (existing) {
-                state.shots[device.name] = existing;
+                state.shots[device.name] = existing.ref;
+                // Its accessibility findings count in the run's totals like any shot's.
+                if (existing.violations) perShotViolations.push(existing.violations);
                 shotCount++;
                 resumed++;
                 progress.tick();

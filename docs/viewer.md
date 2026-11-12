@@ -41,6 +41,13 @@ turn it on (the button in the zoom controls, or `M`); it shows where you are in 
 and jumps there on click. The path list virtualizes past a few dozen routes so a large run
 doesn't build a sidebar it never shows.
 
+The canvas shows at most 200 shots at a time, because more than that makes panning and
+zooming lag. A bigger selection is split into pages: the arrows above the canvas, or `[`
+and `]`, turn them, and the page is kept in the link. A page ends between two states, so
+a state's devices stay side by side, and a route cut by a page break carries on at the top
+of the next. Search, the filters and the sidebar count every page. Selecting a shot on
+another page (a link, the details panel's arrows) turns to it.
+
 `⌘K` or `/` focuses search, `+` `−` `0` zoom in, out and fit, `M` toggles the minimap, `F`
 opens the selected shot in full screen, `Esc` clears the selection, and `?` lists the
 shortcuts. The header's sun/moon button switches between the light (default) and dark
@@ -52,14 +59,18 @@ Filter by device or by state kind, search by path, and switch site and version f
 the output directory, so switching needs no restart. Failed captures are tiles too: a
 placeholder carrying its error, plus an **N failed captures · Show only** button at the
 foot of the sidebar, so a broken shot is visible rather than missing. The view lives in the
-URL (mode, route, query, devices, kinds, selected tile, run), so copying the address bar
+URL (site, run, mode, route, query, devices, kinds, page, selected tile, full screen), so
+copying the address bar
 shares the exact shot you're looking at. `?data=` accepts same-origin paths only, and a
 `viewer-data.json` the viewer can't read gets an error naming the offending field instead
 of a blank canvas.
 
 `serve` listens on every network interface, so a phone on the same network can browse the
 runs. Writes are local only: deleting a site (below) is refused from any other machine
-(403) and from pages on other origins.
+(403) and from pages on other origins. The server answers only to a name that is this
+machine's (`localhost`, an IP address, the computer's own name), so a web page elsewhere
+can't read the runs by pointing its own domain here; behind a reverse proxy, list its
+host name in `VISUALICE_ALLOWED_HOSTS` (comma-separated).
 
 ## Sites and versions
 
@@ -70,6 +81,17 @@ hides the previews, remembered like the theme), with search and sort, and the lo
 back to it. A card's trash button deletes the site and all its runs from disk after a
 confirmation; the site `serve` was started on can't be deleted (409) while that server
 runs.
+
+### Partial runs and comparing versions
+
+A partial run (`crawl --only`, see [updating after code changes](../skills/visualice/references/update-mode.md))
+shoots the pages that changed and carries the rest over. Its shots carry an **updated**
+tag on the canvas; a carried shot's details panel says so, with the run and commit it
+was really taken in. The details panel's footer shows the commit a shot came from.
+
+**Compare with another version**, in the details panel, puts the same shot from another
+run of the site beside this one (the previous version by default). A shot that was
+carried over unchanged says so instead of looking like a coincidence.
 
 ## Share a run
 

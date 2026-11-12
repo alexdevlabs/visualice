@@ -93,6 +93,14 @@ export const ShotRefSchema = z.object({
     .optional(),
   a11y: z.number().optional(),
   error: z.string().optional(),
+  carried: z
+    .object({
+      runId: z.string(),
+      commit: z.string().optional(),
+      capturedAt: z.string().optional(),
+    })
+    .optional()
+    .describe("Copied from an earlier run by a partial crawl (`--only`), not shot by this one."),
 });
 
 export const StateNodeSchema = z.object({
@@ -127,6 +135,10 @@ export const StateNodeSchema = z.object({
 export const RouteNodeSchema = z.object({
   id: z.string().min(1),
   url: z.string().min(1).describe("Route path (or absolute URL) as authored."),
+  trailingSlash: z
+    .boolean()
+    .optional()
+    .describe("The page is served at the path with a trailing slash, which `url` drops."),
   finalUrl: z.string().optional(),
   title: z.string().optional(),
   status: z.number().int().optional(),
@@ -140,6 +152,7 @@ const HintsSchema = z.object({
   stableSelectors: z.array(z.string()).optional(),
   flakyRegions: z.array(z.string()).optional(),
   skipTriggers: z.array(z.string()).optional(),
+  unstableIds: z.array(z.string()).optional(),
   notes: z.string().optional(),
 });
 

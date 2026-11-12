@@ -1,5 +1,6 @@
 import type { BrowserContext, Page } from "playwright";
 import type { Config } from "../shared/config";
+import { visibleMatch } from "../shared/selectors";
 
 type Stabilize = Config["stabilize"];
 
@@ -32,6 +33,9 @@ function buildInitScript(frozenMs: number | null, seed: number | null): string {
 }
 
 /** Install determinism shims (frozen clock, seeded RNG) before any page script runs. */
+/** How long a page's fonts get to finish loading before it is shot without them. */
+const FONT_WAIT_MS = 5000;
+
 export async function applyContextInit(context: BrowserContext, stab: Stabilize): Promise<void> {
   // tsx/esbuild "keepNames" wraps named functions with a `__name(fn, "name")` helper.
   // When Playwright serializes a page.evaluate callback into the browser, that helper
@@ -115,7 +119,7 @@ export async function waitForStableSelectors(
       const remaining = deadline - Date.now();
       if (remaining <= 0) return selector;
       try {
-        await page.locator(selector).first().waitFor({ state: "visible", timeout: remaining });
+        await visibleMatch(page, selector).waitFor({ state: "visible", timeout: remaining });
         return null;
       } catch {
         return selector;
@@ -161,7 +165,18 @@ export async function stabilizePage(
   }
   if (stab.waitForFonts) {
     await page
-      .evaluate(() => (document.fonts ? document.fonts.ready.then(() => undefined) : undefined))
+      // Bounded: `fonts.ready` never settles while a font request hangs, and an
+      // evaluate has no timeout of its own, so the worker would wait for ever.
+      .evaluate(
+        (budget) =>
+          document.fonts
+            ? Promise.race([
+                document.fonts.ready.then(() => undefined),
+                new Promise<undefined>((r) => setTimeout(r, budget)),
+              ])
+            : undefined,
+        FONT_WAIT_MS,
+      )
       .catch(() => {});
   }
   if (stab.lazyScroll) {

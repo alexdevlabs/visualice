@@ -8,7 +8,23 @@ describe("pathSlug", () => {
   });
   it("nests path segments", () => {
     expect(pathSlug("/blog/post-1")).toBe("blog/post-1");
-    expect(pathSlug("/About/Us/")).toBe("about/us");
+    expect(pathSlug("/about/us/")).toBe("about/us");
+  });
+  it("never puts two different paths in one folder", () => {
+    // What making a path filename-safe loses, a hash of the path keeps.
+    expect(pathSlug("/About/Us")).toMatch(/^about\/us__p-[0-9a-f]{6}$/);
+    expect(pathSlug("/home")).not.toBe(pathSlug("/"));
+    expect(pathSlug("/日本")).not.toBe(pathSlug("/中文"));
+    expect(pathSlug("/a b")).not.toBe(pathSlug("/a-b"));
+    expect(pathSlug("/café")).not.toBe(pathSlug("/caf"));
+  });
+  it("never names a folder outside the run", () => {
+    for (const p of ["/..%2f/..%2f/..%2f/pwn", "/x/..%2f/..%2f/etc/evil", "/%2e%2e/a", "/./b"]) {
+      expect(pathSlug(p).split("/")).not.toContain("..");
+      expect(pathSlug(p).split("/")).not.toContain(".");
+    }
+    expect(stateSlug("..")).toBe("state");
+    expect(stateSlug(".")).toBe("state");
   });
   it("hashes query strings to keep distinct states separate", () => {
     expect(pathSlug("/search?q=a")).not.toBe(pathSlug("/search?q=b"));

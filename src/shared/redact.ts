@@ -20,8 +20,55 @@ function isPlaceholder(value: string): boolean {
 
 const keep = (value: string): string => (isPlaceholder(value) ? value : REDACTED);
 
-/** Header names whose values are credentials rather than configuration. */
-const SECRET_HEADER = /authorization|cookie|token|secret|key|password|auth/i;
+/**
+ * Header names whose values are credentials rather than configuration. Extra headers
+ * are there for preview tokens and bypass cookies, so the list is wide
+ * (`x-vercel-protection-bypass`, `CF-Access-Client-Id`, `X-Preview`).
+ */
+const SECRET_HEADER =
+  /authorization|cookie|token|secret|key|password|auth|bypass|access|client|preview|session|csrf|signature|credential|protect/i;
+
+/** A value that reads like a token whatever its header is called: long, no spaces. */
+const TOKEN_LIKE = /^[A-Za-z0-9_\-+/=.:~]{20,}$/;
+
+const secretHeader = (name: string, value: string): boolean =>
+  SECRET_HEADER.test(name) || TOKEN_LIKE.test(value.trim());
+
+/**
+ * One stretch of a URL between `&`s and `#`s, with the value of its `key=value` hidden.
+ * The key starts at the `&`, or at the first `?` that has a name after it.
+ */
+function redactParam(part: string): string {
+  let at = part.startsWith("&") ? 0 : part.indexOf("?");
+  while (at !== -1) {
+    const eq = part.indexOf("=", at + 1);
+    if (eq === -1) return part;
+    if (eq > at + 1) {
+      const value = part.slice(eq + 1);
+      if (value === "" || isPlaceholder(value)) return part;
+      return part.slice(0, eq + 1) + REDACTED;
+    }
+    at = part.indexOf("?", at + 1);
+  }
+  return part;
+}
+
+/**
+ * A URL without what it may carry of a credential: `user:pass@` and, with `query`,
+ * the values of its parameters (`?token=…`). Not a URL: returned as it is.
+ */
+export function redactUrl(url: string, query = false): string {
+  if (isPlaceholder(url)) return url;
+  // Dropped, not replaced: what is left is still a URL that can be opened.
+  let out = url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i, "$1");
+  if (query) {
+    out = out
+      .split(/(?=[&#])/)
+      .map((part) => redactParam(part))
+      .join("");
+  }
+  return out;
+}
 
 function redactSteps(steps: unknown[]): unknown[] {
   return steps.map((step) => {
@@ -30,6 +77,18 @@ function redactSteps(steps: unknown[]): unknown[] {
     // Only `fill` carries typed-in values; clicks and waits carry selectors.
     if (s.action === "fill" && typeof s.value === "string") {
       return { ...s, value: keep(s.value) };
+    }
+    // A login may pick a tenant or an account by value, or start at a one-time link.
+    if (s.action === "select") {
+      const value = Array.isArray(s.value)
+        ? s.value.map((v) => (typeof v === "string" ? keep(v) : v))
+        : typeof s.value === "string"
+          ? keep(s.value)
+          : s.value;
+      return { ...s, value };
+    }
+    if (s.action === "navigate" && typeof s.url === "string") {
+      return { ...s, url: redactUrl(s.url, true) };
     }
     return step;
   });
@@ -47,12 +106,14 @@ export function redactConfig(config: Config): Config {
   };
 
   for (const [name, value] of Object.entries(out.http.extraHTTPHeaders)) {
-    if (SECRET_HEADER.test(name)) out.http.extraHTTPHeaders[name] = keep(value);
+    if (secretHeader(name, value)) out.http.extraHTTPHeaders[name] = keep(value);
   }
+  if (out.target) out.target = redactUrl(out.target);
 
   if (out.http.proxy) {
     out.http.proxy = {
       ...out.http.proxy,
+      server: redactUrl(out.http.proxy.server),
       ...(out.http.proxy.username ? { username: keep(out.http.proxy.username) } : {}),
       ...(out.http.proxy.password ? { password: keep(out.http.proxy.password) } : {}),
     };
@@ -66,7 +127,11 @@ export function redactConfig(config: Config): Config {
   }
 
   if (out.auth.login) {
-    out.auth.login = { ...out.auth.login, steps: redactSteps(out.auth.login.steps) };
+    out.auth.login = {
+      ...out.auth.login,
+      ...(out.auth.login.url ? { url: redactUrl(out.auth.login.url, true) } : {}),
+      steps: redactSteps(out.auth.login.steps),
+    };
   }
 
   return out;

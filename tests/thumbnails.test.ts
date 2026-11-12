@@ -101,6 +101,38 @@ describe("makeThumb", () => {
   });
 });
 
+describe("a page taller than WebP holds", () => {
+  // A long page on a 3x phone: 1170px wide and far past WebP's 16383px. One flat
+  // colour, so it encodes fast and small.
+  const tall = () =>
+    sharp({
+      create: { width: 1170, height: 40000, channels: 3, background: "#ffffff" },
+      limitInputPixels: false,
+    })
+      .png()
+      .toBuffer();
+
+  it("still gets its preview images, scaled down to fit, whole and in shape", async () => {
+    const buf = await tall();
+    const mid = path.join(dir, "tall-mid.webp");
+    await makeThumb(buf, mid, THUMB, 1024);
+    const m = await sharp(mid).metadata();
+    expect(m.format).toBe("webp");
+    expect(m.height).toBe(16383);
+    expect(m.width).toBe(Math.round((1170 * 16383) / 40000));
+
+    const thumb = path.join(dir, "tall-thumb.webp");
+    await makeThumb(buf, thumb, THUMB); // 480 wide → 16410 tall: just over, so it fits too
+    expect((await sharp(thumb).metadata()).height).toBeLessThanOrEqual(16383);
+  }, 60000);
+
+  it("explains itself when the full image is set to WebP", async () => {
+    await expect(writeFull(await tall(), path.join(dir, "tall.webp"), "webp", 80)).rejects.toThrow(
+      /40000px tall.*screenshot\.format/,
+    );
+  }, 60000);
+});
+
 describe("imageSize", () => {
   it("reports the intrinsic pixel dimensions of the buffer", async () => {
     expect(await imageSize(await page(640, 480, 100))).toEqual({ width: 640, height: 480 });

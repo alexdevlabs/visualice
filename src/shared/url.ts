@@ -1,4 +1,5 @@
 import { pathSlug } from "./slug";
+import { trimEndOf } from "./trim";
 
 /**
  * URL normalization shared by route discovery and the manifest.
@@ -37,7 +38,7 @@ export function isHashRoute(hash: string): boolean {
  */
 export function hashPart(u: URL, mode: HashRoutes = "never"): string {
   if (mode === "never") return "";
-  const raw = u.hash.replace(/\/+$/, "");
+  const raw = trimEndOf(u.hash, "/");
   if (raw === "" || raw === "#" || raw === "#!") return "";
   if (mode === "auto" && !isHashRoute(u.hash)) return "";
   return raw;
@@ -45,12 +46,12 @@ export function hashPart(u: URL, mode: HashRoutes = "never"): string {
 
 /** Pathname (+ route fragment) with trailing slashes trimmed — what scope globs match. */
 export function scopePath(u: URL, hashRoutes: HashRoutes = "never"): string {
-  return (u.pathname.replace(/\/+$/, "") || "/") + hashPart(u, hashRoutes);
+  return (trimEndOf(u.pathname, "/") || "/") + hashPart(u, hashRoutes);
 }
 
 /** Path + meaningful, sorted query (+ route fragment) — the identity used for dedup and output. */
 export function canonicalPath(u: URL, hashRoutes: HashRoutes = "never"): string {
-  const p = u.pathname.replace(/\/+$/, "") || "/";
+  const p = trimEndOf(u.pathname, "/") || "/";
   const hash = hashPart(u, hashRoutes);
   const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING.test(k));
   if (!params.length) return p + hash;
@@ -61,6 +62,17 @@ export function canonicalPath(u: URL, hashRoutes: HashRoutes = "never"): string 
   // Written in URL order — path, query, fragment — so the canonical form is a URL
   // that can be resolved against a base host and navigated to as-is.
   return `${p}?${search}${hash}`;
+}
+
+/**
+ * The address to load a route at: its path, with the trailing slash put back when
+ * the site serves the page there (`/docs/?page=2`). The canonical `url` drops the
+ * slash so `/docs` and `/docs/` are one route; a server may still answer only one.
+ */
+export function routeHref(route: { url: string; trailingSlash?: boolean }): string {
+  if (!route.trailingSlash) return route.url;
+  const m = /^([^?#]*)(.*)$/.exec(route.url)!;
+  return m[1].endsWith("/") ? route.url : `${m[1]}/${m[2]}`;
 }
 
 /** Stable, filesystem-safe id for a canonical path. */

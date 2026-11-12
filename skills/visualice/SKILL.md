@@ -13,11 +13,17 @@ you verified, so the catalogue reruns without you.
 
 ## 1. Locate & preflight
 
-Use `visualice` when it is on the PATH (`npm i -g visualice`); otherwise run it with
-`npx -y visualice@0.1.1 <cmd>`, the CLI version this skill was written for. Both work
-from any directory, no repo checkout needed. In a source checkout of this repo itself,
+Use `visualice` when it is on the PATH (`npm i -g visualice`) and `visualice --version`
+prints 0.2.0 or newer; otherwise run it with `npx -y visualice@0.2.0 <cmd>`, the CLI
+version this skill was written for. An older installed CLI lacks commands used below:
+use the `npx` form for this task and tell the user once to update it with
+`npm i -g visualice@latest`. Both work from any directory, no repo checkout needed. In a source checkout of this repo itself,
 use the npm scripts instead: `npm run vc -- <cmd>` for anything below, `npm run crawl --
 <args>` for crawls. The commands below say `visualice`; substitute whichever applies.
+
+If a command prints `ℹ visualice X is available (you have Y)…` on stderr, tell the user
+once, with the update command it gives (`claude plugin update visualice@visualice`), and
+carry on with the task: don't update anything yourself.
 
 Before the first crawl in a project, run `visualice doctor` — an idempotent preflight
 that checks Node/Playwright chromium/sharp/the viewer build and self-heals what it
@@ -43,7 +49,9 @@ Steer the crawl by editing the routes file:
 - `- /path` — add a line to seed a page discovery missed. A `--replay` run discovers
   just the new pages and merges them into the cache, so no full re-crawl is needed.
 - `- skip: <state-id>` (nested) or `- skip: /path/**` (top-level) — exclude noise.
-  Deleting a line is NOT an exclusion (it gets re-added); `skip:` is the tombstone.
+  Deleting a line is NOT an exclusion (it gets re-added); `skip:` is the tombstone. For a
+  page's query variants write one glob with a `?` (`- skip: /metrics?*` keeps `/metrics`),
+  not a line per variant.
 - `- [ ] state-id — description` — request a state that has no recipe yet. Unmet
   requests surface as `wanted` in `--json` and a `## Wanted` report section — that
   is a work queue for exploring (§3, detail in
@@ -58,8 +66,9 @@ captured once, on the first page it was found on. One-off tweaks don't need conf
 edits — flags like `--max-pages=<n> --include=<globs> --devices=<names>` override,
 `--seed=/a,/b` adds entry pages discovery can't reach by links, and `--no-states`
 captures pages only (fast; the states already in the cache are kept).
-Always add `--json` and `--quiet` when running non-interactively, and `--fail-on-error`
-when a failed capture should fail the command (exit 3).
+When running non-interactively, always add `--quiet`, and `--json` on the commands that
+take it (`init`, `auth`, `serve` and `probe` don't; `probe` prints JSON anyway). Add
+`--fail-on-error` when a failed capture should fail the command (exit 3).
 
 ### Estimate the size before crawling something big
 
@@ -72,6 +81,8 @@ gigabyte and many minutes of crawling. Before pointing visualice at anything you
 haven't scoped, run `visualice crawl <url> --dry-run --json`: it discovers routes and
 states **without taking a single screenshot**. The JSON has the exact `shots` count, the
 `states` total, the `devices`, and `routes` (each page's `url` and its state ids).
+A dry run never writes a config: in a project without one, run `visualice init <url>`
+first, or `probe` and `crawl --replay` afterwards have no target.
 Then narrow with `--max-pages` / `--include` / `--devices` / `--no-states` and confirm
 with the user. A dry run writes the cache, so the
 real crawl that follows can be `--replay`.
@@ -88,10 +99,18 @@ rediscovery and loses any Explore-mode states authored into it.
    hasn't been mapped: map it with a dry run, plan the page types with the user,
    explore each type, then capture with `--replay`. Read
    [`references/explore-mode.md`](references/explore-mode.md) and follow it.
-2. **Replay or extend.** The site is mapped. To recapture, run
+2. **Update after code changes.** The site is mapped and the project is a git repo
+   whose code changed since the last crawl. Run `visualice changes --json`: it diffs
+   against the commit the catalogue was shot from (recorded in the routes file) and
+   says whether nothing, some pages, or everything needs reshooting. Work out the
+   affected pages, ask the user whether to rerun just those or everything, then run
+   `visualice crawl --replay --only=<pages>`, which carries every other page over from
+   the last run. Read [`references/update-mode.md`](references/update-mode.md) and
+   follow it.
+3. **Replay or extend.** The site is mapped. To recapture, run
    `visualice crawl --replay --json --quiet`. For new pages, `wanted` lines, or a focus the user names, explore
    just those page types first (explore-mode.md, "Later runs").
-3. **Quick.** Only when the user asks for it ("quick", "just screenshot it", pages only)
+4. **Quick.** Only when the user asks for it ("quick", "just screenshot it", pages only)
    or you're scripting CI: `visualice crawl <url> --json --quiet` runs the heuristics
    and captures in one go, with no exploring. Mention that exploring would find more.
 
@@ -116,6 +135,22 @@ password-protected staging: [`references/auth.md`](references/auth.md).
   usually means its recipe needs an Explore-mode tweak.
 - Failed captures were already retried (`politeness.retries`); don't blindly re-run
   the whole crawl for one flaky shot — fix or mask the cause.
+- **Triggers still loading.** `stillLoading` in `--json` (and **still loading** rows under
+  `## Clicked, nothing opened` in the report) are triggers discovery clicked that showed
+  nothing while the page was still busy: a slow server, often a dev build, may have
+  hidden a dialog or menu there. Check each with `visualice probe`, and author the
+  states that are real (explore-mode.md) so later runs don't depend on probe timing.
+  For a slow site, `discovery.interactions.patienceMs` gives every probe longer.
+- **Generated ids.** Many frameworks give elements ids at render time (React's
+  `useId`, `mat-dialog-0`, `ember812`), which differ on the next load, so a recipe must
+  never rely on one. visualice knows the common ones and notices others by loading a
+  page twice and opening a dialog twice; what it noticed comes back as `unstableIds` in
+  `--json` and under `## Generated ids` in the report. When it does, check the patterns
+  (an id the app really chose, like `step-2`, shouldn't be there), add the real ones to
+  `discovery.unstableIds` in `visualice.config.json` so they're kept with the project,
+  and tell the user in one line. Do the same when you can see the project's framework
+  generates ids (its `package.json`, ids in `crawl-map.json`, failures that are
+  timeouts on a `waitFor` of an `[id=…]`). A regex per pattern: `"^mat-dialog-\\d+$"`.
 - Open the viewer: `visualice serve --open` (`--site=<name>` for another site in the
   output directory, `--run=<id>` for a specific run instead of the latest,
   `--screenshot=out.png` to grab a headless screenshot of the viewer itself). Shots are
@@ -161,3 +196,6 @@ Full flag reference: [`references/cli.md`](references/cli.md).
   by default never publish, delete, pay, sign out or change account settings.
 - The cached model makes re-runs cheap — once a site is mapped, default to `--replay`
   and explore only what's new.
+- After code changes, never reshoot part of a catalogue without asking: lay out what
+  `visualice changes` found and the pages you traced, and let the user choose between
+  those pages and a full run. When in doubt, recommend the full run.

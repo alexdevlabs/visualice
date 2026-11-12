@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { trimEndOf, trimOf } from "./trim";
 
 export function shortHash(s: string, len = 6): string {
   return createHash("sha1").update(s).digest("hex").slice(0, len);
@@ -11,11 +12,9 @@ function safeSegment(s: string): string {
   } catch {
     /* keep raw */
   }
-  const cleaned = decoded
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return cleaned || "x";
+  const cleaned = trimOf(decoded.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-");
+  // Never `.` or `..`: a folder name must not climb out of the run directory.
+  return /^\.*$/.test(cleaned) ? "x" : cleaned;
 }
 
 /**
@@ -45,6 +44,12 @@ function hashSuffix(hash: string): string {
  * `/#/about` and `/#/pricing` would both land in `home/` and overwrite each other.
  * The suffix is flat so the folder tree still mirrors the server's paths, with the
  * client-side route beside it; see `hashSuffix` for how it stays unambiguous.
+ *
+ * Two different paths never share a folder. Making a segment filename-safe loses
+ * things (case, non-ASCII letters, an encoded slash), and the root is called `home`,
+ * so `/About` and `/about`, `/日本` and `/中文`, `/` and `/home` would each land in one
+ * folder and overwrite each other's shots. When the readable form doesn't spell out
+ * the path it came from, a hash of the path is appended (`about__p-3f2a9c`).
  */
 export function pathSlug(rawUrl: string): string {
   let pathname: string;
@@ -59,17 +64,16 @@ export function pathSlug(rawUrl: string): string {
     pathname = rawUrl;
   }
   const suffix = (search ? `__q-${shortHash(search)}` : "") + hashSuffix(hash);
-  const trimmed = pathname.replace(/\/+$/, "");
+  const trimmed = trimEndOf(pathname, "/");
   if (trimmed === "" || trimmed === "/") return suffix ? `home${suffix}` : "home";
   const segs = trimmed.split("/").filter(Boolean).map(safeSegment);
-  return segs.join("/") + suffix;
+  const readable = segs.join("/");
+  const faithful = `/${readable}` === trimmed && readable !== "home";
+  return readable + (faithful ? "" : `__p-${shortHash(trimmed)}`) + suffix;
 }
 
 export function stateSlug(id: string): string {
-  return (
-    id
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "state"
-  );
+  const cleaned = trimOf(id.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-");
+  // Never `.` or `..`, which would name the folder above.
+  return /^\.*$/.test(cleaned) ? "state" : cleaned;
 }

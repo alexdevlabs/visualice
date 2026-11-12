@@ -30,6 +30,11 @@ Needs Node 22.18 or newer.
 /plugin install visualice@visualice
 ```
 
+Plugins from a marketplace like this one don't update on their own unless you ask: turn
+it on under `/plugin` → **Marketplaces** → visualice → **Enable auto-update**, or update
+by hand with `claude plugin update visualice@visualice`. The CLI also says when a newer
+version is out.
+
 Then run `/visualice https://your.site`, or just ask Claude to "run visualice on
 https://your.site". It maps the site, shows you the plan (the kinds of page, how many
 screenshots, anything exploring would change on the site) and asks once, explores each
@@ -97,8 +102,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Report security issues privately, as d
 ## Use it responsibly
 
 Only crawl sites you own or are allowed to test. visualice stays on the target site, follows
-robots.txt unless you turn that off, and while discovering it never submits forms that change
-data or clicks controls that look destructive (delete, sign out, pay).
+robots.txt unless you turn that off, and while discovering it never submits a form or clicks
+a control that looks destructive (delete, sign out, pay).
 
 ## License
 

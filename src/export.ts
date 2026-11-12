@@ -13,6 +13,7 @@ import type { SiteList } from "./serve";
  *   index.html, assets/   the built viewer
  *   data/                 the run
  *   sites.json            the (one-entry) site and run list
+ *   update.json           `{}`: a shared copy has no update banner to show
  */
 
 export interface ExportOptions {
@@ -72,6 +73,9 @@ export async function exportRun(opts: ExportOptions): Promise<ExportResult> {
     sites: [{ key: site, latest: opts.runId, runs: [opts.runId] }],
   };
   await fs.writeFile(path.join(dest, "sites.json"), JSON.stringify(list));
+  // The viewer asks `serve` whether a newer visualice is out. Whoever opens an export
+  // isn't running this install, so the answer is always "nothing to say".
+  await fs.writeFile(path.join(dest, "update.json"), "{}");
 
   return { dest, runId: opts.runId, files: await countFiles(dest) };
 }

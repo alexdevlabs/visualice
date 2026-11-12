@@ -205,14 +205,50 @@ describe("computeLayout — failures and limits", () => {
     expect(l.placed).toHaveLength(6);
   });
 
-  it("caps at the limit and reports what it left out", () => {
-    const l = computeLayout(data, { devices: allDevices, limit: 4 });
-    expect(l.placed).toHaveLength(4);
-    expect(l.truncated).toBe(2);
+  it("is one page when no page size is given", () => {
+    const l = computeLayout(data, { devices: allDevices });
+    expect(l.pages).toBe(1);
+    expect(l.page).toBe(0);
+    expect(l.order).toHaveLength(6);
   });
 
-  it("reports nothing truncated when everything fits", () => {
-    expect(computeLayout(data, { devices: allDevices, limit: 99 }).truncated).toBe(0);
+  it("splits into pages between states, keeping a state's devices together", () => {
+    const l = computeLayout(data, { devices: allDevices, pageSize: 3 });
+    // Rows hold two shots (one per device): a third would split the next row.
+    expect(l.pages).toBe(3);
+    expect(l.placed).toHaveLength(2);
+    expect(l.order).toHaveLength(6);
+    const pages = [0, 1, 2].map((page) =>
+      computeLayout(data, { devices: allDevices, pageSize: 3, page }).placed.map((p) => p.tile),
+    );
+    expect(pages.flat()).toEqual(l.order);
+    for (const tiles of pages)
+      expect(new Set(tiles.map((t) => `${t.routeId} ${t.stateId}`)).size).toBe(1);
+    expect(l.order.map((t) => l.pageOf.get(t.id))).toEqual([0, 0, 1, 1, 2, 2]);
+  });
+
+  it("puts a row bigger than the page size on a page of its own", () => {
+    const l = computeLayout(data, { devices: allDevices, pageSize: 1 });
+    expect(l.pages).toBe(3);
+    expect(l.placed).toHaveLength(2);
+  });
+
+  it("shows the last page when asked for one past the end", () => {
+    const l = computeLayout(data, { devices: allDevices, pageSize: 3, page: 99 });
+    expect(l.page).toBe(2);
+    expect(l.placed).toHaveLength(2);
+    expect(computeLayout(data, { devices: allDevices, pageSize: 3, page: -4 }).page).toBe(0);
+  });
+
+  it("labels a route split over pages with all its states", () => {
+    const one = computeLayout(data, { devices: allDevices });
+    const paged = computeLayout(data, { devices: allDevices, pageSize: 3, page: 0 });
+    const label = paged.labels[0];
+    expect(label.subtitle).toBe(one.labels.find((x) => x.routeId === label.routeId)!.subtitle);
+  });
+
+  it("is one page when everything fits", () => {
+    expect(computeLayout(data, { devices: allDevices, pageSize: 99 }).pages).toBe(1);
   });
 });
 

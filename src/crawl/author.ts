@@ -19,6 +19,13 @@ export const AuthoredFileSchema = z.object({
   states: z
     .array(
       StateNodeSchema.extend({
+        // The routes file lists a state by its id, as one word.
+        id: z
+          .string()
+          .regex(
+            /^[A-Za-z0-9][\w.-]*$/,
+            'a state id is one word: letters, digits, `.`, `_` or `-` (open-modal, not "Open Modal")',
+          ),
         page: z
           .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
           .describe(

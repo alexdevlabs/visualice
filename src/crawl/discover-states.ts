@@ -1,11 +1,25 @@
-import type { BrowserContext, Page } from "playwright";
+import type { BrowserContext, Page, Request } from "playwright";
 import type { Config } from "../shared/config";
-import type { RouteNode, StateNode, StateKind, RecipeStep, Target } from "../shared/types";
-import { locatorFor, testIdAttribute } from "../shared/selectors";
+import type {
+  QuietTrigger,
+  RouteNode,
+  StateNode,
+  StateKind,
+  RecipeStep,
+  Target,
+} from "../shared/types";
+import { describeTarget, locatorFor, testIdAttribute } from "../shared/selectors";
 import { stateSlug } from "../shared/slug";
 import { uniqueId } from "../shared/url";
 import { applyRecipe, gotoRoute } from "./recipe";
 import { discoverFormStates } from "./discover-forms";
+import {
+  confirmStableId,
+  generatedIdSource,
+  isGeneratedId,
+  learnUnstableId,
+  needsStabilityCheck,
+} from "./generated-ids";
 import { createHash } from "node:crypto";
 import {
   addedLines,
@@ -32,6 +46,20 @@ export interface RawCandidate {
 type Interactions = Config["discovery"]["interactions"];
 
 /**
+ * The source of the pattern a denied label is matched with: the words on their own,
+ * not inside longer ones. As plain text inside a label, `import` also stopped
+ * "Importers" and `pay` stopped "Payments": a menu group that was only ever a menu.
+ * A string, because it is built here and used in the page.
+ */
+export function denyPattern(label: string): string {
+  const words = label
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"));
+  return `(?<![\\p{L}\\p{N}])${words.join("\\s+")}(?![\\p{L}\\p{N}])`;
+}
+
+/**
  * Find clickable elements that plausibly open a modal/menu/accordion/tab.
  * `root` limits the search to one container — used when probing *inside* an
  * already-open state so nested discovery doesn't re-find the whole page chrome.
@@ -42,15 +70,18 @@ export async function collectCandidates(
   root?: string,
 ): Promise<RawCandidate[]> {
   const arg = {
-    denyLabels: interactions.denyLabels,
+    denyLabels: interactions.denyLabels.map(denyPattern),
     denySelectors: interactions.denySelectors,
     extra: interactions.extraTriggers,
     hover: interactions.hover,
     maxCandidates: interactions.maxCandidates,
     root: root ?? null,
     testIdAttribute: testIdAttribute(),
+    generatedId: generatedIdSource(),
+    mark: CANDIDATE_MARK,
   };
   const raw = await page.evaluate((cfg) => {
+    const generated = new RegExp(cfg.generatedId);
     const base = [
       "[aria-haspopup]",
       "[aria-expanded]",
@@ -62,7 +93,8 @@ export async function collectCandidates(
       '[role="tab"]',
     ];
     const sel = [...base, ...cfg.extra].join(",");
-    const deny = cfg.denyLabels.map((s) => s.toLowerCase());
+    const deny = cfg.denyLabels.map((s) => new RegExp(s, "iu"));
+    const denied = (label: string) => deny.some((d) => d.test(label));
 
     // A missing root means the container we were told to look inside is gone —
     // probing the whole document instead would just re-discover outer triggers.
@@ -100,7 +132,9 @@ export async function collectCandidates(
     const targetFor = (el: Element): Record<string, unknown> => {
       const tid = el.getAttribute(cfg.testIdAttribute);
       if (tid) return { testId: tid };
-      if (el.id) return { selector: `#${CSS.escape(el.id)}` };
+      // A generated id (React's useId, a component library's counter) names a
+      // different element, or none, on the next load.
+      if (el.id && !generated.test(el.id)) return { selector: `#${CSS.escape(el.id)}` };
       const role = el.getAttribute("role");
       const al = el.getAttribute("aria-label");
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
@@ -129,7 +163,9 @@ export async function collectCandidates(
       hint?: string;
       controls?: string;
       probe?: string;
+      mark: string;
     }[] = [];
+    const MARK = cfg.mark;
     // ARIA allows `aria-controls` to list several ids; everything downstream turns
     // this into a selector for one element, so keep the first that exists.
     const controlledId = (el: Element): string | undefined => {
@@ -150,8 +186,20 @@ export async function collectCandidates(
       if (!visible(el)) continue;
       if (el.getAttribute("target") === "_blank") continue;
       if (el.hasAttribute("download")) continue;
-      const ty = el.getAttribute("type");
-      if (ty === "submit" || ty === "reset") continue;
+      const ty = (el.getAttribute("type") || "").toLowerCase();
+      if (ty === "submit" || ty === "reset" || ty === "image") continue;
+      // A button in a form with no `type` (or one the browser doesn't know) is a
+      // submit button: clicking it would send the form.
+      const control = el as HTMLButtonElement;
+      if (
+        (el.tagName === "BUTTON" || el.tagName === "INPUT") &&
+        control.form &&
+        (control.type === "submit" || control.type === "reset")
+      )
+        continue;
+      // Likewise anything inside a submit button, or a label that clicks one.
+      const inside = el.closest("button, input") as HTMLButtonElement | null;
+      if (inside && inside !== el && inside.form && inside.type === "submit") continue;
       if (
         cfg.denySelectors.some((s) => {
           try {
@@ -163,12 +211,14 @@ export async function collectCandidates(
       )
         continue;
       const label = labelFor(el);
-      if (deny.some((d) => label.toLowerCase().includes(d))) continue;
+      if (denied(label)) continue;
+      el.setAttribute(MARK, String(out.length));
       out.push({
         target: targetFor(el),
         label,
         hint: hintFor(el),
         controls: controlledId(el),
+        mark: String(out.length),
       });
       if (out.length >= cfg.maxCandidates) break;
     }
@@ -187,13 +237,15 @@ export async function collectCandidates(
         const hasSubmenu = !!li && !!li.querySelector('ul, [role="menu"]');
         if (!marked && !hasSubmenu) continue;
         const label = labelFor(a);
-        if (deny.some((d) => label.toLowerCase().includes(d))) continue;
+        if (denied(label)) continue;
+        a.setAttribute(MARK, String(out.length));
         out.push({
           target: targetFor(a),
           label,
           hint: "menu",
           controls: controlledId(a),
           probe: "hover",
+          mark: String(out.length),
         });
       }
     }
@@ -210,7 +262,51 @@ export async function collectCandidates(
     return final;
   }, arg);
 
-  return raw as RawCandidate[];
+  const candidates = raw as (RawCandidate & { mark: string })[];
+  try {
+    for (const cand of candidates) cand.target = await uniqueTarget(page, cand.target, cand.mark);
+  } finally {
+    await page
+      .evaluate((mark) => {
+        for (const el of Array.from(document.querySelectorAll(`[${mark}]`))) {
+          el.removeAttribute(mark);
+        }
+      }, CANDIDATE_MARK)
+      .catch(() => {});
+  }
+  return candidates.map(({ mark: _mark, ...cand }) => cand);
+}
+
+/** Marks each candidate element while its target is checked, then removed. */
+const CANDIDATE_MARK = "data-vc-candidate";
+
+/**
+ * A target that names one element. A role and name match any element whose name
+ * contains it ("Menu" also finds "Close menu"), and a page may have the same button
+ * twice (a "Details" on every card): a click on such a target is refused, in the
+ * probe and in every capture after it. So match the name exactly, and where that
+ * still finds several, say which one.
+ */
+async function uniqueTarget(page: Page, target: Target, mark: string): Promise<Target> {
+  const count = (t: Target) =>
+    locatorFor(page, t)
+      .count()
+      .catch(() => 1);
+  if ((await count(target)) <= 1) return target;
+  let narrowed = target;
+  if (target.role && target.name) {
+    const exact = { ...target, exact: true };
+    const n = await count(exact);
+    if (n === 1) return exact;
+    if (n > 1) narrowed = exact;
+  }
+  const nth = await locatorFor(page, narrowed)
+    .evaluateAll((els, [attr, value]) => els.findIndex((el) => el.getAttribute(attr) === value), [
+      CANDIDATE_MARK,
+      mark,
+    ] as const)
+    .catch(() => -1);
+  return nth >= 0 ? { ...narrowed, nth } : target;
 }
 
 export function classifyChange(
@@ -341,6 +437,147 @@ interface ProbeContext {
   capLogged: boolean;
   stats: ProbeStats;
   log: (msg: string) => void;
+  /** Told about each trigger that showed no change. */
+  onQuiet?: (q: Omit<QuietTrigger, "route" | "device">) => void;
+  /** Told every link on the page while a state is open: some only exist then. */
+  onLinks?: (hrefs: string[]) => void;
+  /** What this page does with nobody touching it; measured the first time it matters. */
+  ambient?: Ambient;
+}
+
+/**
+ * What a page does on its own: a carousel or an animation rewriting the DOM, a poll
+ * asking the server every second. None of it is a click's doing, so none of it is a
+ * reason to keep waiting on a click.
+ */
+interface Ambient {
+  /** The DOM keeps changing by itself. */
+  dom: boolean;
+  /** Requests the page makes by itself, as origin + path. */
+  urls: Set<string>;
+}
+
+/** How long an idle page is watched to learn what it does on its own. */
+const AMBIENT_MS = 400;
+
+const urlKey = (url: string) => url.split(/[?#]/)[0];
+
+/** How often a probe looks again while the page is still busy. */
+const POLL_MS = 100;
+/** The DOM changed this recently: the page is still rendering what a click did. */
+const RECENT_MUTATION_MS = 150;
+
+/**
+ * Requests a page has in flight, each with when it started. A probe asks only about
+ * those its click started, so a page that polls, or a request that never ends (an
+ * event stream, a long poll), doesn't make every probe wait.
+ */
+interface RequestLog {
+  open: Map<Request, number>;
+  /** While set, every request started is noted here too (see `measureAmbient`). */
+  started?: Set<string>;
+}
+const inflight = new WeakMap<Page, RequestLog>();
+function trackRequests(page: Page): RequestLog {
+  let log = inflight.get(page);
+  if (!log) {
+    const made: RequestLog = { open: new Map() };
+    page.on("request", (r) => {
+      const type = r.resourceType();
+      if (type === "websocket" || type === "eventsource") return;
+      made.open.set(r, Date.now());
+      made.started?.add(urlKey(r.url()));
+    });
+    const done = (r: Request) => void made.open.delete(r);
+    page.on("requestfinished", done);
+    page.on("requestfailed", done);
+    inflight.set(page, made);
+    log = made;
+  }
+  return log;
+}
+
+/** Start noting when the document last changed (once per document). */
+async function watchMutations(page: Page): Promise<void> {
+  await page
+    .evaluate(() => {
+      const w = window as unknown as { __vcMutatedAt?: number };
+      if (w.__vcMutatedAt !== undefined) return;
+      w.__vcMutatedAt = performance.now();
+      new MutationObserver(() => {
+        w.__vcMutatedAt = performance.now();
+      }).observe(document, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    })
+    .catch(() => {});
+}
+
+/** When the document last changed, and the time now, on the page's own clock. */
+function mutationClock(page: Page): Promise<{ at: number; now: number }> {
+  return page
+    .evaluate(() => ({
+      at: (window as unknown as { __vcMutatedAt?: number }).__vcMutatedAt ?? -Infinity,
+      now: performance.now(),
+    }))
+    .catch(() => ({ at: -Infinity, now: 0 }));
+}
+
+/** Why a page still counts as busy: the requests still loading, and a DOM still changing. */
+interface Busy {
+  urls: string[];
+  dom: boolean;
+}
+
+/**
+ * Is the page still working on what a click did: a request the click started still
+ * loading, or the DOM changed a moment ago? Then a probe that saw no change yet
+ * looks again, instead of calling the trigger dead. What the page is known to do on
+ * its own (`ambient`) doesn't count.
+ */
+async function stillBusy(
+  page: Page,
+  requests: RequestLog,
+  since: number,
+  ambient: Ambient | undefined,
+): Promise<Busy | undefined> {
+  const urls: string[] = [];
+  for (const [request, started] of requests.open) {
+    const key = urlKey(request.url());
+    if (started >= since && !ambient?.urls.has(key)) urls.push(key);
+  }
+  let dom = false;
+  if (!ambient?.dom) {
+    const { at, now } = await mutationClock(page);
+    dom = now - at < RECENT_MUTATION_MS;
+  }
+  return urls.length || dom ? { urls, dom } : undefined;
+}
+
+/**
+ * Watch an idle page for a moment: what it requests and whether its DOM keeps
+ * changing, with nothing clicked. A single change (the last of what an earlier click
+ * did) isn't a habit; the DOM counts only when it changed in both halves of the watch.
+ */
+async function measureAmbient(page: Page, requests: RequestLog): Promise<Ambient> {
+  await watchMutations(page);
+  requests.started = new Set();
+  const start = await mutationClock(page);
+  await page.waitForTimeout(AMBIENT_MS / 2);
+  const mid = await mutationClock(page);
+  await page.waitForTimeout(AMBIENT_MS / 2);
+  const end = await mutationClock(page);
+  const urls = requests.started;
+  requests.started = undefined;
+  return { dom: mid.at > start.now && end.at > mid.now, urls };
+}
+
+/** Does what the page does on its own account for everything that kept a probe waiting? */
+function isAmbient(busy: Busy, ambient: Ambient): boolean {
+  return (!busy.dom || ambient.dom) && busy.urls.every((u) => ambient.urls.has(u));
 }
 
 /**
@@ -426,6 +663,8 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     appeared: string[];
     /** The probe wrote to local or session storage. */
     stored: boolean;
+    /** Nothing showed, and the page was still busy when the probe stopped looking. */
+    busy?: Busy;
   }
 
   const attempt = async (cand: RawCandidate, action: "click" | "hover"): Promise<ProbeAttempt> => {
@@ -433,21 +672,42 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
     const linesBefore = await readLines(page);
     const storeBefore = await readStorage(page);
     const loc = locatorFor(page, cand.target);
+    const requests = trackRequests(page);
+    await watchMutations(page);
+    const since = Date.now();
     if (action === "hover") await loc.hover({ timeout: interactions.clickTimeoutMs });
     else await loc.click({ timeout: interactions.clickTimeoutMs });
+    const clicked = Date.now();
     await page.waitForTimeout(interactions.settleMs);
-    const after = await takeSnapshot(page);
+    let after = await takeSnapshot(page);
     // A new document is a navigation — a route, which route discovery owns — however
     // much the page it landed on happens to have open.
-    const navigated = after.doc !== before.doc;
-    const kind = navigated ? null : classifyChange(before, after, cand, action);
+    let navigated = after.doc !== before.doc;
+    let kind = navigated ? null : classifyChange(before, after, cand, action);
+    // Nothing yet, but the page is still loading or rendering what the click did (a
+    // dialog's code, its data, a slow dev server): keep looking for a while. A
+    // trigger that does nothing leaves the page idle and costs no more than before.
+    let busy: Busy | undefined;
+    while (!kind && !navigated) {
+      busy = await stillBusy(page, requests, since, ctx.ambient);
+      if (!busy || Date.now() - clicked >= interactions.patienceMs) break;
+      await page.waitForTimeout(POLL_MS);
+      after = await takeSnapshot(page);
+      navigated = after.doc !== before.doc;
+      kind = navigated ? null : classifyChange(before, after, cand, action);
+    }
+    if (kind || navigated) busy = undefined;
     const appeared = kind ? addedLines(linesBefore, await readLines(page)) : [];
     // What a trigger stores (a panel remembered open, an item added to a list)
     // outlives the page: it would be showing in every later probe and every shot
     // captured after it. Note it, then undo it.
     const stored = !navigated && storageChanged(storeBefore, await readStorage(page));
     if (stored) await restoreStorage(page, storeBefore);
-    return { action, before, after, kind, appeared, stored };
+    return { action, before, after, kind, appeared, stored, busy };
+  };
+  const quietLabel = (cand: RawCandidate) => {
+    const what = cand.label ? `"${cand.label}"` : describeTarget(cand.target);
+    return nested ? `${parent.label} → ${what}` : what;
   };
 
   for (const cand of candidates) {
@@ -460,6 +720,7 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
       }
       break;
     }
+    let probed = false;
     try {
       let probe = await attempt(cand, cand.probe ?? "click");
       // A menu-hinted trigger whose click changed nothing may be a hover dropdown.
@@ -467,8 +728,25 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
         if (!(await enterParent())) break;
         probe = await attempt(cand, "hover");
       }
+      probed = true;
 
       const { kind, before, after, action, appeared, stored } = probe;
+      if (!kind && after.doc === before.doc) {
+        let busy = probe.busy;
+        // The first time a page is still busy with nothing to show for it, find out
+        // whether it is ever idle: one that animates or polls by itself isn't loading
+        // anything, and its later triggers needn't wait on that.
+        if (busy && !ctx.ambient && (await enterParent())) {
+          ctx.ambient = await measureAmbient(page, trackRequests(page));
+          if (ctx.ambient.dom || ctx.ambient.urls.size) {
+            log(
+              `    ${ctx.route.id}: the page ${ctx.ambient.dom ? "changes" : "makes requests"} on its own — not taken for a click still loading`,
+            );
+          }
+        }
+        if (busy && ctx.ambient && isAmbient(busy, ctx.ambient)) busy = undefined;
+        ctx.onQuiet?.({ trigger: quietLabel(cand), result: busy ? "busy" : "no change" });
+      }
       if (kind && !seenSig.has(after.sig)) {
         seenSig.add(after.sig);
 
@@ -482,12 +760,14 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
             ? cand.controls
             : undefined;
         const openId = controls ?? newModalId ?? newPanelId;
+        // Waited for on every later capture, so only an id the next load will have.
+        const waitId = openId && !isGeneratedId(openId) ? openId : undefined;
 
         const id = makeStateId(kind, cand.label, nested ? parent.id : "", states);
         const recipe = [
           ...parent.recipe,
           // A panel that slid in without being a dialog has none to wait for.
-          ...buildSteps(cand, kind, action, openId, after.modals > before.modals),
+          ...buildSteps(cand, kind, action, waitId, after.modals > before.modals),
         ];
         const state: StateNode = {
           id,
@@ -508,10 +788,46 @@ async function probeFrom(ctx: ProbeContext, parent: StateNode): Promise<StateNod
         if (opened) containers.set(id, opened);
         ctx.urls.set(id, after.url);
         log(`    + ${ctx.route.id}: ${id}`);
+        // A collapsed menu group or a drawer can hold links to pages nothing else
+        // links to. Playwright's $$eval (DOM query in the page context), not JS eval().
+        if (ctx.onLinks) {
+          const hrefs = await page
+            .$$eval("a[href]", (els) => els.map((e) => (e as HTMLAnchorElement).href))
+            .catch(() => []);
+          ctx.onLinks(hrefs);
+        }
+
+        // An id with a number in it may be a counter (`mat-dialog-3`, `ember812`):
+        // open the same thing again and see whether it comes back under the same
+        // id. Once per shape of id, so a site pays for it a handful of times.
+        if (waitId && needsStabilityCheck(waitId) && (await enterParent())) {
+          const again = await attempt(cand, action);
+          const ids = again.kind
+            ? [
+                ...again.after.openModalIds.filter((x) => !again.before.openModalIds.includes(x)),
+                ...again.after.openPanelIds.filter((x) => !again.before.openPanelIds.includes(x)),
+              ]
+            : [];
+          if (ids.includes(waitId)) confirmStableId(waitId);
+          else if (ids.length) {
+            learnUnstableId(waitId, "reopen");
+            state.recipe = [
+              ...parent.recipe,
+              ...buildSteps(cand, kind, action, undefined, after.modals > before.modals),
+            ];
+            state.siteKey = siteKeyFor(state.recipe, appeared);
+            // The page is showing the state again: sign it without the id.
+            const sig = (await takeSnapshot(page)).sig;
+            state.signature = sig;
+            seenSig.add(sig);
+            log(`      ${id}: id ${waitId} changes when reopened — not waited for`);
+          }
+        }
       }
       if (!(await enterParent())) break;
     } catch {
       /* candidate not clickable / flaky — put the page back and move on */
+      if (!probed) ctx.onQuiet?.({ trigger: quietLabel(cand), result: "click failed" });
       await enterParent().catch(() => false);
     }
   }
@@ -534,6 +850,8 @@ export async function discoverStates(
   route: RouteNode,
   config: Config,
   log: (msg: string) => void,
+  onQuiet?: ProbeContext["onQuiet"],
+  onLinks?: ProbeContext["onLinks"],
 ): Promise<StateNode[]> {
   const states: StateNode[] = [defaultState()];
   const interactions = config.discovery.interactions;
@@ -563,6 +881,8 @@ export async function discoverStates(
       capLogged: false,
       stats: { navigations: 0, reused: 0 },
       log,
+      onQuiet,
+      onLinks,
     };
 
     let frontier = [states[0]];

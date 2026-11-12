@@ -38,6 +38,14 @@ describe("url state", () => {
     expect(readUrlState("?mode=continuous").mode).toBe("continuous");
   });
 
+  it("keeps the canvas page, leaving the first one out", () => {
+    expect(serializeUrlState({ page: 3 })).toBe("page=3");
+    expect(serializeUrlState({ page: 1 })).toBe("");
+    expect(readUrlState("?page=3").page).toBe(3);
+    for (const bad of ["?page=1", "?page=0", "?page=-2", "?page=x", "?page=2.5", "?page="])
+      expect(readUrlState(bad).page).toBeUndefined();
+  });
+
   it("treats empty parameters as absent", () => {
     expect(readUrlState("?q=&devices=&kinds=&tile=")).toEqual({
       q: "",

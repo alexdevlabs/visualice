@@ -55,6 +55,7 @@ export function ShotActions({
   const plain = bar ? BAR : TILE;
   const size = bar ? 15 : undefined;
 
+  const live = liveUrl(tile.routeUrl, data.site);
   return (
     <>
       {onFullScreen && (
@@ -71,13 +72,8 @@ export function ShotActions({
           {bar && <span className="mx-1 h-5 w-px shrink-0 bg-line" aria-hidden="true" />}
         </>
       )}
-      {(data.site.liveBase || data.site.baseUrl) && (
-        <a
-          className={plain}
-          href={liveUrl(tile.routeUrl, data.site)}
-          target="_blank"
-          rel="noreferrer"
-        >
+      {live && (
+        <a className={plain} href={live} target="_blank" rel="noreferrer">
           <Icon name="ext" size={size} />
           <span>Live page</span>
         </a>
