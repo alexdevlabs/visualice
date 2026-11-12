@@ -59,7 +59,8 @@ Filter by device or by state kind, search by path, and switch site and version f
 the output directory, so switching needs no restart. Failed captures are tiles too: a
 placeholder carrying its error, plus an **N failed captures · Show only** button at the
 foot of the sidebar, so a broken shot is visible rather than missing. The view lives in the
-URL (mode, route, query, devices, kinds, selected tile, run), so copying the address bar
+URL (site, run, mode, route, query, devices, kinds, page, selected tile, full screen), so
+copying the address bar
 shares the exact shot you're looking at. `?data=` accepts same-origin paths only, and a
 `viewer-data.json` the viewer can't read gets an error naming the offending field instead
 of a blank canvas.

@@ -29,6 +29,14 @@
   only links on the page as it loaded were, so an app with a collapsed sidebar needed
   most of its pages seeded by hand. `scope.maxDepth`, `scope.maxPages`, the scope globs
   and robots.txt apply as for any link.
+- `discovery.interactions.denyLabels` match whole words. As plain text inside a label,
+  `import` also stopped a menu group called "Importers", and the default `pay` stopped
+  "Payments". A label you relied on matching inside a longer word needs that word listed.
+  `log out` joins the defaults.
+- A scope glob with a `?` in it matches a page's path and query, in `scope.include`,
+  `scope.exclude` and routes-file `skip:` lines: `- skip: /metrics?*` leaves out every
+  `/metrics?network=…` and keeps `/metrics`. A glob without one is about the path alone,
+  as before.
 
 ### Viewer
 

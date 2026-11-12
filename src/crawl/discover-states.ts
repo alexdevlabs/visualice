@@ -46,6 +46,20 @@ export interface RawCandidate {
 type Interactions = Config["discovery"]["interactions"];
 
 /**
+ * The source of the pattern a denied label is matched with: the words on their own,
+ * not inside longer ones. As plain text inside a label, `import` also stopped
+ * "Importers" and `pay` stopped "Payments": a menu group that was only ever a menu.
+ * A string, because it is built here and used in the page.
+ */
+export function denyPattern(label: string): string {
+  const words = label
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&"));
+  return `(?<![\\p{L}\\p{N}])${words.join("\\s+")}(?![\\p{L}\\p{N}])`;
+}
+
+/**
  * Find clickable elements that plausibly open a modal/menu/accordion/tab.
  * `root` limits the search to one container — used when probing *inside* an
  * already-open state so nested discovery doesn't re-find the whole page chrome.
@@ -56,7 +70,7 @@ export async function collectCandidates(
   root?: string,
 ): Promise<RawCandidate[]> {
   const arg = {
-    denyLabels: interactions.denyLabels,
+    denyLabels: interactions.denyLabels.map(denyPattern),
     denySelectors: interactions.denySelectors,
     extra: interactions.extraTriggers,
     hover: interactions.hover,
@@ -79,7 +93,8 @@ export async function collectCandidates(
       '[role="tab"]',
     ];
     const sel = [...base, ...cfg.extra].join(",");
-    const deny = cfg.denyLabels.map((s) => s.toLowerCase());
+    const deny = cfg.denyLabels.map((s) => new RegExp(s, "iu"));
+    const denied = (label: string) => deny.some((d) => d.test(label));
 
     // A missing root means the container we were told to look inside is gone —
     // probing the whole document instead would just re-discover outer triggers.
@@ -196,7 +211,7 @@ export async function collectCandidates(
       )
         continue;
       const label = labelFor(el);
-      if (deny.some((d) => label.toLowerCase().includes(d))) continue;
+      if (denied(label)) continue;
       el.setAttribute(MARK, String(out.length));
       out.push({
         target: targetFor(el),
@@ -222,7 +237,7 @@ export async function collectCandidates(
         const hasSubmenu = !!li && !!li.querySelector('ul, [role="menu"]');
         if (!marked && !hasSubmenu) continue;
         const label = labelFor(a);
-        if (deny.some((d) => label.toLowerCase().includes(d))) continue;
+        if (denied(label)) continue;
         a.setAttribute(MARK, String(out.length));
         out.push({
           target: targetFor(a),

@@ -47,7 +47,9 @@ Steer the crawl by editing the routes file:
 - `- /path` — add a line to seed a page discovery missed. A `--replay` run discovers
   just the new pages and merges them into the cache, so no full re-crawl is needed.
 - `- skip: <state-id>` (nested) or `- skip: /path/**` (top-level) — exclude noise.
-  Deleting a line is NOT an exclusion (it gets re-added); `skip:` is the tombstone.
+  Deleting a line is NOT an exclusion (it gets re-added); `skip:` is the tombstone. For a
+  page's query variants write one glob with a `?` (`- skip: /metrics?*` keeps `/metrics`),
+  not a line per variant.
 - `- [ ] state-id — description` — request a state that has no recipe yet. Unmet
   requests surface as `wanted` in `--json` and a `## Wanted` report section — that
   is a work queue for exploring (§3, detail in

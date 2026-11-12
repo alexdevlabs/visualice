@@ -213,7 +213,8 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
           const u = new URL(href);
           if (u.origin !== origin) continue;
           const canon = canonicalPath(u, hashRoutes);
-          if (revealed.has(canon) || !inScope(scopePath(u, hashRoutes), include, exclude)) continue;
+          if (revealed.has(canon) || !inScope(scopePath(u, hashRoutes), include, exclude, canon))
+            continue;
           u.hash = hashPart(u, hashRoutes);
           revealed.set(canon, { url: u.href, from: route.url, depth: route.depth + 1 });
         } catch {

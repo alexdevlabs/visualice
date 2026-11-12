@@ -119,6 +119,7 @@
           "siteWideOnce": true,
           "denyLabels": [
             "logout",
+            "log out",
             "sign out",
             "delete",
             "remove",
@@ -178,6 +179,7 @@
             "siteWideOnce": true,
             "denyLabels": [
               "logout",
+              "log out",
               "sign out",
               "delete",
               "remove",
@@ -250,13 +252,14 @@
             "denyLabels": {
               "default": [
                 "logout",
+                "log out",
                 "sign out",
                 "delete",
                 "remove",
                 "unsubscribe",
                 "pay"
               ],
-              "description": "Skip triggers whose accessible label contains any of these (case-insensitive).",
+              "description": "Skip triggers whose accessible label has any of these as whole words (case-insensitive): `import` skips \"Import CSV\", not \"Importers\".",
               "type": "array",
               "items": {
                 "type": "string"

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { globToRegExp } from "../src/shared/glob";
+import { globToRegExp, inScope, routeMatches } from "../src/shared/glob";
+import { denyPattern } from "../src/crawl/discover-states";
 import { routeHref } from "../src/shared/url";
 import { xmlText } from "../src/crawl/discover-routes";
 import { ConfigSchema } from "../src/shared/config";
@@ -330,5 +331,63 @@ describe("the viewer", () => {
       tiles: [],
     });
     expect(data.devices[0].mobile).toBe(true);
+  });
+});
+
+describe("denied labels", () => {
+  const denies = (deny: string, label: string) => new RegExp(denyPattern(deny), "iu").test(label);
+
+  it("match whole words, in any case", () => {
+    expect(denies("import", "Import CSV")).toBe(true);
+    expect(denies("import", "Bulk import")).toBe(true);
+    expect(denies("import", "Re-import")).toBe(true);
+    expect(denies("delete", "DELETE")).toBe(true);
+    expect(denies("pay", "Pay now")).toBe(true);
+  });
+
+  it("don't match inside a longer word", () => {
+    expect(denies("import", "Network Importers")).toBe(false);
+    expect(denies("pay", "Payments")).toBe(false);
+    expect(denies("run", "Truncate")).toBe(false);
+    expect(denies("löschen", "Gelöschte")).toBe(false);
+  });
+
+  it("match a phrase across any whitespace, and take punctuation literally", () => {
+    expect(denies("sign out", "Sign  out")).toBe(true);
+    expect(denies("sign out", "Sign\nout")).toBe(true);
+    expect(denies("sign out", "Design outline")).toBe(false);
+    expect(denies("c++", "Open C++ docs")).toBe(true);
+    expect(denies("a.b", "axb")).toBe(false);
+  });
+});
+
+describe("scope globs and the query", () => {
+  it("skip lines follow the same rule on a route's whole address", () => {
+    expect(routeMatches("/metrics?network=A", ["/metrics"])).toBe(true);
+    expect(routeMatches("/metrics?network=A", ["/metrics?*"])).toBe(true);
+    expect(routeMatches("/metrics", ["/metrics?*"])).toBe(false);
+    expect(routeMatches("/dev/tools?x=1", ["/dev/**"])).toBe(true);
+    expect(routeMatches("/metrics", [])).toBe(false);
+  });
+
+  it("a plain glob is about the path, whatever the query", () => {
+    expect(inScope("/search", [], ["/search"], "/search?q=1")).toBe(false);
+    expect(inScope("/search", ["/search"], [], "/search?q=1")).toBe(true);
+  });
+
+  it("a glob with a ? matches the path and query, leaving the bare page in", () => {
+    const exclude = ["/importers/metrics?*"];
+    expect(inScope("/importers/metrics", [], exclude, "/importers/metrics?network=A&o=y")).toBe(
+      false,
+    );
+    expect(inScope("/importers/metrics", [], exclude, "/importers/metrics")).toBe(true);
+    expect(
+      inScope(
+        "/importers/metrics",
+        [],
+        ["/importers/metrics?network=A*"],
+        "/importers/metrics?network=B",
+      ),
+    ).toBe(true);
   });
 });

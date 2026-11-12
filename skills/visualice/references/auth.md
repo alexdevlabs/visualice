@@ -43,6 +43,8 @@ auth: {
   login even if the saved session looks fresh. Name the cookie whenever the site's
   session is shorter than 12h (Sauce Demo's lasts 10 minutes): otherwise a lapsed
   session is reused, and every protected page fails with "landed on the login page".
+- A saved session is for the site it was made on: crawling another host (`--target`
+  pointed at staging) logs in again instead of reusing it.
 - A login that fails is easiest to debug by watching it: `visualice auth --force --headed`
   shows the browser window while the recipe runs.
 - Password-protected staging: set `http.httpCredentials` / `http.extraHTTPHeaders`

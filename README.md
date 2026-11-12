@@ -102,8 +102,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). Report security issues privately, as d
 ## Use it responsibly
 
 Only crawl sites you own or are allowed to test. visualice stays on the target site, follows
-robots.txt unless you turn that off, and while discovering it never submits forms that change
-data or clicks controls that look destructive (delete, sign out, pay).
+robots.txt unless you turn that off, and while discovering it never submits a form or clicks
+a control that looks destructive (delete, sign out, pay).
 
 ## License
 

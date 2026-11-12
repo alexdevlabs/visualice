@@ -56,7 +56,9 @@ under gitignored `.visualice/`):
   - add a `- /path` line to seed a page discovery missed (`--replay` discovers just the
     new pages, so it works without a full re-crawl);
   - `- skip: <state-id>` (or a top-level `- skip: /path/**`) excludes noise — deleting
-    a line is not an exclusion, `skip:` is the visible tombstone;
+    a line is not an exclusion, `skip:` is the visible tombstone. A path glob covers the
+    page whatever its query; one with a `?` matches path and query, so
+    `- skip: /metrics?*` drops every `/metrics?network=…` and keeps `/metrics`;
   - `- [ ] state-id — description` requests a state that has no recipe yet; unmet
     requests surface as `wanted` in `--json` output and a **Wanted** report section
     (the Explore-mode work queue).
@@ -73,6 +75,11 @@ clicked, a drawer menu. Opening those is part of probing states, so the links th
 are followed too, and the pages behind them mapped, within `scope.maxDepth`,
 `scope.maxPages` and the include and exclude globs. A link behind something discovery
 doesn't open (a denied label, a login) still needs a `- /path` line in the routes file.
+
+Discovery never submits a form, and never clicks a trigger whose label has one of
+`discovery.interactions.denyLabels` in it (logout, delete, pay… by default). Labels are
+matched as whole words in any case: `import` stops "Import CSV" and leaves a menu group
+called "Importers" alone.
 
 Discovery is automatic — the cached site model is built on the first run and merged (never
 clobbered) on later ones, so hand-written or Explore-mode states survive a re-crawl. Its
@@ -130,7 +137,9 @@ one, fails on the next capture. visualice never uses them:
 ## Scripts and CI
 
 For agents and CI: `--json` prints a single machine-readable summary to stdout
-(`{runId, runDir, manifest, report, routes, states, shots, failed, failures, wanted}`), `--quiet` silences progress,
+(`{runId, runDir, manifest, report, routes, states, shots, failed, failures, wanted}`, plus
+`carried`, `unmatchedOnly`, `stillLoading`, `unstableIds` and `accessibility` when there
+is something to say), `--quiet` silences progress,
 and `--fail-on-error` exits 3 when any capture failed. Exit codes: 0 ok · 1 error ·
 2 usage · 3 capture failures. Failed captures are retried
 (`politeness.retries`), then recorded per-shot in the manifest and listed in a
@@ -167,6 +176,10 @@ sites/<site>/runs/<runId>/
   viewer-data.json    # flattened tile index for the viewer
   crawl-report.md     # human summary
 ```
+
+`<path>` is the page's path made safe for a folder name. Where that would lose part of the
+path (capitals, non-ASCII letters, a query), a short hash is added (`about__p-3f2a9c`), so
+two pages never share a folder.
 
 Each site keeps its own `latest` and its own `output.keepRuns` budget, so crawling one
 site never prunes another's runs. Runs from the older flat `runs/<runId>/` layout are moved

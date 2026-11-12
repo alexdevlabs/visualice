@@ -33,8 +33,30 @@ export function matchesAny(path: string, globs: string[]): boolean {
   return globs.some((g) => globToRegExp(g).test(path));
 }
 
-export function inScope(path: string, include: string[], exclude: string[]): boolean {
-  if (include.length && !matchesAny(path, include)) return false;
-  if (exclude.length && matchesAny(path, exclude)) return false;
+/**
+ * Is a page inside the scope globs? A glob is about the path, so `/search` covers
+ * `/search?q=1` too. One written with a `?` is about the path and its query
+ * (`withQuery`, when the caller has it): `/search?*` leaves `/search` itself in.
+ */
+export function inScope(
+  path: string,
+  include: string[],
+  exclude: string[],
+  withQuery: string = path,
+): boolean {
+  const matches = (globs: string[]) =>
+    globs.some((g) => globToRegExp(g).test(g.includes("?") ? withQuery : path));
+  if (include.length && !matches(include)) return false;
+  if (exclude.length && matches(exclude)) return false;
   return true;
+}
+
+/**
+ * Does any of these globs name this route (`/path?query#/hash`)? The same rule as
+ * `inScope`: a glob is about the path, one with a `?` about the path and its query.
+ */
+export function routeMatches(url: string, globs: string[]): boolean {
+  if (!globs.length) return false;
+  const path = url.replace(/\?[^#]*/, "");
+  return !inScope(path, [], globs, url);
 }

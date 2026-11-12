@@ -150,9 +150,10 @@ that's what `author` is for.
 
 ## Adding a missing page
 
-Discovery only finds pages something links to. For one it can't reach (behind a login,
-or never linked, like a dashboard or a `?id=99` not-found page), don't edit the cache by
-hand:
+Discovery only finds pages something links to, including links that show once a menu
+group or drawer is opened. For one it can't reach (behind a login, behind a trigger with a
+denied label, or never linked, like a dashboard or a `?id=99` not-found page), don't edit
+the cache by hand:
 
 1. Add `- /path` as a top-level bullet in `visualice.routes.md`, or list it in an
    explore file's `"pages"` (`visualice author` seeds those into the routes file).

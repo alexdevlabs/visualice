@@ -211,7 +211,7 @@ export async function discoverRoutes(
       if (visited.has(key)) continue;
       // Mark before filtering so a rejected URL is only evaluated (and logged) once.
       visited.add(key);
-      if (!inScope(scope, include, exclude)) continue;
+      if (!inScope(scope, include, exclude, canon)) continue;
       if (respectRobots && !isAllowed(written, robots)) {
         blocked++;
         log(`  ⊘ ${canon} — disallowed by robots.txt`);
@@ -304,7 +304,7 @@ export async function discoverRoutes(
             const linkCanon = canonicalPath(u, hashRoutes);
             if (
               visited.has(origin + linkCanon) ||
-              !inScope(scopePath(u, hashRoutes), include, exclude)
+              !inScope(scopePath(u, hashRoutes), include, exclude, linkCanon)
             )
               continue;
             // As the page wrote it (`/docs/`), not the canonical form: some servers

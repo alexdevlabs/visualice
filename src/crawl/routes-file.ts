@@ -11,7 +11,7 @@ import type {
   Target,
   WantedState,
 } from "../shared/types";
-import { matchesAny } from "../shared/glob";
+import { routeMatches } from "../shared/glob";
 import { isAuthored } from "./manifest";
 import { parseSourceLine, renderSourceLine } from "./source";
 
@@ -190,7 +190,7 @@ export function computeWanted(model: InputManifest, intent: RoutesIntent): Wante
   const byUrl = new Map(model.routes.map((r) => [r.url, r]));
   const wanted: WantedState[] = [];
   for (const r of intent.routes) {
-    if (matchesAny(r.path, intent.skipRoutes)) continue;
+    if (routeMatches(r.path, intent.skipRoutes)) continue;
     const existing = new Set(byUrl.get(r.path)?.states.map((s) => s.id) ?? []);
     for (const s of r.states) {
       if (s.skip || existing.has(s.id)) continue;
@@ -208,7 +208,7 @@ export function unmappedRoutes(model: InputManifest, intent: RoutesIntent): stri
   const known = new Set(model.routes.map((r) => r.url));
   return intent.routes
     .map((r) => r.path)
-    .filter((p) => !known.has(p) && !matchesAny(p, intent.skipRoutes));
+    .filter((p) => !known.has(p) && !routeMatches(p, intent.skipRoutes));
 }
 
 /**
@@ -233,7 +233,7 @@ export function applyStateSkips(model: InputManifest, intent: RoutesIntent): Inp
   if (!intent.routes.length && !intent.skipRoutes.length) return model;
   const skips = stateSkips(intent);
   const routes = model.routes
-    .filter((r) => !matchesAny(r.url, intent.skipRoutes))
+    .filter((r) => !routeMatches(r.url, intent.skipRoutes))
     .map((r) => {
       const skipped = skips.get(r.url);
       if (!skipped) return r;
@@ -288,8 +288,8 @@ export function renderRoutesFile(
   const modelByUrl = new Map(model.routes.map((r) => [r.url, r]));
 
   const paths = new Set<string>();
-  for (const r of model.routes) if (!matchesAny(r.url, intent.skipRoutes)) paths.add(r.url);
-  for (const r of intent.routes) if (!matchesAny(r.path, intent.skipRoutes)) paths.add(r.path);
+  for (const r of model.routes) if (!routeMatches(r.url, intent.skipRoutes)) paths.add(r.url);
+  for (const r of intent.routes) if (!routeMatches(r.path, intent.skipRoutes)) paths.add(r.path);
 
   const lines: string[] = [`# Routes — ${target}`, ""];
   if (source) lines.push(renderSourceLine(source), "");

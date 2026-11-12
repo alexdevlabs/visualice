@@ -11,7 +11,7 @@ import type {
   ViewerData,
   ViewerTile,
 } from "../shared/types";
-import { matchesAny } from "../shared/glob";
+import { matchesAny, routeMatches } from "../shared/glob";
 import { runCapture } from "./capture";
 import { renderReport } from "./report";
 import {
@@ -979,7 +979,7 @@ export async function previewRoutes(opts: {
       found.routes.filter((r) => r.status !== undefined && r.status >= 400).map((r) => r.url),
     );
     const seen = new Set(found.routes.map((r) => r.url));
-    const known = (cached?.routes ?? []).filter((r) => !matchesAny(r.url, intent.skipRoutes));
+    const known = (cached?.routes ?? []).filter((r) => !routeMatches(r.url, intent.skipRoutes));
     const before = new Set(known.map((r) => r.url));
     const capped = found.routes.length >= config.scope.maxPages;
     return {

@@ -158,6 +158,46 @@ describe("discovery", () => {
     expect(shallow.routes.map((r) => r.url)).toEqual(["/"]);
   }, 120_000);
 
+  it("denies a label as whole words: a menu group with the word inside its name is opened", async () => {
+    const s = await site({
+      "/": `<h1>Admin</h1>
+        <button data-d="g">Network Importers</button>
+        <button data-d="i">Import CSV</button>
+        <div id="g" role="dialog" aria-label="Importers" hidden>Importers</div>
+        <div id="i" role="dialog" aria-label="Import" hidden>Import</div>
+        <script>
+          for (const b of document.querySelectorAll("button[data-d]")) {
+            b.onclick = () => { document.getElementById(b.dataset.d).hidden = false; };
+          }
+        </script>`,
+    });
+    const found = await discover(s.url, {
+      scope: { maxPages: 1 },
+      discovery: {
+        useSitemap: false,
+        mobileStates: false,
+        interactions: { formStates: false, hover: false, denyLabels: ["import"] },
+      },
+    });
+    const labels = found.routes[0].states.map((x) => x.label);
+    expect(labels).toContain("Network Importers");
+    expect(labels).not.toContain("Import CSV");
+  }, 60_000);
+
+  it("leaves out the query variants a glob with a ? names, keeping the page itself", async () => {
+    const s = await site({
+      "/": `<h1>Home</h1><a href="/metrics">Metrics</a>
+        <a href="/metrics?network=A">A</a><a href="/metrics?network=B">B</a><a href="/list?page=2">More</a>`,
+      "/metrics": `<h1>Metrics</h1>`,
+      "/metrics?network=A": `<h1>A</h1>`,
+      "/metrics?network=B": `<h1>B</h1>`,
+      "/list?page=2": `<h1>List</h1>`,
+    });
+    const found = await discover(s.url, { scope: { exclude: ["/metrics?*"] } });
+    expect(found.routes.map((r) => r.url).sort()).toEqual(["/", "/list?page=2", "/metrics"]);
+    expect(s.requests.filter((r) => r.includes("network="))).toEqual([]);
+  }, 60_000);
+
   it("probes each of several buttons with one name, and a name inside another's", async () => {
     const s = await site({
       "/": `<h1>Cards</h1>

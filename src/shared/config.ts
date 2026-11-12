@@ -124,8 +124,10 @@ const InteractionsSchema = z.object({
     ),
   denyLabels: z
     .array(z.string())
-    .default(["logout", "sign out", "delete", "remove", "unsubscribe", "pay"])
-    .describe("Skip triggers whose accessible label contains any of these (case-insensitive)."),
+    .default(["logout", "log out", "sign out", "delete", "remove", "unsubscribe", "pay"])
+    .describe(
+      'Skip triggers whose accessible label has any of these as whole words (case-insensitive): `import` skips "Import CSV", not "Importers".',
+    ),
   denySelectors: z
     .array(z.string())
     .default([])
