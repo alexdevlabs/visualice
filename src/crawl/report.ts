@@ -1,5 +1,8 @@
 import type { Manifest } from "../shared/types";
 
+/** Text for a Markdown table cell: a `|` would end the cell, a backslash would undo the escape. */
+const cell = (text: string): string => text.replace(/[\\|]/g, "\\$&");
+
 export function renderReport(m: Manifest): string {
   const lines: string[] = [];
   lines.push(`# Crawl report — ${m.site.title ?? m.site.origin}`);
@@ -56,7 +59,7 @@ export function renderReport(m: Manifest): string {
     const shots = refs.filter((ref) => ref.full).length;
     const failed = refs.filter((ref) => ref.error).length;
     const states = r.states.map((s) => s.id).join(", ");
-    const title = (r.title ?? "").replace(/\|/g, "\\|").replace(/\s+/g, " ");
+    const title = cell(r.title ?? "").replace(/\s+/g, " ");
     lines.push(`| \`${r.url}\` | ${title} | ${states} | ${shots} | ${failed || ""} |`);
   }
   lines.push("");
@@ -167,7 +170,7 @@ export function renderReport(m: Manifest): string {
     };
     for (const q of [...quiet].sort((a, b) => rank[a.result] - rank[b.result])) {
       const where = q.device ? `\`${q.route}\` (${q.device})` : `\`${q.route}\``;
-      lines.push(`| ${where} | ${q.trigger.replace(/\|/g, "\\|")} | ${label[q.result]} |`);
+      lines.push(`| ${where} | ${cell(q.trigger)} | ${label[q.result]} |`);
     }
     lines.push("");
   }

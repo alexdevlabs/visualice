@@ -23,9 +23,11 @@ async function serve(
   pages: Record<string, string | ((res: http.ServerResponse) => void)>,
 ): Promise<Site> {
   const requests: string[] = [];
+  // A map, so a request for `/constructor` finds no page instead of Object's own.
+  const byPath = new Map(Object.entries(pages));
   const server = http.createServer((req, res) => {
     requests.push(`${req.method} ${req.url}`);
-    const page = pages[req.url ?? "/"];
+    const page = byPath.get(req.url ?? "/");
     if (typeof page === "function") return page(res);
     if (page === undefined) {
       res.writeHead(404, { "content-type": "text/html" });

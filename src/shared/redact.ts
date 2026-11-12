@@ -35,6 +35,25 @@ const secretHeader = (name: string, value: string): boolean =>
   SECRET_HEADER.test(name) || TOKEN_LIKE.test(value.trim());
 
 /**
+ * One stretch of a URL between `&`s and `#`s, with the value of its `key=value` hidden.
+ * The key starts at the `&`, or at the first `?` that has a name after it.
+ */
+function redactParam(part: string): string {
+  let at = part.startsWith("&") ? 0 : part.indexOf("?");
+  while (at !== -1) {
+    const eq = part.indexOf("=", at + 1);
+    if (eq === -1) return part;
+    if (eq > at + 1) {
+      const value = part.slice(eq + 1);
+      if (value === "" || isPlaceholder(value)) return part;
+      return part.slice(0, eq + 1) + REDACTED;
+    }
+    at = part.indexOf("?", at + 1);
+  }
+  return part;
+}
+
+/**
  * A URL without what it may carry of a credential: `user:pass@` and, with `query`,
  * the values of its parameters (`?token=…`). Not a URL: returned as it is.
  */
@@ -43,9 +62,10 @@ export function redactUrl(url: string, query = false): string {
   // Dropped, not replaced: what is left is still a URL that can be opened.
   let out = url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i, "$1");
   if (query) {
-    out = out.replace(/([?&][^=&#]+=)([^&#]*)/g, (_all, key: string, value: string) =>
-      value === "" || isPlaceholder(value) ? key + value : key + REDACTED,
-    );
+    out = out
+      .split(/(?=[&#])/)
+      .map((part) => redactParam(part))
+      .join("");
   }
   return out;
 }

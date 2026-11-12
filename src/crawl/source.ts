@@ -152,7 +152,7 @@ export function toRepoPath(root: string, p: string): string | undefined {
  * One line of key=value pairs: readable in a diff, and parsed back by `changes`.
  */
 
-const SOURCE_LINE = /^<!--\s*visualice-source\s+(.*?)\s*-->\s*$/;
+const SOURCE_LINE = /^visualice-source(?:\s(.*))?$/;
 
 export function renderSourceLine(s: SourceInfo): string {
   const pairs: [string, string | number | undefined][] = [
@@ -173,10 +173,13 @@ export function renderSourceLine(s: SourceInfo): string {
 
 /** The record in a routes-file line, or undefined when the line isn't one. */
 export function parseSourceLine(line: string): SourceInfo | undefined {
-  const m = SOURCE_LINE.exec(line);
+  const t = line.trim();
+  if (!t.startsWith("<!--") || !t.endsWith("-->")) return undefined;
+  const m = SOURCE_LINE.exec(t.slice(4, -3).trim());
   if (!m) return undefined;
+  const pairs = (m[1] ?? "").trim();
   const kv = new Map<string, string>();
-  for (const token of m[1].split(/\s+/)) {
+  for (const token of pairs.split(/\s+/)) {
     const eq = token.indexOf("=");
     if (eq > 0) kv.set(token.slice(0, eq), token.slice(eq + 1).replace(/%20/g, " "));
   }

@@ -88,14 +88,18 @@ export function parseRoutesFile(
       intent.source ??= source;
       continue;
     }
-    const header = /^#\s+Routes\s+—\s+(.+?)\s*$/.exec(raw);
-    if (header) {
-      intent.target ??= header[1];
+    // Matched on the line without its trailing space, and the text trimmed after: a
+    // pattern that takes "spaces, then anything, then spaces" is slow on a long run.
+    const line = raw.trimEnd();
+    const header = /^#\s+Routes\s+—\s(.*)$/.exec(line);
+    if (header?.[1].trim()) {
+      intent.target ??= header[1].trim();
       continue;
     }
-    const bullet = /^(\s*)-\s+(.+?)\s*$/.exec(raw);
-    if (!bullet) continue;
-    const [, indent, content] = bullet;
+    const bullet = /^(\s*)-\s(.*)$/.exec(line);
+    const content = bullet?.[2].trim();
+    if (!bullet || !content) continue;
+    const indent = bullet[1];
 
     if (indent.length === 0) {
       current = undefined;
@@ -132,10 +136,10 @@ export function parseRoutesFile(
       skip = true;
       body = body.slice(5).trim();
     } else {
-      const box = /^\[( |x|X)?\]\s+(.*)$/.exec(body);
+      const box = /^\[( |x|X)?\]\s(.*)$/.exec(body);
       if (box) {
         wanted = box[1] !== "x" && box[1] !== "X";
-        body = box[2];
+        body = box[2].trimStart();
       }
     }
     const { head, rest } = splitDash(body);

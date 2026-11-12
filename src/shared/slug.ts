@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { trimEndOf, trimOf } from "./trim";
 
 export function shortHash(s: string, len = 6): string {
   return createHash("sha1").update(s).digest("hex").slice(0, len);
@@ -11,10 +12,7 @@ function safeSegment(s: string): string {
   } catch {
     /* keep raw */
   }
-  const cleaned = decoded
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const cleaned = trimOf(decoded.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-");
   // Never `.` or `..`: a folder name must not climb out of the run directory.
   return /^\.*$/.test(cleaned) ? "x" : cleaned;
 }
@@ -66,7 +64,7 @@ export function pathSlug(rawUrl: string): string {
     pathname = rawUrl;
   }
   const suffix = (search ? `__q-${shortHash(search)}` : "") + hashSuffix(hash);
-  const trimmed = pathname.replace(/\/+$/, "");
+  const trimmed = trimEndOf(pathname, "/");
   if (trimmed === "" || trimmed === "/") return suffix ? `home${suffix}` : "home";
   const segs = trimmed.split("/").filter(Boolean).map(safeSegment);
   const readable = segs.join("/");
@@ -75,10 +73,7 @@ export function pathSlug(rawUrl: string): string {
 }
 
 export function stateSlug(id: string): string {
-  const cleaned = id
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const cleaned = trimOf(id.toLowerCase().replace(/[^a-z0-9._-]+/g, "-"), "-");
   // Never `.` or `..`, which would name the folder above.
   return /^\.*$/.test(cleaned) ? "state" : cleaned;
 }

@@ -10,6 +10,9 @@ import { ConfigSchema } from "../src/shared/config";
 import { REDACTED, redactConfig, redactUrl } from "../src/shared/redact";
 import { scrubSecrets, storageStateCovers } from "../src/crawl/auth";
 import { parseRoutesFile, renderRoutesFile } from "../src/crawl/routes-file";
+import { parseSourceLine } from "../src/crawl/source";
+import { stateSlug } from "../src/shared/slug";
+import { trimEndOf, trimOf } from "../src/shared/trim";
 import { renderReport } from "../src/crawl/report";
 import { findResumableRun, markRunIncomplete } from "../src/crawl/runs";
 import { LockedError, acquireLock } from "../src/shared/lock";
@@ -389,5 +392,41 @@ describe("scope globs and the query", () => {
         "/importers/metrics?network=B",
       ),
     ).toBe(true);
+  });
+});
+
+describe("parsing without slow patterns", () => {
+  it("trims one character off the ends", () => {
+    expect(trimEndOf("/a/b///", "/")).toBe("/a/b");
+    expect(trimEndOf("///", "/")).toBe("");
+    expect(trimOf("--a-b--", "-")).toBe("a-b");
+    expect(trimOf("", "-")).toBe("");
+  });
+
+  it("hides parameter values the way the pattern did", () => {
+    expect(redactUrl("https://x.test/a?b?c=d&e=f#g?h=i", true)).toBe(
+      `https://x.test/a?b?c=${REDACTED}&e=${REDACTED}#g?h=${REDACTED}`,
+    );
+    expect(redactUrl("https://x.test/?=a?b=c&=d&flag&empty=", true)).toBe(
+      `https://x.test/?=a?b=${REDACTED}&=d&flag&empty=`,
+    );
+  });
+
+  it("stays quick on a long run of one character", () => {
+    const started = Date.now();
+    redactUrl("https://x.test/" + "?".repeat(200_000), true);
+    stateSlug("a" + " -".repeat(200_000) + "b");
+    parseRoutesFile("# Routes — a" + " ".repeat(200_000) + "b\n- /" + " ".repeat(200_000) + "x");
+    parseSourceLine("<!-- visualice-source" + " ".repeat(200_000) + "x");
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("reads a routes file with space around its lines", () => {
+    const intent = parseRoutesFile(
+      "# Routes —   https://x.test  \n-   /about   \n  - [ ]   menu  ",
+    );
+    expect(intent.target).toBe("https://x.test");
+    expect(parseSourceLine("<!--visualice-source commit=abc1234 -->")?.commit).toBe("abc1234");
+    expect(parseSourceLine("<!-- visualice-sourced commit=abc1234 -->")).toBeUndefined();
   });
 });

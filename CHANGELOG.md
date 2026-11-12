@@ -186,6 +186,13 @@
 - Docs: `AGENTS.md` starts with `visualice init`, and the rule about `--json` names the
   commands that don't take it.
 
+### Code scanning
+
+- Parsing a routes file, a source line, a URL's parameters and a folder name no longer
+  slows down on a long run of spaces, slashes or dashes.
+- Report tables escape a backslash in a page title or trigger, not only a `|`.
+- CI jobs run with read-only access to the repository.
+
 ## 0.1.1
 
 ### Fixes
