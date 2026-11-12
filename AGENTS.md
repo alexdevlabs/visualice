@@ -9,7 +9,7 @@ using visualice on a project or working on this repo.
   the full flag surface in [`references/cli.md`](skills/visualice/references/cli.md).
   It is plain Markdown and works for any agent; agents that load skills can copy the
   `skills/visualice/` folder into their skills directory as it is.
-- Run the CLI as `visualice` if it is installed, else `npx -y visualice@0.1.1 <cmd>`.
+- Run the CLI as `visualice` if it is installed at 0.2.0 or newer (`visualice --version`), else `npx -y visualice@0.2.0 <cmd>`.
   Needs Node 22.18+. Start with `visualice doctor`.
 - Run non-interactively with `--quiet`, and `--json` on the commands that take it
   (`crawl`, `changes`, `author`, `doctor`, `routes`…; not `init`, `auth`, `serve` or

@@ -50,7 +50,7 @@ settings.
 per type, all in a single message (at most 6 at a time; queue the rest). Give each:
 
 - page type, representative page(s), the other pages of the type
-- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.1.1`,
+- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.2.0`,
   or `npm run vc --` in a visualice checkout) and the project directory to run it from
 - output file `.visualice/explore/<type-slug>.json` and a shots dir
   (`.visualice/explore/shots/`)

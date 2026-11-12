@@ -1,6 +1,6 @@
 {
   "name": "visualice",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "Crawl a website and capture every page and UI state across devices, then view them on a zoomable canvas.",
   "license": "MIT",

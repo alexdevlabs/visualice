@@ -7,7 +7,7 @@ defaults in `src/shared/config.ts`. JSON configs are accepted too, and
 ```jsonc
 {
   // what `visualice init` scaffolds; "./config.schema.json" in this repo itself
-  "$schema": "https://unpkg.com/visualice@0.1.1/config.schema.json",
+  "$schema": "https://unpkg.com/visualice@0.2.0/config.schema.json",
   "target": "https://your.site",
   "scope": { "exclude": ["/admin/**"] },
 }

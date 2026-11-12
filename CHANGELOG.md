@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+### Updating from 0.1.x
+
+- 0.1.x can't update itself. Update the plugin by hand with
+  `claude plugin update visualice@visualice`, or turn on auto-update under `/plugin` →
+  **Marketplaces**. Update an installed CLI with `npm i -g visualice@latest`.
+- The skill checks the installed CLI's version: one older than the skill is passed over
+  for `npx -y visualice@0.2.0`, and the user is told how to update it.
+- The plugin, skill and explorer agent run this version of the CLI.
 
 ### Updating after code changes
 
