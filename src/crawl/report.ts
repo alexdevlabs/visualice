@@ -142,10 +142,34 @@ export function renderReport(m: Manifest): string {
     lines.push("");
   }
 
+  const wrote = m.stats?.wrote ?? [];
+  if (wrote.length) {
+    const blocked = wrote.every((w) => w.blocked);
+    lines.push(`## Wrote to the server, left out`);
+    lines.push("");
+    lines.push(
+      `Clicking these sent a request that changes data on the site (${blocked ? "stopped before it reached the server" : "it reached the server"}).`,
+      `A capture would make it again every run, so none is a state. Add the label to`,
+      `\`discovery.interactions.denyLabels\` so it isn't clicked at all, or, for an analytics or`,
+      `logging endpoint, its path to \`allowWrites\`. A state you do want behind one is`,
+      `authored by hand (Explore mode), marked \`isolate\`, against data you can reset.`,
+    );
+    lines.push("");
+    lines.push(`| Path | Trigger | Requests |`);
+    lines.push(`|---|---|---|`);
+    for (const w of wrote) {
+      const where = w.device ? `\`${w.route}\` (${w.device})` : `\`${w.route}\``;
+      const requests = w.requests.map((r) => `\`${r}\``).join(", ");
+      lines.push(`| ${where} | ${cell(w.trigger)} | ${requests}${w.blocked ? " (blocked)" : ""} |`);
+    }
+    lines.push("");
+  }
+
   const quiet = m.stats?.quiet ?? [];
   if (quiet.length) {
     const busy = quiet.filter((q) => q.result === "busy");
     const failed = quiet.filter((q) => q.result === "click failed");
+    const dialogs = quiet.filter((q) => q.result === "browser dialog");
     lines.push(`## Clicked, nothing opened`);
     lines.push("");
     lines.push(
@@ -158,13 +182,17 @@ export function renderReport(m: Manifest): string {
       `  looking, so a slow server may have hidden a state there. Raise`,
       `  \`discovery.interactions.patienceMs\`, or author the state (Explore mode).`,
       `- **click failed** (${failed.length}): covered, disabled or gone before the click landed.`,
+      `- **browser dialog** (${dialogs.length}): opened the browser's own \`alert\`, \`confirm\` or`,
+      `  \`prompt\`, which is drawn outside the page and can't be shot. It was dismissed, so`,
+      `  what a \`confirm\` guarded didn't happen.`,
     );
     lines.push("");
     lines.push(`| Path | Trigger | Result |`);
     lines.push(`|---|---|---|`);
-    const rank = { busy: 0, "click failed": 1, "no change": 2 } as const;
+    const rank = { busy: 0, "browser dialog": 1, "click failed": 2, "no change": 3 } as const;
     const label = {
       busy: "**still loading**",
+      "browser dialog": "browser dialog",
       "click failed": "click failed",
       "no change": "no change",
     };

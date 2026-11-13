@@ -2,7 +2,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { InputManifest, StateNode } from "../shared/types";
-import { StateNodeSchema, formatManifestIssues } from "../shared/manifest-schema";
+import { AuthoredFileSchema, formatManifestIssues } from "../shared/manifest-schema";
+
+export { AuthoredFileSchema };
 
 /**
  * Explore-mode states arrive as files, not edits.
@@ -13,31 +15,6 @@ import { StateNodeSchema, formatManifestIssues } from "../shared/manifest-schema
  * and `visualice author` merges them all in one step, under the output lock,
  * validating every state on the way in.
  */
-
-/** One explorer's output: states keyed by the page they belong on. */
-export const AuthoredFileSchema = z.object({
-  states: z
-    .array(
-      StateNodeSchema.extend({
-        // The routes file lists a state by its id, as one word.
-        id: z
-          .string()
-          .regex(
-            /^[A-Za-z0-9][\w.-]*$/,
-            'a state id is one word: letters, digits, `.`, `_` or `-` (open-modal, not "Open Modal")',
-          ),
-        page: z
-          .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
-          .describe(
-            "The page (route path) the state belongs on — or several, for a state every page of a kind shares.",
-          ),
-      }),
-    )
-    .default([]),
-  /** Pages the explorer found that the model doesn't have, for the routes file. */
-  pages: z.array(z.string()).default([]),
-  notes: z.string().optional(),
-});
 
 export type AuthoredFile = z.output<typeof AuthoredFileSchema>;
 

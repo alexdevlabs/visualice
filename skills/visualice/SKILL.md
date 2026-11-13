@@ -14,7 +14,7 @@ you verified, so the catalogue reruns without you.
 ## 1. Locate & preflight
 
 Use `visualice` when it is on the PATH (`npm i -g visualice`) and `visualice --version`
-prints 0.2.0 or newer; otherwise run it with `npx -y visualice@0.2.0 <cmd>`, the CLI
+prints 0.2.1 or newer; otherwise run it with `npx -y visualice@0.2.1 <cmd>`, the CLI
 version this skill was written for. An older installed CLI lacks commands used below:
 use the `npx` form for this task and tell the user once to update it with
 `npm i -g visualice@latest`. Both work from any directory, no repo checkout needed. In a source checkout of this repo itself,
@@ -67,8 +67,10 @@ edits — flags like `--max-pages=<n> --include=<globs> --devices=<names>` overr
 `--seed=/a,/b` adds entry pages discovery can't reach by links, and `--no-states`
 captures pages only (fast; the states already in the cache are kept).
 When running non-interactively, always add `--quiet`, and `--json` on the commands that
-take it (`init`, `auth`, `serve` and `probe` don't; `probe` prints JSON anyway). Add
-`--fail-on-error` when a failed capture should fail the command (exit 3).
+take it (`init`, `auth`, `serve` and `probe` don't; `probe` prints JSON anyway). The JSON
+is the only thing on stdout; progress lines go to stderr, so read stdout on its own (no
+`2>&1`) when parsing it. Add `--fail-on-error` when a failed capture should fail the
+command (exit 3).
 
 ### Estimate the size before crawling something big
 
@@ -80,7 +82,10 @@ A 200-route site with 3 states each and 2 devices is ~1,200 shots — well over 
 gigabyte and many minutes of crawling. Before pointing visualice at anything you
 haven't scoped, run `visualice crawl <url> --dry-run --json`: it discovers routes and
 states **without taking a single screenshot**. The JSON has the exact `shots` count, the
-`states` total, the `devices`, and `routes` (each page's `url` and its state ids).
+`states` total, the `devices`, and `routes` (each page's `url` and its state ids). Any
+`wrote` entries are triggers discovery left out because clicking them sent a write to
+the server (blocked by default): tell the user, and suggest adding their labels to
+`discovery.interactions.denyLabels`.
 A dry run never writes a config: in a project without one, run `visualice init <url>`
 first, or `probe` and `crawl --replay` afterwards have no target.
 Then narrow with `--max-pages` / `--include` / `--devices` / `--no-states` and confirm

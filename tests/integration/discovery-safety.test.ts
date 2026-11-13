@@ -232,6 +232,92 @@ describe("discovery", () => {
     expect(targets).toContainEqual({ role: "button", name: "Details", exact: true, nth: 1 });
   }, 60_000);
 
+  // A chat: a reply with buttons that start work on the server, and an icon button.
+  const chat = `<h1>Chat</h1>
+    <div class="msg"><p>Hello</p>
+      <button id="regen">Regenerate</button>
+      <button id="draw">Draw scene</button>
+      <button aria-label="Previous reply"><svg width="10" height="10"></svg></button>
+      <button id="wipe">Clear chat</button>
+    </div>
+    <div id="replies" role="dialog" aria-label="Replies" hidden>Earlier replies</div>
+    <div id="job" role="dialog" aria-label="Job" hidden>Drawing…</div>
+    <script>
+      const post = (url) => fetch(url, { method: "POST", body: "{}" }).catch(() => {});
+      document.getElementById("draw").onclick = () => { post("/api/jobs"); document.getElementById("job").hidden = false; };
+      document.getElementById("regen").onclick = () => post("/api/regenerate");
+      document.querySelector("[aria-label='Previous reply']").onclick = () => { document.getElementById("replies").hidden = false; };
+      document.getElementById("wipe").onclick = () => { if (confirm("Clear?")) post("/api/clear"); };
+      // A read sent as a POST, the way a GraphQL client asks for data.
+      fetch("/graphql", { method: "POST", body: JSON.stringify({ query: "query Me { me { id } }" }) });
+    </script>`;
+
+  it("leaves out a trigger that writes to the server, and stops the write", async () => {
+    const s = await site({
+      "/": chat,
+      "/graphql": "{}",
+      "/api/jobs": "{}",
+      "/api/regenerate": "{}",
+    });
+    const found = await discover(s.url, {
+      scope: { maxPages: 1 },
+      discovery: {
+        useSitemap: false,
+        mobileStates: false,
+        // Not denied by label, so only the write can keep them out.
+        interactions: { formStates: false, hover: false, denyLabels: [] },
+      },
+    });
+    const states = found.routes[0].states;
+    // The dialog the job button opens is not a state: capture would start a job.
+    expect(states.map((x) => x.label)).not.toContain("Draw scene");
+    expect(found.wrote?.map((w) => [w.trigger, w.requests, w.blocked])).toEqual([
+      ['"Regenerate"', ["POST /api/regenerate"], true],
+      ['"Draw scene"', ["POST /api/jobs"], true],
+    ]);
+    // Blocked: the server never heard of them. The page's own GraphQL read went through.
+    expect(s.requests.filter((r) => r.startsWith("POST /api"))).toEqual([]);
+    expect(s.requests).toContain("POST /graphql");
+    // A native confirm can't be shot: noted, dismissed, and what it guarded didn't run.
+    expect(found.quiet).toContainEqual({
+      route: "/",
+      trigger: '"Clear chat"',
+      result: "browser dialog",
+    });
+    // An icon button with no id is found by its role and name, not its place among its
+    // siblings, which moves when the chat has one more message.
+    const prev = states.find((x) => x.label === "Previous reply");
+    expect(prev?.trigger).toEqual({ role: "button", name: "Previous reply" });
+  }, 60_000);
+
+  it("lets a write through when blockWrites is off, and to an allowed path", async () => {
+    const s = await site({
+      "/": chat,
+      "/graphql": "{}",
+      "/api/jobs": "{}",
+      "/api/regenerate": "{}",
+    });
+    const found = await discover(s.url, {
+      scope: { maxPages: 1 },
+      discovery: {
+        useSitemap: false,
+        mobileStates: false,
+        interactions: {
+          formStates: false,
+          hover: false,
+          denyLabels: [],
+          blockWrites: false,
+          allowWrites: ["/api/regenerate"],
+        },
+      },
+    });
+    expect(found.wrote?.map((w) => [w.trigger, w.blocked])).toEqual([['"Draw scene"', undefined]]);
+    expect(s.requests.filter((r) => r.startsWith("POST /api")).sort()).toEqual([
+      "POST /api/jobs",
+      "POST /api/regenerate",
+    ]);
+  }, 60_000);
+
   it("loads a page at the path the site links to, trailing slash and all", async () => {
     const s = await site({
       "/": `<h1>Home</h1><a href="/docs/">Docs</a>`,

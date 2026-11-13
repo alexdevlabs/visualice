@@ -50,7 +50,7 @@ settings.
 per type, all in a single message (at most 6 at a time; queue the rest). Give each:
 
 - page type, representative page(s), the other pages of the type
-- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.2.0`,
+- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.2.1`,
   or `npm run vc --` in a visualice checkout) and the project directory to run it from
 - output file `.visualice/explore/<type-slug>.json` and a shots dir
   (`.visualice/explore/shots/`)
@@ -75,16 +75,19 @@ The agent definition (`agents/visualice-explorer.md`) is the detailed playbook.
 3. **Try a state** — `visualice probe <path> --recipe='[…]' --shot=x.png` runs the
    recipe through the same code capture uses, in a browser of its own, and reports
    `ok`/`error.step`, `opened` regions, text that `appeared`/`disappeared`, whether it
-   `navigated` or was `sentToLogin`, and `storage` it wrote (`suggestIsolate`). Read the
+   `navigated` or was `sentToLogin`, the `storage` it wrote and the `writes` it sent to
+   the server (`POST /api/jobs`; either sets `suggestIsolate`). Read the
    shot: it must show the state, not a spinner or an unchanged page. `--state=<id>`
    replays a cached state's recipe instead — for checking one that fails at capture.
    Finish with `--all-devices`: capture replays every recipe on every configured
    device, and a `waitFor` on something hidden at phone width passes on desktop and
    fails on mobile.
 4. **Write it down** — put verified states in `.visualice/explore/<type-slug>.json`:
-   `{ "states": [{ "page": "/cart", "id": "with-items", "kind": "other", "label": "…",
-"isolate": true, "recipe": […] }], "pages": ["/editor"] }`. `page` may be a list for
-   a state every page of a type shares; `pages` proposes pages the catalogue lacks.
+   `{ "$schema": "https://unpkg.com/visualice@0.2.1/explore.schema.json", "states": [{
+"page": "/cart", "id": "with-items", "kind": "other", "label": "…", "isolate": true,
+"recipe": […] }], "pages": ["/editor"] }`. `page` may be a list for a state every page
+   of a type shares; `pages` proposes pages the catalogue lacks. The `$schema` line lets
+   an editor check the file as it is written; `author` checks it either way.
 
 Work from the `wanted` list too (routes-file `[ ]` lines that nothing realizes yet):
 author each one **under the same state id**, and the next run flips its checkbox.
@@ -127,14 +130,21 @@ that's what `author` is for.
 
 ## Recipe rules
 
+- A step's `target` is one of, in the order they are tried: `{ "testId": "cart" }`,
+  `{ "role": "button", "name": "Previous reply" }` (add `"exact": true` when the name is
+  part of another's), `{ "label": "Email" }` (a form field), `{ "text": "Show more" }`, or
+  `{ "selector": "#menu" }`. Add `"nth": 2` (from 0) when several match. Any other key is
+  refused. Prefer a test id, then role and name: a `selector` built from the page's
+  structure (`div:nth-of-type(7) > button`) breaks as soon as the page has one more item.
 - Steps are `navigate`, `click`, `hover`, `focus`, `blur`, `fill`, `select` (a
   `<select>` option by value or label: `{ "action": "select", "target": { "testId":
 "sort" }, "value": "lohi" }`), `press`, `waitFor`, `scroll` and `wait`.
 - A state whose recipe **changes data** — adds to a cart, saves a preference, submits a
-  login — gets `"isolate": true`: it is captured in a fresh browser context of its own,
+  login, starts a job — gets `"isolate": true`: it is captured in a fresh browser context of its own,
   so what it stores can't show up in the states captured after it. (Automatic
   discovery sets it itself on a state whose trigger wrote to local or session
-  storage.) A state that needs
+  storage, and leaves out one whose trigger wrote to the server: those are yours to
+  author, against data you can reset.) A state that needs
   data first (a cart with items) builds it in its own recipe: `navigate` to where the
   data is made, act, `navigate` back, `waitFor` the result — and is isolated too.
 - Inline messages (a form error under a field, a toast that isn't a dialog) aren't

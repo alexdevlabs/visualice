@@ -186,6 +186,8 @@ function reportDone(runDir: string, manifest: Manifest, flags: Flags, log: Log):
         ...(stats?.quiet?.some((q) => q.result === "busy")
           ? { stillLoading: stats.quiet.filter((q) => q.result === "busy") }
           : {}),
+        // Triggers left out because clicking them wrote to the server.
+        ...(stats?.wrote?.length ? { wrote: stats.wrote } : {}),
       }),
     );
   } else {
@@ -616,6 +618,14 @@ function reportPlan(plan: CrawlPlan, flags: Flags, log: Log): void {
         log(`    + ${f.url} shot too (${f.reason === "new" ? "new" : "incomplete in that run"})`);
     } else {
       log("  --only: no finished run to carry from, so every page would be shot");
+    }
+  }
+  if (plan.wrote?.length) {
+    log("");
+    log(`triggers that wrote to the server when clicked, left out (deny them with denyLabels):`);
+    for (const w of plan.wrote) {
+      const where = w.device ? `${w.route} (${w.device})` : w.route;
+      log(`  ⚠ ${where}: ${w.trigger} → ${w.requests.join(", ")}${w.blocked ? " (blocked)" : ""}`);
     }
   }
   log(`  model : ${plan.cachePath}`);

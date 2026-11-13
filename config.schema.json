@@ -124,9 +124,16 @@
             "delete",
             "remove",
             "unsubscribe",
-            "pay"
+            "pay",
+            "generate",
+            "regenerate",
+            "send",
+            "submit",
+            "retry"
           ],
           "denySelectors": [],
+          "blockWrites": true,
+          "allowWrites": [],
           "extraTriggers": [],
           "formStates": true
         },
@@ -184,9 +191,16 @@
               "delete",
               "remove",
               "unsubscribe",
-              "pay"
+              "pay",
+              "generate",
+              "regenerate",
+              "send",
+              "submit",
+              "retry"
             ],
             "denySelectors": [],
+            "blockWrites": true,
+            "allowWrites": [],
             "extraTriggers": [],
             "formStates": true
           },
@@ -257,7 +271,12 @@
                 "delete",
                 "remove",
                 "unsubscribe",
-                "pay"
+                "pay",
+                "generate",
+                "regenerate",
+                "send",
+                "submit",
+                "retry"
               ],
               "description": "Skip triggers whose accessible label has any of these as whole words (case-insensitive): `import` skips \"Import CSV\", not \"Importers\".",
               "type": "array",
@@ -268,6 +287,19 @@
             "denySelectors": {
               "default": [],
               "description": "Skip triggers matching these selectors.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "blockWrites": {
+              "default": true,
+              "description": "While a trigger is probed, stop the requests it makes that would change data on the site (POST, PUT, PATCH, DELETE to the site or its subdomains; a GraphQL query isn't one) before they reach the server. A trigger that tries to write is never recorded as a state either way: capture would replay the write.",
+              "type": "boolean"
+            },
+            "allowWrites": {
+              "default": [],
+              "description": "Paths a probed trigger may write to, as globs (`/api/events`, `/ingest/**`): an analytics or logging endpoint. A write there is neither blocked nor a reason to leave the trigger out.",
               "type": "array",
               "items": {
                 "type": "string"
@@ -628,7 +660,463 @@
               "default": [],
               "description": "Recipe steps to sign in. Use ${ENV_VAR} in `fill` values for secrets.",
               "type": "array",
-              "items": {}
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "navigate"
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "url"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "click"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "description": "ARIA role, resolved via getByRole.",
+                            "type": "string"
+                          },
+                          "name": {
+                            "description": "Accessible name to match alongside `role`.",
+                            "type": "string"
+                          },
+                          "testId": {
+                            "description": "Test id value — `data-testid`, or the config's `testIdAttribute` (highest priority).",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "Form-control label text.",
+                            "type": "string"
+                          },
+                          "text": {
+                            "description": "Visible text content.",
+                            "type": "string"
+                          },
+                          "selector": {
+                            "description": "CSS selector (last resort).",
+                            "type": "string"
+                          },
+                          "exact": {
+                            "description": "Exact-match text/name instead of substring.",
+                            "type": "boolean"
+                          },
+                          "nth": {
+                            "description": "Pick the nth match (0-based).",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "A robust element locator, resolved in priority order: testId, role (+ name), label, text, selector. For example { \"role\": \"button\", \"name\": \"Previous reply\" }, { \"testId\": \"cart\" } or { \"selector\": \"#menu\" }."
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "hover"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "description": "ARIA role, resolved via getByRole.",
+                            "type": "string"
+                          },
+                          "name": {
+                            "description": "Accessible name to match alongside `role`.",
+                            "type": "string"
+                          },
+                          "testId": {
+                            "description": "Test id value — `data-testid`, or the config's `testIdAttribute` (highest priority).",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "Form-control label text.",
+                            "type": "string"
+                          },
+                          "text": {
+                            "description": "Visible text content.",
+                            "type": "string"
+                          },
+                          "selector": {
+                            "description": "CSS selector (last resort).",
+                            "type": "string"
+                          },
+                          "exact": {
+                            "description": "Exact-match text/name instead of substring.",
+                            "type": "boolean"
+                          },
+                          "nth": {
+                            "description": "Pick the nth match (0-based).",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "A robust element locator, resolved in priority order: testId, role (+ name), label, text, selector. For example { \"role\": \"button\", \"name\": \"Previous reply\" }, { \"testId\": \"cart\" } or { \"selector\": \"#menu\" }."
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "focus"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "description": "ARIA role, resolved via getByRole.",
+                            "type": "string"
+                          },
+                          "name": {
+                            "description": "Accessible name to match alongside `role`.",
+                            "type": "string"
+                          },
+                          "testId": {
+                            "description": "Test id value — `data-testid`, or the config's `testIdAttribute` (highest priority).",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "Form-control label text.",
+                            "type": "string"
+                          },
+                          "text": {
+                            "description": "Visible text content.",
+                            "type": "string"
+                          },
+                          "selector": {
+                            "description": "CSS selector (last resort).",
+                            "type": "string"
+                          },
+                          "exact": {
+                            "description": "Exact-match text/name instead of substring.",
+                            "type": "boolean"
+                          },
+                          "nth": {
+                            "description": "Pick the nth match (0-based).",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "A robust element locator, resolved in priority order: testId, role (+ name), label, text, selector. For example { \"role\": \"button\", \"name\": \"Previous reply\" }, { \"testId\": \"cart\" } or { \"selector\": \"#menu\" }."
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "blur"
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "fill"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "description": "ARIA role, resolved via getByRole.",
+                            "type": "string"
+                          },
+                          "name": {
+                            "description": "Accessible name to match alongside `role`.",
+                            "type": "string"
+                          },
+                          "testId": {
+                            "description": "Test id value — `data-testid`, or the config's `testIdAttribute` (highest priority).",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "Form-control label text.",
+                            "type": "string"
+                          },
+                          "text": {
+                            "description": "Visible text content.",
+                            "type": "string"
+                          },
+                          "selector": {
+                            "description": "CSS selector (last resort).",
+                            "type": "string"
+                          },
+                          "exact": {
+                            "description": "Exact-match text/name instead of substring.",
+                            "type": "boolean"
+                          },
+                          "nth": {
+                            "description": "Pick the nth match (0-based).",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "A robust element locator, resolved in priority order: testId, role (+ name), label, text, selector. For example { \"role\": \"button\", \"name\": \"Previous reply\" }, { \"testId\": \"cart\" } or { \"selector\": \"#menu\" }."
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "select"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "description": "ARIA role, resolved via getByRole.",
+                            "type": "string"
+                          },
+                          "name": {
+                            "description": "Accessible name to match alongside `role`.",
+                            "type": "string"
+                          },
+                          "testId": {
+                            "description": "Test id value — `data-testid`, or the config's `testIdAttribute` (highest priority).",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "Form-control label text.",
+                            "type": "string"
+                          },
+                          "text": {
+                            "description": "Visible text content.",
+                            "type": "string"
+                          },
+                          "selector": {
+                            "description": "CSS selector (last resort).",
+                            "type": "string"
+                          },
+                          "exact": {
+                            "description": "Exact-match text/name instead of substring.",
+                            "type": "boolean"
+                          },
+                          "nth": {
+                            "description": "Pick the nth match (0-based).",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "A robust element locator, resolved in priority order: testId, role (+ name), label, text, selector. For example { \"role\": \"button\", \"name\": \"Previous reply\" }, { \"testId\": \"cart\" } or { \"selector\": \"#menu\" }."
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        ],
+                        "description": "Option value or visible label; an array for a multi-select."
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "target",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "press"
+                      },
+                      "key": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "role": {
+                            "description": "ARIA role, resolved via getByRole.",
+                            "type": "string"
+                          },
+                          "name": {
+                            "description": "Accessible name to match alongside `role`.",
+                            "type": "string"
+                          },
+                          "testId": {
+                            "description": "Test id value — `data-testid`, or the config's `testIdAttribute` (highest priority).",
+                            "type": "string"
+                          },
+                          "label": {
+                            "description": "Form-control label text.",
+                            "type": "string"
+                          },
+                          "text": {
+                            "description": "Visible text content.",
+                            "type": "string"
+                          },
+                          "selector": {
+                            "description": "CSS selector (last resort).",
+                            "type": "string"
+                          },
+                          "exact": {
+                            "description": "Exact-match text/name instead of substring.",
+                            "type": "boolean"
+                          },
+                          "nth": {
+                            "description": "Pick the nth match (0-based).",
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "A robust element locator, resolved in priority order: testId, role (+ name), label, text, selector. For example { \"role\": \"button\", \"name\": \"Previous reply\" }, { \"testId\": \"cart\" } or { \"selector\": \"#menu\" }."
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "key"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "waitFor"
+                      },
+                      "selector": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "visible",
+                          "hidden",
+                          "attached",
+                          "detached"
+                        ]
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "action"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "scroll"
+                      },
+                      "to": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "const": "top"
+                          },
+                          {
+                            "type": "string",
+                            "const": "bottom"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "to"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "const": "wait"
+                      },
+                      "ms": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "action",
+                      "ms"
+                    ]
+                  }
+                ],
+                "description": "One replayable interaction step."
+              }
             },
             "maxAgeHours": {
               "default": 12,

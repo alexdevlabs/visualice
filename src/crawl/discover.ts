@@ -5,6 +5,7 @@ import type {
   Device,
   InputManifest,
   QuietTrigger,
+  WroteTrigger,
   RouteNode,
   StateNode,
   Target,
@@ -154,7 +155,7 @@ const loadPath = (route: RouteNode): string =>
  * The site model discovery found, and what it noticed along the way that belongs
  * to this run only (not cached): the triggers it clicked that showed no change.
  */
-export type DiscoveryResult = InputManifest & { quiet?: QuietTrigger[] };
+export type DiscoveryResult = InputManifest & { quiet?: QuietTrigger[]; wrote?: WroteTrigger[] };
 
 export async function discoverPipeline(opts: DiscoverOptions): Promise<DiscoveryResult> {
   const { config, baseUrl } = opts;
@@ -180,6 +181,9 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
   };
 
   const quiet: QuietTrigger[] = [];
+  const wrote: WroteTrigger[] = [];
+  // A trigger that wrote on one page isn't clicked on the next, or in the mobile pass.
+  const avoid = new Set<string>();
   try {
     const context = await newDiscoveryContext();
 
@@ -231,13 +235,14 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
       // next to it is doing the same.
       await mapPool(batch, config.politeness.concurrency, async (route) => {
         const url = resolveUrl(baseUrl, loadPath(route));
-        const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
-          quiet.push({ route: route.url, ...q });
         const own = await newDiscoveryContext();
         try {
-          route.states = await discoverStates(own, url, route, config, log, onQuiet, (hrefs) =>
-            noteLinks(route, hrefs),
-          ).catch((e) => {
+          route.states = await discoverStates(own, url, route, config, log, {
+            onQuiet: (q) => quiet.push({ route: route.url, ...q }),
+            onWrote: (w) => wrote.push({ route: route.url, ...w }),
+            onLinks: (hrefs) => noteLinks(route, hrefs),
+            avoid,
+          }).catch((e) => {
             // One page that won't load costs that page its states, not the whole run.
             log(`  ! ${route.url}: states not discovered — ${(e as Error).message.split("\n")[0]}`);
             return [defaultState()];
@@ -261,17 +266,13 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
               const hidden = await hiddenTriggers(mobileContext, url, route.states, config);
               for (const state of hidden) state.devices = [...desktopNames];
             }
-            const onQuiet = (q: Omit<QuietTrigger, "route" | "device">) =>
-              quiet.push({ route: route.url, device: probeDevice.name, ...q });
-            const mobileStates = await discoverStates(
-              mobileContext,
-              url,
-              route,
-              config,
-              log,
-              onQuiet,
-              (hrefs) => noteLinks(route, hrefs),
-            ).catch((e) => {
+            const device = probeDevice.name;
+            const mobileStates = await discoverStates(mobileContext, url, route, config, log, {
+              onQuiet: (q) => quiet.push({ route: route.url, device, ...q }),
+              onWrote: (w) => wrote.push({ route: route.url, device, ...w }),
+              onLinks: (hrefs) => noteLinks(route, hrefs),
+              avoid,
+            }).catch((e) => {
               log(
                 `  ! ${route.url}: mobile states not discovered — ${(e as Error).message.split("\n")[0]}`,
               );
@@ -334,12 +335,20 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
         `${busy} trigger(s) were still loading when discovery stopped looking — see "Clicked, nothing opened" in the report`,
       );
     }
+    if (wrote.length) {
+      log(
+        `${wrote.length} trigger(s) wrote to the server when clicked and were left out` +
+          (interactions.blockWrites ? " (the writes were blocked)" : "") +
+          `: deny them with discovery.interactions.denyLabels, or allow an analytics path with allowWrites`,
+      );
+    }
     return {
       site: { title: routes[0]?.title },
       routes,
       // Carried in the cached model so later runs avoid them from the start.
       ...(learned.length ? { hints: { unstableIds: learned.map((l) => l.pattern) } } : {}),
       ...(quiet.length ? { quiet: sortQuiet(quiet, routes) } : {}),
+      ...(wrote.length ? { wrote: sortQuiet(wrote, routes) } : {}),
     };
   } finally {
     await browser.close();
@@ -347,7 +356,10 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
 }
 
 /** In the order the pages were mapped, the desktop pass before the mobile one. */
-function sortQuiet(quiet: QuietTrigger[], routes: RouteNode[]): QuietTrigger[] {
+function sortQuiet<T extends { route: string; device?: string }>(
+  quiet: T[],
+  routes: RouteNode[],
+): T[] {
   const order = new Map(routes.map((r, i) => [r.url, i]));
   return quiet
     .map((q, i) => ({ q, i }))

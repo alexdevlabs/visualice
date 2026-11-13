@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.2.1
+
+### Discovery doesn't change a site's data
+
+- A probe watches what each click asks the server to do. A trigger that sends a write
+  to the site (a POST, PUT, PATCH or DELETE to its host or a subdomain; a GraphQL query
+  isn't one) is left out of the catalogue, since capture would replay the write every
+  run, and the same label isn't clicked again on other pages. With
+  `discovery.interactions.blockWrites` (on by default) the write is stopped before it
+  reaches the server.
+- These triggers are listed by the dry run, in the report ("Wrote to the server, left
+  out") and as `wrote` in `--json`. `discovery.interactions.allowWrites` lists paths a
+  click may write to, such as an analytics endpoint.
+- `generate`, `regenerate`, `send`, `submit` and `retry` join the default
+  `denyLabels`.
+- A trigger that opens the browser's own `alert`, `confirm` or `prompt` is dismissed
+  and listed in the report as "browser dialog": it can't be shot.
+- `visualice probe` reports the `writes` a recipe sent, and suggests `isolate` for them.
+
+### Sturdier recipes
+
+- An icon button (`<button aria-label="Previous reply">`, no text, no role attribute)
+  is found by its role and name, not by its place among its siblings, which moved as
+  soon as the page had one more item. The path is kept only for an element Playwright
+  can't find by role and name.
+
+### Targets are checked
+
+- A target with a key visualice doesn't know (`{ "css": … }`) or with nothing to find
+  by is refused when an explorer file, the cached model or the config is read, instead
+  of matching nothing at capture. Login steps in the config are checked like any
+  recipe.
+- New `explore.schema.json` for explorer state files: point a file's `$schema` at it
+  and editors check its recipes as they are written. The skill lists the target shapes.
+- The skill says to read `--json` output from stdout alone: progress goes to stderr.
+
 ## 0.2.0
 
 ### Updating from 0.1.x

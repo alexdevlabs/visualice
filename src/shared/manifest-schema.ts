@@ -21,7 +21,15 @@ export const TargetSchema = z
     exact: z.boolean().optional().describe("Exact-match text/name instead of substring."),
     nth: z.number().int().nonnegative().optional().describe("Pick the nth match (0-based)."),
   })
-  .describe("A robust element locator, resolved in priority order (see selectors.ts).");
+  // A key it doesn't know (`css`, `xpath`) is a mistake, not something to drop: the
+  // target left behind would match nothing, and only fail when it is replayed.
+  .strict()
+  .refine((t) => !!(t.testId || t.role || t.label || t.text || t.selector), {
+    message: "a target needs one of testId, role (with name), label, text or selector",
+  })
+  .describe(
+    'A robust element locator, resolved in priority order: testId, role (+ name), label, text, selector. For example { "role": "button", "name": "Previous reply" }, { "testId": "cart" } or { "selector": "#menu" }.',
+  );
 
 const WaitStateSchema = z.enum(["visible", "hidden", "attached", "detached"]);
 
@@ -225,3 +233,29 @@ export function parseInputManifest(raw: unknown, sourceLabel: string): ValidInpu
   }
   return result.data;
 }
+
+/** One explorer's output: states keyed by the page they belong on. */
+export const AuthoredFileSchema = z.object({
+  $schema: z.string().optional().describe("Where this file's JSON Schema is, for editors."),
+  states: z
+    .array(
+      StateNodeSchema.extend({
+        // The routes file lists a state by its id, as one word.
+        id: z
+          .string()
+          .regex(
+            /^[A-Za-z0-9][\w.-]*$/,
+            'a state id is one word: letters, digits, `.`, `_` or `-` (open-modal, not "Open Modal")',
+          ),
+        page: z
+          .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
+          .describe(
+            "The page (route path) the state belongs on — or several, for a state every page of a kind shares.",
+          ),
+      }),
+    )
+    .default([]),
+  /** Pages the explorer found that the model doesn't have, for the routes file. */
+  pages: z.array(z.string()).default([]),
+  notes: z.string().optional(),
+});

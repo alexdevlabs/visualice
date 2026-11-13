@@ -16,5 +16,6 @@ tests/fixture-src
 # test compares the file byte-for-byte against it
 config.schema.json
 manifest.schema.json
+explore.schema.json
 visualice.routes.md
 .playwright-mcp/
