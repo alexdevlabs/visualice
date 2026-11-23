@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.3.0
+
+### Apps, as well as websites (experimental)
+
+- `app` in the config crawls an app instead of a site: an **Electron** desktop app, or
+  an **Android app whose screens are a WebView** (Capacitor, Ionic, Cordova, or a
+  WebView of your own). Discovery, recipes, write blocking, `probe`, the report and the
+  viewer work as they do for a site. Commands take no URL: the app's first page is the
+  start. See [Crawling apps](docs/apps.md).
+- **Electron:** `app.electron.executable` is a macOS `.app` bundle, the app's program,
+  or the folder of an Electron project. Each shot starts a fresh copy with an empty
+  profile in a temporary folder (or a copy of `profile`), so your own is never
+  touched. Apps built with the Node inspector switched off (Slack, Discord) are
+  detected from their binary and connected to over CDP instead. Devices are window
+  sizes, and the pixel ratio is forced, so shots match on any screen.
+- **Android:** `app.android.package`, with an optional `apk` to install, over adb to an
+  emulator or a phone. Each launch clears the app's data, so it starts like a fresh
+  install (`clearData: false` keeps a session). Devices set the screen size and
+  density, so one emulator stands in for a phone and a tablet; the screen is put back
+  afterwards. `frame: "screen"` shoots the whole screen with the app's native parts.
+- An app's routes are named from the folder its first page is in (`/index.html#/settings`),
+  not by their full path on disk.
+- An app runs one copy at a time, skips robots.txt, the sitemap and the mobile pass,
+  and gets a device that fits it when the config names none: a 1280×800 window, or a
+  412×915 phone.
+- Not supported: native screens (Swift, Kotlin, React Native, Flutter), iOS, and login
+  recipes for apps (sign in once and start from that session instead).
+
+### Writes
+
+- `discovery.interactions.apiHosts` names hosts besides the target's own whose writes
+  count, such as an API on another domain. An app has no web host of its own, so until
+  `apiHosts` lists its backend, a write to any host counts.
+
+### Fixes
+
+- Capture no longer starts a browser to check mask selectors when there are none.
+
 ## 0.2.1
 
 ### Discovery doesn't change a site's data

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
-import type { Config } from "../shared/config";
+import { appName, type Config } from "../shared/config";
 import type {
   Manifest,
   InputManifest,
@@ -35,6 +35,7 @@ import {
 } from "./routes-file";
 import { pathExists } from "../shared/fsx";
 import { pathSlug, stateSlug } from "../shared/slug";
+import { originOf } from "../shared/url";
 import {
   findResumableRun,
   listRuns,
@@ -300,7 +301,8 @@ async function captureRun(opts: CapturePipelineOptions): Promise<CapturePipeline
   const { baseUrl } = opts;
   const log = opts.log ?? (() => {});
   const id = opts.resume ?? makeRunId();
-  const origin = new URL(baseUrl).origin;
+  // What the viewer and the report show the run as: the site, or the app by name.
+  const origin = opts.config.app ? appName(opts.config.app) : originOf(baseUrl);
   const outRoot = path.resolve(opts.config.output.dir);
   await migrateFlatRuns(outRoot, log);
   const site = siteDir(outRoot, siteKey(baseUrl, opts.config.output.site));
@@ -958,7 +960,7 @@ export async function discoverOnlyPipeline(opts: {
 
 function safeOrigin(url: string): string | undefined {
   try {
-    return new URL(url).origin;
+    return originOf(url);
   } catch {
     return undefined;
   }

@@ -73,6 +73,7 @@ visualice serve --open              # browse the results
 | Capture pages only, no states      | `visualice crawl --no-states`                                       |
 | Crawl a site behind a login        | a login recipe in the config, then `visualice auth` ([guide][auth]) |
 | Add devices, browsers or dark mode | `devices` in the config ([configuration][config])                   |
+| Crawl an Electron or Android app   | `app` in the config instead of a URL ([crawling apps][apps])        |
 | Check accessibility as well        | `checks.accessibility: true`                                        |
 | Share the results without a server | `visualice export report/`                                          |
 | Use it in CI                       | `--replay --json --quiet --fail-on-error` ([crawling][crawling])    |
@@ -85,6 +86,7 @@ cache) next to the config and routes file.
 ## Docs
 
 - [Crawling][crawling]: commands, the routes file, discovery, output layout
+- [Crawling apps][apps]: Electron desktop apps and Android WebView apps (experimental)
 - [Configuration][config]: every option worth knowing, other browsers, component shots,
   accessibility
 - [The viewer][viewer]: navigation, view modes, full screen, shortcuts, sharing
@@ -111,6 +113,7 @@ MIT, see [`LICENSE`](LICENSE). The viewer bundles the Figtree and IBM Plex Mono 
 under the SIL Open Font License 1.1; their licence texts ship in `viewer/dist/licenses/`.
 
 [crawling]: docs/crawling.md
+[apps]: docs/apps.md
 [config]: docs/configuration.md
 [viewer]: docs/viewer.md
 [auth]: skills/visualice/references/auth.md

@@ -64,6 +64,7 @@ import { acquireLock, LockedError } from "./shared/lock";
 import { saveJson } from "./crawl/manifest";
 import { RecipeStepSchema } from "./shared/manifest-schema";
 import { canonicalPath } from "./shared/url";
+import { appHost, closeAppHosts } from "./crawl/app/host";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(HERE, "..");
@@ -212,7 +213,7 @@ async function cmdCapture(flags: Flags): Promise<void> {
   const config = await loadConfigWithOverrides(flags);
   const manifestPath = str(flags, "manifest");
   if (!manifestPath) throw new UsageError("capture requires --manifest=<path>");
-  const baseUrl = str(flags, "target") ?? config.target;
+  const baseUrl = await startUrl(flags, config, log);
   if (!baseUrl) throw new UsageError("no target URL: pass --target=<url> or set target in config");
 
   const inputManifest = await loadInputManifest(manifestPath);
@@ -324,6 +325,21 @@ async function shootViewer(url: string, outFile: string): Promise<void> {
   } finally {
     await browser.close();
   }
+}
+
+/**
+ * Where a run starts: `--target`, else the config's `target` — or, for an app, the
+ * page its first window opens on, found by starting it. That copy of the app is
+ * the one the run then uses first.
+ */
+async function startUrl(flags: Flags, config: Config, log: Log): Promise<string | undefined> {
+  const host = appHost(config, log);
+  if (!host) return str(flags, "target") ?? config.target;
+  if (str(flags, "target")) {
+    throw new UsageError("--target is for a website, and this config crawls an app (config.app)");
+  }
+  log(`starting ${host.name}…`);
+  return host.startUrl();
 }
 
 /** A target must be an http(s) URL; anything else is a usage error, not a crash later. */
@@ -545,13 +561,13 @@ async function cmdCrawl(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const configPath = await resolveConfigPath(flags);
   const config = applyOverrides(await loadConfig(configPath), flags);
-  const baseUrl = str(flags, "target") ?? config.target;
+  // Before anything is written: a mistyped target must not become the saved one.
+  const baseUrl = await startUrl(flags, config, log);
   if (!baseUrl)
     throw new UsageError(
       "no base URL: pass a url (visualice crawl <url>) or run 'visualice init <url>'",
     );
-  // Before anything is written: a mistyped target must not become the saved one.
-  requireHttpUrl(baseUrl);
+  if (!config.app) requireHttpUrl(baseUrl);
   // First crawl in a fresh project: persist the target so `visualice crawl` alone
   // works from now on. --no-save opts out, and a dry run only looks.
   if (
@@ -658,7 +674,12 @@ async function cmdChanges(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
   const intent = await loadRoutesIntent(config);
-  const baseUrl = str(flags, "target") ?? config.target ?? intent.target;
+  // An app is only started when its pages are looked at (`--discover`).
+  const baseUrl = config.app
+    ? flags.discover === true
+      ? await startUrl(flags, config, log)
+      : undefined
+    : (str(flags, "target") ?? config.target ?? intent.target);
   const recorded = intent.source;
   // The run that matches the routes file's record holds its list of dirty files; with
   // no record in the file (not committed, or an older catalogue), the newest run's.
@@ -791,7 +812,7 @@ async function cmdAuth(flags: Flags): Promise<void> {
 async function cmdDiscover(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
-  const baseUrl = str(flags, "target") ?? config.target;
+  const baseUrl = await startUrl(flags, config, log);
   if (!baseUrl) throw new UsageError("no target URL: pass --target=<url> or set target in config");
   const { inputManifest, cachePath } = await discoverOnlyPipeline({
     config,
@@ -900,7 +921,7 @@ async function readRecipeFlag(value: string): Promise<RecipeStep[]> {
 async function cmdProbe(flags: Flags): Promise<void> {
   const log = makeLog(flags);
   const config = await loadConfigWithOverrides(flags);
-  const baseUrl = str(flags, "target") ?? config.target;
+  const baseUrl = await startUrl(flags, config, log);
   if (!baseUrl) throw new UsageError("no target URL: pass --target=<url> or set target in config");
   const page = str(flags, "page");
   if (!page) throw new UsageError("which page? visualice probe <path> [--recipe=…]");
@@ -1085,6 +1106,8 @@ async function main(): Promise<void> {
   try {
     await runCommand(cmd, flags);
   } finally {
+    // Close any app the command started, and put the device's screen back.
+    await closeAppHosts();
     // Let a background registry lookup save its answer, but never hold a finished
     // command up for long: an unanswered lookup is simply tried again next time.
     if (update) await Promise.race([update.refreshed, delay(1500)]);

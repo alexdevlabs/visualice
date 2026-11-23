@@ -141,6 +141,16 @@ export async function ensureStorageState(
 ): Promise<string | undefined> {
   const target = baseUrl ?? config.target;
   const sp = config.auth.storageStatePath;
+  if (config.app) {
+    // An app keeps its session in its own profile, not in a file Playwright loads.
+    if (config.auth.login) {
+      throw new Error(
+        "auth.login doesn't apply to an app: sign in once in the app and start from that session " +
+          "(app.electron.profile, or app.android.clearData: false)",
+      );
+    }
+    return undefined;
+  }
   if (!sp) return undefined;
 
   const abs = path.resolve(sp);

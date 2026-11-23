@@ -51,14 +51,32 @@ export function isGraphqlRead(body: string | null): boolean {
 
 /** What a probe needs to know to tell a write from a read. */
 export interface WriteRules {
-  /** The site being crawled, from `siteOf`. */
-  site: string;
+  /**
+   * The sites whose writes count, from `siteOf`: the target's own and `apiHosts`.
+   * `"any"` for an app with no `apiHosts`: it has no web host of its own, and what
+   * it writes to is its backend, wherever that is.
+   */
+  sites: string[] | "any";
   /** `allowWrites`, compiled. */
   allowed: RegExp[];
 }
 
-export function writeRules(target: string, allowWrites: string[]): WriteRules {
-  return { site: siteOf(new URL(target).hostname), allowed: allowWrites.map(globToRegExp) };
+export function writeRules(
+  target: string,
+  allowWrites: string[],
+  apiHosts: string[] = [],
+): WriteRules {
+  const allowed = allowWrites.map(globToRegExp);
+  let host = "";
+  try {
+    const u = new URL(target);
+    if (u.protocol === "http:" || u.protocol === "https:") host = u.hostname;
+  } catch {
+    /* not a URL: no host of its own */
+  }
+  if (!host && !apiHosts.length) return { sites: "any", allowed };
+  const sites = [...(host ? [host] : []), ...apiHosts].map(siteOf);
+  return { sites: [...new Set(sites)], allowed };
 }
 
 /** `POST /api/jobs` when a request would write to the site, else undefined. */
@@ -75,7 +93,7 @@ export function writeOf(
     return undefined;
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
-  if (siteOf(url.hostname) !== rules.site) return undefined;
+  if (rules.sites !== "any" && !rules.sites.includes(siteOf(url.hostname))) return undefined;
   if (rules.allowed.some((re) => re.test(url.pathname))) return undefined;
   if (method === "POST" && isGraphqlRead(request.postData())) return undefined;
   return `${method} ${url.pathname}`;

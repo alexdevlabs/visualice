@@ -18,6 +18,8 @@ export default tseslint.config(
       ".visualice/**",
       "tests/fixture/**",
       "tests/fixture-src/**",
+      // A CommonJS Electron main process, run by Electron rather than built.
+      "tests/fixture-electron/**",
     ],
   },
 
