@@ -198,6 +198,9 @@ jobs:
           api-level: 34
           arch: x86_64
           target: default
+          # A tall phone, like the test's device profiles: on the runner's default
+          # 1080×1920 screen a taller size than the panel doesn't take.
+          profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
           script: VISUALICE_ANDROID=1 npx vitest run --config vitest.integration.config.ts tests/integration/app-android.test.ts

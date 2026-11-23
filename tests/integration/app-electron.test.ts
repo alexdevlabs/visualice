@@ -74,7 +74,12 @@ describe("an Electron app, launched", () => {
   it("shoots each state at the device's size and pixel ratio", () => {
     const shots = manifest.routes.flatMap((r) => r.states.map((s) => s.shots.desktop));
     expect(shots.length).toBeGreaterThanOrEqual(3);
-    for (const shot of shots) expect(shot).toMatchObject({ width: 2560, height: 1600 });
+    for (const shot of shots) {
+      // Full-page shots: as wide as the window, and at least as tall (a page a pixel
+      // taller than the window, as fonts render on Windows, is shot whole).
+      expect(shot?.width).toBe(2560);
+      expect(shot?.height).toBeGreaterThanOrEqual(1600);
+    }
   });
 
   it("probes a recipe in the app like on a page", async () => {
@@ -103,6 +108,8 @@ describe("an Electron app, connected over CDP", () => {
       },
     });
     expect(manifest.routes.map((r) => r.url)).toEqual(["/index.html", "/index.html#/settings"]);
-    expect(manifest.routes[0].states[0].shots.desktop).toMatchObject({ width: 2560, height: 1600 });
+    const shot = manifest.routes[0].states[0].shots.desktop;
+    expect(shot?.width).toBe(2560);
+    expect(shot?.height).toBeGreaterThanOrEqual(1600);
   });
 });

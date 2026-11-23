@@ -721,11 +721,22 @@ export function parseConfig(raw: unknown, warn: Warn = warnStderr): Config {
   return config.app ? withAppDefaults(config, isObj(raw) && "devices" in raw) : config;
 }
 
+/** `s` without the dots and dashes at its ends, in one pass (a `[.-]+$` regex is quadratic). */
+function trimDotsAndDashes(s: string): string {
+  const edge = (c: string | undefined) => c === "." || c === "-";
+  let start = 0;
+  let end = s.length;
+  while (start < end && edge(s[start])) start++;
+  while (end > start && edge(s[end - 1])) end--;
+  return s.slice(start, end);
+}
+
 /** What an app is called: its own `name`, else its executable or package. */
 export function appName(app: AppConfig): string {
   if (app.name) return app.name;
   if (app.android) return app.android.package;
-  const base = path.basename(app.electron!.executable.replace(/[/\\]+$/, ""));
+  // basename ignores a trailing separator itself.
+  const base = path.basename(app.electron!.executable);
   return base.replace(/\.(app|exe)$/i, "") || "app";
 }
 
@@ -759,10 +770,11 @@ export function withAppDefaults(config: Config, devicesGiven: boolean): Config {
       ...config.output,
       site:
         config.output.site ??
-        (appName(app)
-          .toLowerCase()
-          .replace(/[^a-z0-9.-]+/g, "-")
-          .replace(/^[.-]+|[.-]+$/g, "") ||
+        (trimDotsAndDashes(
+          appName(app)
+            .toLowerCase()
+            .replace(/[^a-z0-9.-]+/g, "-"),
+        ) ||
           "app"),
     },
   };
