@@ -58,6 +58,13 @@ debugging port instead and connects over CDP, and says so in the log. That's wha
 `connect: "auto"` does; `launch` and `cdp` force one or the other. An app that also
 strips the remote debugging port can't be crawled.
 
+While an app is connected over CDP, its debugging port is open on `127.0.0.1` for as
+long as that copy runs, and any program on your computer could connect to it and
+control the app. visualice has the app pick a free port itself and connects to the
+endpoint the app writes into its private profile folder, but it can't close the port
+to other local programs. Keep that in mind before crawling over CDP with a signed-in
+`profile` on a shared machine.
+
 ### Screen sizes
 
 An Electron app gets one device when the config names none: `desktop`, 1280×800 at

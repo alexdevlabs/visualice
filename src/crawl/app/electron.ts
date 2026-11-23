@@ -3,7 +3,6 @@ import type { Browser, ElectronApplication, Page } from "playwright";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import { promises as fs, createReadStream } from "node:fs";
-import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { AppConfig } from "../../shared/config";
@@ -163,7 +162,7 @@ export function electronDriver(cfg: ElectronConfig, log: (msg: string) => void):
         const opened =
           mode === "launch"
             ? await viaLaunch(program.executablePath, args, env, cfg.startTimeoutMs)
-            : await viaCdp(program.executablePath, args, env, cfg.startTimeoutMs);
+            : await viaCdp(program.executablePath, args, env, cfg.startTimeoutMs, profile);
         await sizeWindow(opened, device, log);
         return {
           page: opened.page,
@@ -228,17 +227,16 @@ async function viaLaunch(
   }
 }
 
-/** A port nothing is listening on, for the app's remote debugging. */
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address() as { port: number };
-      server.close(() => resolve(port));
-    });
-  });
+/**
+ * Where the app's remote debugging listens, from the `DevToolsActivePort` file it
+ * writes into its profile: the port on the first line, the browser's endpoint path
+ * (`/devtools/browser/<uuid>`) on the second. Undefined until it has written it.
+ */
+export async function devToolsEndpoint(profile: string): Promise<string | undefined> {
+  const raw = await fs.readFile(path.join(profile, "DevToolsActivePort"), "utf8").catch(() => "");
+  const [port, endpoint] = raw.split(/\r?\n/);
+  if (!/^\d+$/.test(port ?? "") || !endpoint?.startsWith("/devtools/browser/")) return undefined;
+  return `ws://127.0.0.1:${port}${endpoint}`;
 }
 
 /** Children started for CDP, stopped if visualice exits without closing them. */
@@ -250,9 +248,13 @@ async function viaCdp(
   args: string[],
   env: Record<string, string>,
   timeoutMs: number,
+  profile: string,
 ): Promise<Opened> {
-  const port = await freePort();
-  const child = spawn(executablePath, [...args, `--remote-debugging-port=${port}`], {
+  // Port 0: the app takes whatever port is free and says which in its profile, so
+  // there's no gap between choosing a port and the app binding it for another
+  // program to take, and the endpoint's path has a random id in it, so nothing else
+  // listening there is mistaken for the app.
+  const child = spawn(executablePath, [...args, "--remote-debugging-port=0"], {
     env,
     stdio: "ignore",
   });
@@ -275,7 +277,9 @@ async function viaCdp(
         throw new Error(`the app exited (code ${child.exitCode}) before it could be connected to`);
       }
       try {
-        browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 2_000 });
+        const endpoint = await devToolsEndpoint(profile);
+        if (!endpoint) throw new Error("the app hasn't opened its debugging port yet");
+        browser = await chromium.connectOverCDP(endpoint, { timeout: 2_000 });
         break;
       } catch (e) {
         if (Date.now() > deadline) {

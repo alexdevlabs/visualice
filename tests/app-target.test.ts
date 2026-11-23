@@ -13,7 +13,12 @@ import {
 } from "../src/shared/url";
 import { resolveUrl } from "../src/crawl/recipe";
 import { writeOf, writeRules } from "../src/crawl/writes";
-import { inspectorAllowed, readFuseWire, resolveElectron } from "../src/crawl/app/electron";
+import {
+  devToolsEndpoint,
+  inspectorAllowed,
+  readFuseWire,
+  resolveElectron,
+} from "../src/crawl/app/electron";
 import { screenFor } from "../src/crawl/app/android";
 import { AppHost, type AppDriver, type AppInstance } from "../src/crawl/app/host";
 import type { Device } from "../src/shared/types";
@@ -222,6 +227,26 @@ describe("finding an Electron app's program", () => {
     expect(await inspectorAllowed(open)).toBe(true);
     // An Electron from before fuses always allowed it.
     expect(await inspectorAllowed(old)).toBe(true);
+  });
+});
+
+describe("connecting to an Electron app over CDP", () => {
+  it("reads the port the app bound, and its endpoint, from its profile", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vz-test-"));
+    try {
+      expect(await devToolsEndpoint(dir)).toBeUndefined();
+      await fs.writeFile(path.join(dir, "DevToolsActivePort"), "60396\n");
+      expect(await devToolsEndpoint(dir)).toBeUndefined();
+      await fs.writeFile(
+        path.join(dir, "DevToolsActivePort"),
+        "60396\n/devtools/browser/63afeb34-6e80-4240-b596-f195ae484115",
+      );
+      expect(await devToolsEndpoint(dir)).toBe(
+        "ws://127.0.0.1:60396/devtools/browser/63afeb34-6e80-4240-b596-f195ae484115",
+      );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
