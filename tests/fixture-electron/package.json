@@ -1,0 +1,6 @@
+{
+  "name": "visualice-electron-fixture",
+  "private": true,
+  "description": "A tiny Electron app the app-target integration tests crawl.",
+  "main": "main.cjs"
+}

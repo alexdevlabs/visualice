@@ -148,7 +148,9 @@ jobs:
           # Pin the tests' scratch directory so the upload below can find what a
           # crashed test left behind, wherever this runner's temp happens to be.
           VISUALICE_TEST_TMP: ${{ runner.temp }}/vc-tests
-        run: npm run test:integration 2>&1 | tee integration-test-output.log
+        # Electron opens real windows, and a Linux runner has no display to put them
+        # on: xvfb-run gives the tests a virtual one.
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}npm run test:integration 2>&1 | tee integration-test-output.log
       # Failure-only: these tests write their crawl/capture output under the OS
       # temp dir rather than the repo (see tests/integration/helpers.ts), and most
       # tests clean that up in a try/finally even when an assertion fails, so
@@ -168,6 +170,40 @@ jobs:
             ${{ runner.temp }}/vc-tests
           if-no-files-found: ignore
           retention-days: 7
+
+  android:
+    name: Android WebView integration test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Electron isn't used here: skip its ~100MB download.
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      # The emulator needs hardware acceleration. Linux runners have KVM but don't
+      # open it to the runner's user.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Boots an emulator, runs the script against it, and shuts it down. The test
+      # installs tests/fixture-android/fixture.apk itself.
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: default
+          # A tall phone, like the test's device profiles: on the runner's default
+          # 1080×1920 screen a taller size than the panel doesn't take.
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          script: VISUALICE_ANDROID=1 npx vitest run --config vitest.integration.config.ts tests/integration/app-android.test.ts
 
   fixture-and-schema:
     name: fixture + schema drift check

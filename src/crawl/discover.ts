@@ -18,10 +18,11 @@ import { gotoRoute, resolveUrl } from "./recipe";
 import { learnFromTwoLoads, learnedUnstableIds, useUnstableIds } from "./generated-ids";
 import { locatorFor, useTestIdAttribute } from "../shared/selectors";
 import { mapPool } from "../shared/pool";
-import { canonicalPath, hashPart, routeHref, scopePath, uniqueId } from "../shared/url";
+import { canonicalPath, hashPart, originOf, routeHref, scopePath, uniqueId } from "../shared/url";
 import { inScope } from "../shared/glob";
 import { countStates } from "./manifest";
 import { launchOptions } from "../shared/launch";
+import { appHost } from "./app/host";
 
 export interface DiscoverOptions {
   config: Config;
@@ -163,18 +164,24 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
   const interactions = config.discovery.interactions;
   useTestIdAttribute(config.testIdAttribute);
   useUnstableIds(config.discovery.unstableIds);
-  const browser = await chromium.launch(launchOptions());
+  // An app is discovered at the size it is captured at: its own window, not a browser's.
+  const app = appHost(config, log);
+  const browser = app ? undefined : await chromium.launch(launchOptions());
 
   const newDiscoveryContext = async (device?: Device): Promise<BrowserContext> => {
-    const context = await browser.newContext({
-      ...httpContextOptions(config),
-      viewport: device ? { width: device.width, height: device.height } : config.discovery.viewport,
-      deviceScaleFactor: 1,
-      isMobile: device?.mobile ?? false,
-      hasTouch: device?.touch ?? device?.mobile ?? false,
-      userAgent: device?.userAgent,
-      storageState: opts.storageState,
-    });
+    const context = app
+      ? app.newContext(device)
+      : await browser!.newContext({
+          ...httpContextOptions(config),
+          viewport: device
+            ? { width: device.width, height: device.height }
+            : config.discovery.viewport,
+          deviceScaleFactor: 1,
+          isMobile: device?.mobile ?? false,
+          hasTouch: device?.touch ?? device?.mobile ?? false,
+          userAgent: device?.userAgent,
+          storageState: opts.storageState,
+        });
     context.setDefaultTimeout(config.politeness.timeoutMs);
     await applyContextInit(context, config.stabilize);
     return context;
@@ -207,7 +214,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
     await context.close();
 
     // Links that only exist while a state is open, by the page they'd be visited at.
-    const origin = new URL(baseUrl).origin;
+    const origin = originOf(baseUrl);
     const { hashRoutes, maxDepth, maxPages, include, exclude } = config.scope;
     const revealed = new Map<string, { url: string; from: string; depth: number }>();
     const noteLinks = (route: RouteNode, hrefs: string[]) => {
@@ -215,7 +222,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
       for (const href of hrefs) {
         try {
           const u = new URL(href);
-          if (u.origin !== origin) continue;
+          if (originOf(u) !== origin) continue;
           const canon = canonicalPath(u, hashRoutes);
           if (revealed.has(canon) || !inScope(scopePath(u, hashRoutes), include, exclude, canon))
             continue;
@@ -351,7 +358,7 @@ export async function discoverPipeline(opts: DiscoverOptions): Promise<Discovery
       ...(wrote.length ? { wrote: sortQuiet(wrote, routes) } : {}),
     };
   } finally {
-    await browser.close();
+    await browser?.close();
   }
 }
 

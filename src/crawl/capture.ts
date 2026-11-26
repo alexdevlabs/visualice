@@ -35,6 +35,7 @@ import { mapPoolWithResource, sleep } from "../shared/pool";
 import { countStates } from "./manifest";
 import { checkAccessibility, rollupViolations, type AccessibilityViolation } from "./accessibility";
 import { launchOptions } from "../shared/launch";
+import { appHost, screenOf } from "./app/host";
 
 export interface CaptureOptions {
   config: Config;
@@ -370,7 +371,10 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   // lazy content on its own — the separate scroll-to-the-bottom-and-back pass would
   // only be a second, earlier scroll through the same page.
   const fullPage = config.screenshot.fullPage !== false;
-  const screens = !state.element && config.screenshot.fullPage === "screens";
+  // An app set to show its whole screen (Android `frame: "screen"`) is one picture
+  // of the screen, not a page taken a screen at a time.
+  const grab = state.element ? undefined : screenOf(page);
+  const screens = !state.element && !grab && config.screenshot.fullPage === "screens";
   const stabilize = screens ? { ...config.stabilize, lazyScroll: false } : config.stabilize;
   await stabilizePage(page, stabilize, ctx.log, { keepScroll });
 
@@ -419,7 +423,7 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
   const metaPath = path.join(dir, `${device.name}.json`);
 
   const clip =
-    !element && fullPage && !screens
+    !element && fullPage && !screens && !grab
       ? await fullPageClip(page, config.screenshot.maxHeight)
       : undefined;
 
@@ -449,21 +453,23 @@ async function captureState(page: Page, ctx: StateCtx, shown: PageState): Promis
 
   const buf = taken
     ? await stackScreens(taken.frames, shotType, config.screenshot.quality)
-    : element
-      ? await element.screenshot({
-          mask: mask.length ? mask : undefined,
-          type: shotType,
-          quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
-        })
-      : await page.screenshot({
-          // `clip` alone is bounded by the viewport; it only reaches further down the
-          // page when fullPage is set too.
-          fullPage,
-          clip,
-          mask: mask.length ? mask : undefined,
-          type: shotType,
-          quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
-        });
+    : grab
+      ? await grab()
+      : element
+        ? await element.screenshot({
+            mask: mask.length ? mask : undefined,
+            type: shotType,
+            quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
+          })
+        : await page.screenshot({
+            // `clip` alone is bounded by the viewport; it only reaches further down the
+            // page when fullPage is set too.
+            fullPage,
+            clip,
+            mask: mask.length ? mask : undefined,
+            type: shotType,
+            quality: shotType === "jpeg" ? config.screenshot.quality : undefined,
+          });
 
   await writeFull(buf, fullPath, ext, config.screenshot.quality);
   await makeThumb(buf, thumbPath, config.screenshot.thumbnail);
@@ -593,6 +599,8 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
   useTestIdAttribute(config.testIdAttribute);
   useUnstableIds(config.discovery.unstableIds);
   const started = Date.now();
+  // An app is captured in a copy of itself per device, not in a browser.
+  const app = appHost(config, log);
   const shotsDir = path.join(runDir, "screenshots");
   await fs.mkdir(shotsDir, { recursive: true });
 
@@ -616,10 +624,17 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
   const failures: CaptureFailure[] = [];
 
   try {
-    await validateSelectors(await browserFor(config.devices[0]?.browser ?? "chromium"), [
+    const selectors = [
       ...config.stabilize.maskSelectors.map((value) => ({ value, source: "maskSelectors" })),
       ...config.stabilize.waitForSelectors.map((value) => ({ value, source: "waitForSelectors" })),
-    ]);
+    ];
+    // Checked in a browser, which is only worth starting when there are some.
+    if (selectors.length) {
+      await validateSelectors(
+        await browserFor(config.devices[0]?.browser ?? "chromium"),
+        selectors,
+      );
+    }
 
     // The full plan up front: an ETA needs a denominator, and per-device totals
     // aren't it — a mobile-only state exists on one device and not the others.
@@ -651,11 +666,11 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
       log(
         `▸ ${device.name} (${device.width}×${device.height} @${device.dpr}${engine === "chromium" ? "" : `, ${engine}`})`,
       );
-      const browser = await browserFor(engine);
+      const browser = app ? undefined : await browserFor(engine);
       const newContext = async () => {
-        const context = await browser.newContext(
-          deviceContextOptions(config, device, opts.storageState),
-        );
+        const context = app
+          ? app.newContext(device)
+          : await browser!.newContext(deviceContextOptions(config, device, opts.storageState));
         context.setDefaultTimeout(config.politeness.timeoutMs);
         await applyContextInit(context, config.stabilize);
         return context;
@@ -674,8 +689,16 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
           // A recycled page starts blank again, which is why this is reset there.
           const shown: PageState = {};
           let current = page;
+          // Only one copy of an app runs, so an isolated state's copy replaced the
+          // shared one: the next state starts a new copy before it can use it.
+          let replaced = false;
 
           for (const state of states) {
+            if (replaced) {
+              current = await recycle();
+              forget(shown);
+              replaced = false;
+            }
             if (opts.resume) {
               const existing = await adoptExistingShot({ route, state, device, shotsDir, runDir });
               if (existing) {
@@ -731,6 +754,7 @@ export async function runCapture(opts: CaptureOptions): Promise<CaptureResult> {
                 }
               } finally {
                 await own?.close().catch(() => {});
+                if (own && app) replaced = true;
                 await sleep(config.politeness.minDelayMs);
               }
             }

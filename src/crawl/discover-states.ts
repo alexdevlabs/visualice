@@ -981,7 +981,7 @@ export async function discoverStates(
   if (!interactions.auto) return states;
 
   const waitUntil = config.stabilize.waitStrategy;
-  const writes = writeRules(routeUrl, interactions.allowWrites);
+  const writes = writeRules(routeUrl, interactions.allowWrites, interactions.apiHosts);
   const guard = { on: false };
   const page = await context.newPage();
   try {

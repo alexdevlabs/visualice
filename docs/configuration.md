@@ -7,7 +7,7 @@ defaults in `src/shared/config.ts`. JSON configs are accepted too, and
 ```jsonc
 {
   // what `visualice init` scaffolds; "./config.schema.json" in this repo itself
-  "$schema": "https://unpkg.com/visualice@0.2.1/config.schema.json",
+  "$schema": "https://unpkg.com/visualice@0.3.0/config.schema.json",
   "target": "https://your.site",
   "scope": { "exclude": ["/admin/**"] },
 }
@@ -32,6 +32,8 @@ Options worth knowing:
 | `discovery.interactions.denyLabels`         | logout, delete, send… | Triggers never clicked, by the words in their label: whole words, any case (`import` stops "Import CSV", not "Importers")                                      |
 | `discovery.interactions.blockWrites`        | `true`                | Stop the requests a probed trigger makes that would change data on the site, and leave the trigger out ([discovery](crawling.md#discovery))                    |
 | `discovery.interactions.allowWrites`        | `[]`                  | Path globs a probed trigger may write to (an analytics endpoint): neither blocked nor a reason to leave it out                                                 |
+| `discovery.interactions.apiHosts`           | `[]`                  | Hosts besides the target's own whose writes count, such as an API on another domain; for an app, the app's backend                                             |
+| `app.electron` / `app.android`              |                       | Crawl an app instead of a website: an Electron desktop app, or an Android app's WebView ([crawling apps](apps.md)). Set this or `target`, not both             |
 | `discovery.interactions.patienceMs`         | `1500`                | How long a probe keeps looking after a click while the page is still loading ([slow pages](crawling.md#slow-pages))                                            |
 | `discovery.unstableIds`                     | `[]`                  | Regular expressions for ids the site generates at render time, never used in a recipe ([generated ids](crawling.md#generated-ids))                             |
 | `discovery.mobileStates`                    | `true`                | Second probe pass at the first mobile device's viewport (finds hamburger navs)                                                                                 |

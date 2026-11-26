@@ -158,6 +158,12 @@ const InteractionsSchema = z.object({
     .describe(
       "Paths a probed trigger may write to, as globs (`/api/events`, `/ingest/**`): an analytics or logging endpoint. A write there is neither blocked nor a reason to leave the trigger out.",
     ),
+  apiHosts: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Hosts besides the target's own whose writes count, such as an API on another domain (`api.example.net`); subdomains of each count too. For an app target, which has no web host of its own, a write to any host counts until this lists the app's backend.",
+    ),
   extraTriggers: z
     .array(z.string())
     .default([])
@@ -442,8 +448,125 @@ const PolitenessSchema = z.object({
     ),
 });
 
+const ElectronAppSchema = z
+  .object({
+    executable: z
+      .string()
+      .min(1)
+      .describe(
+        "The app to launch: a macOS `.app` bundle, an executable, or the folder of an Electron project (a package.json with a `main`, and `electron` installed in it). A relative path is from the folder visualice runs in.",
+      ),
+    args: z.array(z.string()).default([]).describe("Extra command-line arguments for the app."),
+    env: z
+      .record(z.string(), z.string())
+      .default({})
+      .describe("Extra environment variables for the app; ${ENV_VAR} placeholders resolve."),
+    connect: z
+      .enum(["auto", "launch", "cdp"])
+      .default("auto")
+      .describe(
+        "How to attach. `launch` uses Playwright's Electron support, which needs the app's Node inspector; `cdp` starts the app with Chromium's remote debugging port and connects to that, for apps built with the inspector switched off (Slack, Discord); `auto` tries `launch` and falls back to `cdp`.",
+      ),
+    profile: z
+      .string()
+      .optional()
+      .describe(
+        "A user-data folder to start every launch from, such as one already signed in. It is copied for each launch, so the crawl never changes it. Without it every launch starts from an empty profile.",
+      ),
+    startTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(30000)
+      .describe("How long to wait for the app's first window."),
+  })
+  .strict();
+
+const AndroidAppSchema = z
+  .object({
+    package: z
+      .string()
+      .regex(/^[A-Za-z]\w*(\.[A-Za-z]\w*)+$/, "an Android package name, like com.example.app")
+      .describe("The app's package name (`com.example.app`)."),
+    activity: z
+      .string()
+      .regex(/^[\w.$/]+$/, "an activity name, like .MainActivity")
+      .optional()
+      .describe("Activity to start (`.MainActivity`). Default: the app's launcher activity."),
+    apk: z
+      .string()
+      .optional()
+      .describe(
+        "An APK to install before the crawl (a relative path is from the folder visualice runs in). Its WebView must be debuggable: a debug build, or one that calls WebView.setWebContentsDebuggingEnabled(true).",
+      ),
+    device: z
+      .string()
+      .optional()
+      .describe(
+        "adb serial of the device or emulator to use (`emulator-5554`). Default: the first one adb lists.",
+      ),
+    clearData: z
+      .boolean()
+      .default(true)
+      .describe(
+        "Clear the app's data before every launch, so each one starts like a fresh install. Turn off to keep a session you signed in to on the device.",
+      ),
+    frame: z
+      .enum(["webview", "screen"])
+      .default("webview")
+      .describe(
+        "What a screenshot shows: the WebView's page, or the whole screen with the app's native parts (status bar, native tab bar) around it.",
+      ),
+    startTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .default(30000)
+      .describe("How long to wait for the app's WebView after starting it."),
+  })
+  .strict();
+
+export const AppSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "The app's name, for the run folder and the viewer. Default: taken from the executable or package.",
+      ),
+    electron: ElectronAppSchema.optional().describe("A desktop app built with Electron."),
+    android: AndroidAppSchema.optional().describe(
+      "An Android app whose screens are a WebView (Capacitor, Ionic, Cordova, or a WebView of your own). Experimental.",
+    ),
+  })
+  .strict()
+  .refine((a) => !!a.electron !== !!a.android, {
+    message: "set one of app.electron or app.android",
+  });
+
+export type AppConfig = z.infer<typeof AppSchema>;
+
+/** Device profiles an app target gets when the config names none. */
+export const APP_DEVICES = {
+  electron: [DeviceSchema.parse({ name: "desktop", width: 1280, height: 800, dpr: 2 })],
+  android: [
+    DeviceSchema.parse({
+      name: "phone",
+      width: 412,
+      height: 915,
+      dpr: 2.625,
+      mobile: true,
+      touch: true,
+    }),
+  ],
+};
+
 export const ConfigSchema = z.object({
   target: z.string().optional().describe("Base URL of the site to crawl."),
+  app: AppSchema.optional().describe(
+    "Crawl an app instead of a website: an Electron desktop app, or an Android app's WebView. Experimental. Set this or `target`, not both.",
+  ),
   scope: ScopeSchema.default(ScopeSchema.parse({})),
   seeds: z
     .array(z.string())
@@ -594,5 +717,65 @@ export function migrateConfig(raw: unknown, warn: Warn = warnStderr): unknown {
 
 /** Validate a raw config object (after migrating renamed keys) and fill in defaults. */
 export function parseConfig(raw: unknown, warn: Warn = warnStderr): Config {
-  return ConfigSchema.parse(migrateConfig(raw, warn));
+  const config = ConfigSchema.parse(migrateConfig(raw, warn));
+  return config.app ? withAppDefaults(config, isObj(raw) && "devices" in raw) : config;
+}
+
+/** `s` without the dots and dashes at its ends, in one pass (a `[.-]+$` regex is quadratic). */
+function trimDotsAndDashes(s: string): string {
+  const edge = (c: string | undefined) => c === "." || c === "-";
+  let start = 0;
+  let end = s.length;
+  while (start < end && edge(s[start])) start++;
+  while (end > start && edge(s[end - 1])) end--;
+  return s.slice(start, end);
+}
+
+/** What an app is called: its own `name`, else its executable or package. */
+export function appName(app: AppConfig): string {
+  if (app.name) return app.name;
+  if (app.android) return app.android.package;
+  // basename ignores a trailing separator itself.
+  const base = path.basename(app.electron!.executable);
+  return base.replace(/\.(app|exe)$/i, "") || "app";
+}
+
+/**
+ * An app is not a website, and some of a website's defaults don't apply to it. It
+ * has one window (or one device), so nothing runs in parallel. It has no
+ * robots.txt or sitemap to read. Its screens are found at the size it is captured
+ * at, so there is no separate mobile pass. And it gets device profiles that fit it
+ * when the config names none: a desktop window for Electron, a phone for Android.
+ */
+export function withAppDefaults(config: Config, devicesGiven: boolean): Config {
+  const app = config.app!;
+  const kind = app.electron ? "electron" : "android";
+  if (config.target) {
+    throw new ConfigLoadError("config: set `target` (a website) or `app`, not both");
+  }
+  const devices = devicesGiven ? config.devices : APP_DEVICES[kind];
+  const engine = devices.find((d) => d.browser !== "chromium");
+  if (engine) {
+    throw new ConfigLoadError(
+      `config: device "${engine.name}" asks for ${engine.browser}, but an app runs in its own engine — remove \`browser\``,
+    );
+  }
+  return {
+    ...config,
+    devices,
+    discovery: { ...config.discovery, useSitemap: false, mobileStates: false },
+    politeness: { ...config.politeness, concurrency: 1, respectRobots: false },
+    // A folder name, the way runs name a site's folder: `Visual Studio Code` → `visual-studio-code`.
+    output: {
+      ...config.output,
+      site:
+        config.output.site ??
+        (trimDotsAndDashes(
+          appName(app)
+            .toLowerCase()
+            .replace(/[^a-z0-9.-]+/g, "-"),
+        ) ||
+          "app"),
+    },
+  };
 }

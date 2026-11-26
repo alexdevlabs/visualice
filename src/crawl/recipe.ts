@@ -1,10 +1,15 @@
 import type { Page, Response } from "playwright";
 import type { RecipeStep } from "../shared/types";
 import { locatorFor, visibleMatch } from "../shared/selectors";
+import { appRootHref } from "../shared/url";
 import { idOfSelector, idShape, isGeneratedId, namesGeneratedId } from "./generated-ids";
 
 export function resolveUrl(base: string, u: string): string {
-  return /^https?:\/\//i.test(u) ? u : new URL(u, base).href;
+  if (/^https?:\/\//i.test(u)) return u;
+  // An app's route is a path from its root, not from the root of its disk.
+  const root = appRootHref();
+  if (root && u.startsWith("/") && base.startsWith(`${root}/`)) return root + u;
+  return new URL(u, base).href;
 }
 
 /**

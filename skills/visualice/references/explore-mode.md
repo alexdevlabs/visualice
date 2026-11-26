@@ -50,7 +50,7 @@ settings.
 per type, all in a single message (at most 6 at a time; queue the rest). Give each:
 
 - page type, representative page(s), the other pages of the type
-- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.2.1`,
+- the CLI invocation (`visualice` if it is on the PATH, else `npx -y visualice@0.3.0`,
   or `npm run vc --` in a visualice checkout) and the project directory to run it from
 - output file `.visualice/explore/<type-slug>.json` and a shots dir
   (`.visualice/explore/shots/`)
@@ -83,7 +83,7 @@ The agent definition (`agents/visualice-explorer.md`) is the detailed playbook.
    device, and a `waitFor` on something hidden at phone width passes on desktop and
    fails on mobile.
 4. **Write it down** — put verified states in `.visualice/explore/<type-slug>.json`:
-   `{ "$schema": "https://unpkg.com/visualice@0.2.1/explore.schema.json", "states": [{
+   `{ "$schema": "https://unpkg.com/visualice@0.3.0/explore.schema.json", "states": [{
 "page": "/cart", "id": "with-items", "kind": "other", "label": "…", "isolate": true,
 "recipe": […] }], "pages": ["/editor"] }`. `page` may be a list for a state every page
    of a type shares; `pages` proposes pages the catalogue lacks. The `$schema` line lets

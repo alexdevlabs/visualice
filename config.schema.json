@@ -9,6 +9,122 @@
       "description": "Base URL of the site to crawl.",
       "type": "string"
     },
+    "app": {
+      "description": "Crawl an app instead of a website: an Electron desktop app, or an Android app's WebView. Experimental. Set this or `target`, not both.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The app's name, for the run folder and the viewer. Default: taken from the executable or package.",
+          "type": "string",
+          "minLength": 1
+        },
+        "electron": {
+          "description": "A desktop app built with Electron.",
+          "type": "object",
+          "properties": {
+            "executable": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The app to launch: a macOS `.app` bundle, an executable, or the folder of an Electron project (a package.json with a `main`, and `electron` installed in it). A relative path is from the folder visualice runs in."
+            },
+            "args": {
+              "default": [],
+              "description": "Extra command-line arguments for the app.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "default": {},
+              "description": "Extra environment variables for the app; ${ENV_VAR} placeholders resolve.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "connect": {
+              "default": "auto",
+              "description": "How to attach. `launch` uses Playwright's Electron support, which needs the app's Node inspector; `cdp` starts the app with Chromium's remote debugging port and connects to that, for apps built with the inspector switched off (Slack, Discord); `auto` tries `launch` and falls back to `cdp`.",
+              "type": "string",
+              "enum": [
+                "auto",
+                "launch",
+                "cdp"
+              ]
+            },
+            "profile": {
+              "description": "A user-data folder to start every launch from, such as one already signed in. It is copied for each launch, so the crawl never changes it. Without it every launch starts from an empty profile.",
+              "type": "string"
+            },
+            "startTimeoutMs": {
+              "default": 30000,
+              "description": "How long to wait for the app's first window.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "executable"
+          ],
+          "additionalProperties": false
+        },
+        "android": {
+          "description": "An Android app whose screens are a WebView (Capacitor, Ionic, Cordova, or a WebView of your own). Experimental.",
+          "type": "object",
+          "properties": {
+            "package": {
+              "type": "string",
+              "pattern": "^[A-Za-z]\\w*(\\.[A-Za-z]\\w*)+$",
+              "description": "The app's package name (`com.example.app`)."
+            },
+            "activity": {
+              "description": "Activity to start (`.MainActivity`). Default: the app's launcher activity.",
+              "type": "string",
+              "pattern": "^[\\w.$/]+$"
+            },
+            "apk": {
+              "description": "An APK to install before the crawl (a relative path is from the folder visualice runs in). Its WebView must be debuggable: a debug build, or one that calls WebView.setWebContentsDebuggingEnabled(true).",
+              "type": "string"
+            },
+            "device": {
+              "description": "adb serial of the device or emulator to use (`emulator-5554`). Default: the first one adb lists.",
+              "type": "string"
+            },
+            "clearData": {
+              "default": true,
+              "description": "Clear the app's data before every launch, so each one starts like a fresh install. Turn off to keep a session you signed in to on the device.",
+              "type": "boolean"
+            },
+            "frame": {
+              "default": "webview",
+              "description": "What a screenshot shows: the WebView's page, or the whole screen with the app's native parts (status bar, native tab bar) around it.",
+              "type": "string",
+              "enum": [
+                "webview",
+                "screen"
+              ]
+            },
+            "startTimeoutMs": {
+              "default": 30000,
+              "description": "How long to wait for the app's WebView after starting it.",
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "package"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "scope": {
       "default": {
         "include": [
@@ -134,6 +250,7 @@
           "denySelectors": [],
           "blockWrites": true,
           "allowWrites": [],
+          "apiHosts": [],
           "extraTriggers": [],
           "formStates": true
         },
@@ -201,6 +318,7 @@
             "denySelectors": [],
             "blockWrites": true,
             "allowWrites": [],
+            "apiHosts": [],
             "extraTriggers": [],
             "formStates": true
           },
@@ -300,6 +418,14 @@
             "allowWrites": {
               "default": [],
               "description": "Paths a probed trigger may write to, as globs (`/api/events`, `/ingest/**`): an analytics or logging endpoint. A write there is neither blocked nor a reason to leave the trigger out.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "apiHosts": {
+              "default": [],
+              "description": "Hosts besides the target's own whose writes count, such as an API on another domain (`api.example.net`); subdomains of each count too. For an app target, which has no web host of its own, a write to any host counts until this lists the app's backend.",
               "type": "array",
               "items": {
                 "type": "string"

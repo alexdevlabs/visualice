@@ -1,7 +1,7 @@
 # CLI reference
 
 Complete command and flag surface for the `visualice` binary. Installed globally
-(`npm i -g visualice`) or run ad hoc with `npx -y visualice@0.2.1 <cmd>`, both work from
+(`npm i -g visualice`) or run ad hoc with `npx -y visualice@0.3.0 <cmd>`, both work from
 any directory. In a source checkout of this repo, use `npm run vc -- <cmd>` instead (or
 the dedicated script where one exists, e.g. `npm run crawl -- <args>`).
 
@@ -36,7 +36,7 @@ command are accepted by it.
 | Flag                     | Applies to                             | Meaning                                                                                                                                                                  |
 | ------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--config=<path>`        | most                                   | Config file (`.ts`/`.js`/`.json`); cwd auto-detection if omitted                                                                                                         |
-| `--target=<url>`         | crawl cmds, `init`/`author`/`probe`    | Site to crawl (overrides `config.target`); same as the bare `[url]` arg                                                                                                  |
+| `--target=<url>`         | crawl cmds, `init`/`author`/`probe`    | Site to crawl (overrides `config.target`); same as the bare `[url]` arg. An `app` config takes no URL: the app's first page is the start                                 |
 | `--seed=<paths>`         | `crawl`/`discover`                     | Extra entry pages, added to `config.seeds` (comma-separated)                                                                                                             |
 | `--no-states`            | `crawl`/`discover`                     | Pages only, no UI states: faster, and the states already cached are kept                                                                                                 |
 | `--dry-run`              | `crawl`                                | Discover, then list what would be captured (pages, states, shot count)                                                                                                   |

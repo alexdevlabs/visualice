@@ -6,6 +6,7 @@ import {
   canonicalPath,
   dedupeLinks,
   hashPart,
+  originOf,
   relativeToOrigin,
   routeId,
   scopePath,
@@ -14,7 +15,7 @@ import {
 import { ALLOW_ALL, fetchRobots, isAllowed, type RobotsRules } from "../shared/robots";
 import { politeFetch } from "../shared/http";
 import { sleep } from "../shared/pool";
-import { gotoRoute } from "./recipe";
+import { gotoRoute, resolveUrl } from "./recipe";
 
 /** How long a page may take to finish loading its data before its links are read. */
 const LINK_SETTLE_MS = 5000;
@@ -46,7 +47,7 @@ async function fetchSitemapUrls(
       )) {
         const u = xmlText(m[1].trim());
         try {
-          if (new URL(u).origin !== origin) continue;
+          if (originOf(u) !== origin) continue;
         } catch {
           continue;
         }
@@ -112,7 +113,7 @@ export async function discoverRoutes(
   log: (msg: string) => void,
   limit: RouteDiscoveryLimit = {},
 ): Promise<RouteNode[]> {
-  const origin = new URL(baseUrl).origin;
+  const origin = originOf(baseUrl);
   const { include, exclude, maxPages, sameOriginOnly, hashRoutes } = config.scope;
   const maxDepth = limit.only ? 0 : config.scope.maxDepth;
   const { respectRobots } = config.politeness;
@@ -147,7 +148,7 @@ export async function discoverRoutes(
   if (fresh) enqueue(baseUrl, 0, null);
   for (const s of limit.revealed ? [] : (limit.only ?? config.seeds)) {
     try {
-      enqueue(new URL(s, baseUrl).href, 0, null, true);
+      enqueue(resolveUrl(baseUrl, s), 0, null, true);
     } catch {
       /* skip bad seed */
     }
@@ -200,7 +201,7 @@ export async function discoverRoutes(
       let written: string;
       try {
         const u = new URL(item.url);
-        if (sameOriginOnly && u.origin !== origin) continue;
+        if (sameOriginOnly && originOf(u) !== origin) continue;
         canon = canonicalPath(u, hashRoutes);
         scope = scopePath(u, hashRoutes);
         written = u.pathname + u.search;
@@ -262,8 +263,8 @@ export async function discoverRoutes(
       // A page that sends the browser to another site isn't this site's page: what
       // is there must not be probed (its buttons clicked) or shot as part of it.
       const landed = navigated ? safeUrl(page.url()) : undefined;
-      if (sameOriginOnly && landed && landed.origin !== origin) {
-        log(`  ⊘ ${canon} — redirects to ${landed.origin}, outside the site`);
+      if (sameOriginOnly && landed && originOf(landed) !== origin) {
+        log(`  ⊘ ${canon} — redirects to ${originOf(landed)}, outside the site`);
         await sleep(delayMs);
         continue;
       }
@@ -300,7 +301,7 @@ export async function discoverRoutes(
         for (const href of links) {
           try {
             const u = new URL(href);
-            if (u.origin !== origin) continue;
+            if (originOf(u) !== origin) continue;
             const linkCanon = canonicalPath(u, hashRoutes);
             if (
               visited.has(origin + linkCanon) ||

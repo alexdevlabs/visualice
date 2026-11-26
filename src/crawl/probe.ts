@@ -7,6 +7,7 @@ import { applyContextInit } from "./stabilize";
 import { deviceContextOptions } from "./context-options";
 import { applyRecipe, gotoRoute, resolveUrl } from "./recipe";
 import { writeOf, writeRules } from "./writes";
+import { originOf } from "../shared/url";
 import { generatedIdSource, useUnstableIds } from "./generated-ids";
 import {
   addedLines,
@@ -22,6 +23,7 @@ export { addedLines, changedKeys } from "./snapshot";
 import { classifyChange, collectCandidates } from "./discover-states";
 import { sentToLogin } from "./capture";
 import { launchOptions } from "../shared/launch";
+import { appHost } from "./app/host";
 
 /**
  * `visualice probe`: one page, one recipe, and a report of what happened — the
@@ -243,7 +245,7 @@ async function readFormsAndControls(
 
 /** What a page offers an explorer: see `PageInventory`. */
 export async function readInventory(page: Page, config: Config): Promise<PageInventory> {
-  const origin = new URL(page.url()).origin;
+  const origin = originOf(page.url());
   const [title, headings, rawLinks, candidates, formsAndControls] = await Promise.all([
     page.title().catch(() => ""),
     page
@@ -271,7 +273,7 @@ export async function readInventory(page: Page, config: Config): Promise<PageInv
     } catch {
       continue;
     }
-    if (u.origin !== origin) continue;
+    if (originOf(u) !== origin) continue;
     const p = u.pathname + u.search + (u.hash.startsWith("#/") ? u.hash : "");
     if (seen.has(p)) continue;
     seen.add(p);
@@ -313,11 +315,14 @@ export async function probePage(
   useUnstableIds(config.discovery.unstableIds);
   const device = pickDevice(config, opts.device);
   const engines = { chromium, firefox, webkit };
-  const browser = await engines[device.browser ?? "chromium"].launch(launchOptions());
+  const app = appHost(config);
+  const browser = app
+    ? undefined
+    : await engines[device.browser ?? "chromium"].launch(launchOptions());
   try {
-    const context = await browser.newContext(
-      deviceContextOptions(config, device, opts.storageState),
-    );
+    const context = app
+      ? app.newContext(device)
+      : await browser!.newContext(deviceContextOptions(config, device, opts.storageState));
     // Short: an agent iterating on a recipe wants a wrong target to fail fast.
     context.setDefaultTimeout(Math.min(config.politeness.timeoutMs, 8_000));
     await applyContextInit(context, config.stabilize);
@@ -340,7 +345,8 @@ export async function probePage(
     const linesBefore = await readLines(page);
     const storeBefore = await readStorage(page);
     const cookiesBefore = await readCookies(context);
-    const rules = writeRules(baseUrl, config.discovery.interactions.allowWrites);
+    const { allowWrites, apiHosts } = config.discovery.interactions;
+    const rules = writeRules(baseUrl, allowWrites, apiHosts);
     const writes = new Set<string>();
     page.on("request", (r) => {
       const w = writeOf(r, rules);
@@ -387,12 +393,12 @@ export async function probePage(
     if (opts.shotPath) {
       await page.screenshot({ path: opts.shotPath, scale: "css" });
     }
-    const origin = new URL(baseUrl).origin;
+    const origin = originOf(baseUrl);
     const finalUrl = new URL(page.url());
     return {
       url,
       finalPath:
-        finalUrl.origin === origin
+        originOf(finalUrl) === origin
           ? finalUrl.pathname + finalUrl.search + finalUrl.hash
           : finalUrl.href,
       status: resp?.status(),
@@ -411,6 +417,6 @@ export async function probePage(
       ...(opts.inventory ? { inventory: await readInventory(page, config) } : {}),
     };
   } finally {
-    await browser.close().catch(() => {});
+    await browser?.close().catch(() => {});
   }
 }

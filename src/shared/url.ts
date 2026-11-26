@@ -44,14 +44,50 @@ export function hashPart(u: URL, mode: HashRoutes = "never"): string {
   return raw;
 }
 
+/**
+ * The folder an app's pages are relative to, from the page it opens on: for
+ * `file:///Users/me/app/dist/index.html` it is `file:///Users/me/app/dist`, and that
+ * page's route is `/index.html`. Without it every route would be named by its full
+ * path on disk. Set once per process, by the app host; an app served over http is
+ * a site like any other and has none.
+ */
+let appRoot: { href: string; path: string } | undefined;
+
+export function setAppRoot(startUrl: string | undefined): void {
+  appRoot = undefined;
+  if (!startUrl) return;
+  const u = new URL(startUrl);
+  if (u.protocol === "http:" || u.protocol === "https:") return;
+  const dir = u.pathname.replace(/\/[^/]*$/, "");
+  appRoot = { href: `${u.protocol}//${u.host}${dir}`, path: dir };
+}
+
+/** The app root's URL, when an app with one is being crawled. */
+export function appRootHref(): string | undefined {
+  return appRoot?.href;
+}
+
+function underAppRoot(u: URL): boolean {
+  return (
+    !!appRoot &&
+    u.origin === "null" &&
+    `${u.protocol}//${u.host}${u.pathname}`.startsWith(`${appRoot.href}/`)
+  );
+}
+
+/** A URL's path, from the app root for an app's own pages. */
+function pathOf(u: URL): string {
+  return underAppRoot(u) ? u.pathname.slice(appRoot!.path.length) : u.pathname;
+}
+
 /** Pathname (+ route fragment) with trailing slashes trimmed — what scope globs match. */
 export function scopePath(u: URL, hashRoutes: HashRoutes = "never"): string {
-  return (trimEndOf(u.pathname, "/") || "/") + hashPart(u, hashRoutes);
+  return (trimEndOf(pathOf(u), "/") || "/") + hashPart(u, hashRoutes);
 }
 
 /** Path + meaningful, sorted query (+ route fragment) — the identity used for dedup and output. */
 export function canonicalPath(u: URL, hashRoutes: HashRoutes = "never"): string {
-  const p = trimEndOf(u.pathname, "/") || "/";
+  const p = trimEndOf(pathOf(u), "/") || "/";
   const hash = hashPart(u, hashRoutes);
   const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING.test(k));
   if (!params.length) return p + hash;
@@ -75,6 +111,18 @@ export function routeHref(route: { url: string; trailingSlash?: boolean }): stri
   return m[1].endsWith("/") ? route.url : `${m[1]}/${m[2]}`;
 }
 
+/**
+ * A URL's origin, as a prefix a canonical path can be appended to. For http(s) that
+ * is `URL.origin`. An app's pages (`file://`, `vscode-file://vscode-app`) all have
+ * the opaque origin `"null"`, which says nothing and can't be built on: the app root
+ * stands in for it, or for a page outside the root, its scheme and host.
+ */
+export function originOf(u: URL | string): string {
+  const url = typeof u === "string" ? new URL(u) : u;
+  if (url.origin !== "null") return url.origin;
+  return underAppRoot(url) ? appRoot!.href : `${url.protocol}//${url.host}`;
+}
+
 /** Stable, filesystem-safe id for a canonical path. */
 export function routeId(canonical: string): string {
   return pathSlug(canonical).replace(/\//g, "-");
@@ -92,7 +140,7 @@ export function relativeToOrigin(
 ): string {
   try {
     const u = new URL(href);
-    return u.origin === origin ? canonicalPath(u, hashRoutes) : u.href;
+    return originOf(u) === origin ? canonicalPath(u, hashRoutes) : u.href;
   } catch {
     return href;
   }
@@ -108,7 +156,7 @@ export function dedupeLinks(
   for (const href of links) {
     try {
       const u = new URL(href);
-      if (u.origin === origin) out.add(canonicalPath(u, hashRoutes));
+      if (originOf(u) === origin) out.add(canonicalPath(u, hashRoutes));
     } catch {
       /* skip */
     }

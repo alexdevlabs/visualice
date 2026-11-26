@@ -1,6 +1,6 @@
 ---
 name: visualice
-description: Catalogue a website visually — explore every page and UI state (menus, modals, form errors, a cart with items, signed-in views, multi-step flows), capture each across device profiles, then browse the screenshots on a zoomable canvas. Use when the user wants to screenshot/snapshot a whole site, visually crawl it, audit UI across breakpoints, capture all pages and interactive states, build a visual catalog of a web app, or "see every screen" of a site.
+description: Catalogue a website visually — explore every page and UI state (menus, modals, form errors, a cart with items, signed-in views, multi-step flows), capture each across device profiles, then browse the screenshots on a zoomable canvas. Also catalogues Electron desktop apps and Android WebView apps (Capacitor, Ionic, Cordova). Use when the user wants to screenshot/snapshot a whole site or app, visually crawl it, audit UI across breakpoints, capture all pages and interactive states, build a visual catalog of a web app, or "see every screen" of a site.
 ---
 
 # Visualice
@@ -14,7 +14,7 @@ you verified, so the catalogue reruns without you.
 ## 1. Locate & preflight
 
 Use `visualice` when it is on the PATH (`npm i -g visualice`) and `visualice --version`
-prints 0.2.1 or newer; otherwise run it with `npx -y visualice@0.2.1 <cmd>`, the CLI
+prints 0.3.0 or newer; otherwise run it with `npx -y visualice@0.3.0 <cmd>`, the CLI
 version this skill was written for. An older installed CLI lacks commands used below:
 use the `npx` form for this task and tell the user once to update it with
 `npm i -g visualice@latest`. Both work from any directory, no repo checkout needed. In a source checkout of this repo itself,
@@ -56,6 +56,17 @@ Steer the crawl by editing the routes file:
   requests surface as `wanted` in `--json` and a `## Wanted` report section — that
   is a work queue for exploring (§3, detail in
   [`references/explore-mode.md`](references/explore-mode.md)).
+
+**An app instead of a site.** For an Electron desktop app or an Android app whose screens
+are a WebView, write the config yourself with `app` in place of `target` (`visualice
+init` takes a URL), then run every command without a URL:
+`{ "app": { "electron": { "executable": "<.app bundle, program, or Electron project folder>" } } }`
+or `{ "app": { "android": { "package": "com.example.app", "apk": "<debug build>" } } }`.
+Android needs adb, a running emulator or a phone with USB debugging, and a debuggable
+WebView (a debug build). Native screens (Swift, Kotlin, React Native, Flutter) and iOS
+can't be crawled: say so rather than trying. Everything else in this skill applies;
+the differences (routes named from the app's folder, one copy at a time, no login
+recipes) are in [`docs/apps.md`](../../docs/apps.md).
 
 For large sites, confirm scope with the user and set `scope.include`/`exclude` globs,
 `scope.maxPages`, and `devices` in the config. A shop's hundred product pages are one
