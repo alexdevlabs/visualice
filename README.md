@@ -6,7 +6,8 @@
 Point your agent at a website and visualice catalogues every page and every state those
 pages can be in, on every device you configure: open menus and modals, but also form
 errors, a cart with items in it, signed-in views and multi-step flows. Then you browse
-them all on one zoomable canvas.
+them all on one zoomable canvas. It crawls Electron desktop apps and Android WebView apps
+the same way ([crawling apps][apps], experimental).
 
 - **Explores like a QA reviewer.** The crawler maps the pages and the obvious states, then
   an agent works through each kind of page and finds the ones a crawler can't.

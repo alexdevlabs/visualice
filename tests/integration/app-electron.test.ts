@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { parseConfig, type Config } from "../../src/shared/config";
-import { crawlPipeline } from "../../src/crawl/orchestrator";
+import { capturePipeline, crawlPipeline } from "../../src/crawl/orchestrator";
 import { probePage, type ProbeOutcome } from "../../src/crawl/probe";
 import { appHost, closeAppHosts } from "../../src/crawl/app/host";
 import { setAppRoot } from "../../src/shared/url";
@@ -111,5 +111,80 @@ describe("an Electron app, connected over CDP", () => {
     const shot = manifest.routes[0].states[0].shots.desktop;
     expect(shot?.width).toBe(2560);
     expect(shot?.height).toBeGreaterThanOrEqual(1600);
+  });
+});
+
+describe("an Electron app started from a profile", () => {
+  it("runs on a copy of the profile, and leaves the profile as it was", async () => {
+    await closeAppHosts();
+    const source = await tempDir("electron-profile");
+    dirs.push(source);
+    await fs.writeFile(path.join(source, "greeting.txt"), "Signed in as Ada");
+    const config = configFor(source, { connect: "launch", profile: source });
+    const host = appHost(config)!;
+    await host.startUrl();
+    const page = await host.newContext().newPage();
+    const seen = (await page.evaluate(() => ({
+      ...(window as unknown as { fixture: { userData: string; greeting: string } }).fixture,
+      shown: document.getElementById("greeting")?.textContent,
+    }))) as { userData: string; greeting: string; shown?: string };
+    expect(seen.shown).toBe("Signed in as Ada");
+    expect(path.resolve(seen.userData)).not.toBe(path.resolve(source));
+
+    await closeAppHosts();
+    // The app wrote its own files into the copy, not into the profile it came from,
+    // and the copy is gone with the app.
+    expect(await fs.readdir(source)).toEqual(["greeting.txt"]);
+    await expect(fs.stat(seen.userData)).rejects.toThrow();
+  });
+});
+
+describe("an isolated state in an Electron app", () => {
+  it("gets a copy of its own, and the state after it a fresh one", async () => {
+    await closeAppHosts();
+    const out = await tempDir("electron-isolate");
+    dirs.push(out);
+    const base = configFor(out, { connect: "launch" });
+    // No retries: a state handed a closed copy would fail, not be retried into passing.
+    const config = { ...base, politeness: { ...base.politeness, retries: 0 } };
+    const host = appHost(config)!;
+    const baseUrl = await host.startUrl();
+    const launches = vi.spyOn(
+      (host as unknown as { driver: { launch: (d: unknown) => Promise<unknown> } }).driver,
+      "launch",
+    );
+    const dialog = { action: "click", target: { role: "button", name: "Open dialog" } } as const;
+    const { manifest } = await capturePipeline({
+      config,
+      baseUrl,
+      inputManifest: {
+        routes: [
+          {
+            id: "/index.html",
+            url: "/index.html",
+            depth: 0,
+            states: [
+              { id: "default", kind: "default", label: "Default", recipe: [], shots: {} },
+              {
+                id: "dialog-alone",
+                kind: "modal",
+                label: "Dialog, isolated",
+                isolate: true,
+                recipe: [dialog],
+                shots: {},
+              },
+              { id: "dialog", kind: "modal", label: "Dialog", recipe: [dialog], shots: {} },
+            ],
+          },
+        ],
+      },
+      log: silent,
+    });
+    expect(manifest.stats?.failures).toEqual([]);
+    const shots = manifest.routes[0].states.map((s) => s.shots.desktop);
+    expect(shots.every((s) => s && !("error" in s))).toBe(true);
+    // The first state used the copy that found the start page; the isolated state
+    // and the state after it each started one.
+    expect(launches).toHaveBeenCalledTimes(2);
   });
 });

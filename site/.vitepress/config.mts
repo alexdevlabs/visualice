@@ -8,7 +8,7 @@ import { defineConfig, type MarkdownRenderer } from "vitepress";
  */
 
 const REPO = "https://github.com/alexdevlabs/visualice";
-const DESCRIPTION = "See every screen of your site at once.";
+const DESCRIPTION = "See every screen of your site or app at once.";
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
 /** Source file (repo-relative) → page. Everything else in the repo isn't a page. */

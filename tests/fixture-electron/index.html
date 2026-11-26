@@ -35,6 +35,13 @@
       };
       addEventListener("hashchange", render);
       render();
+      // Only a profile with a greeting in it shows one.
+      if (window.fixture?.greeting) {
+        const p = document.createElement("p");
+        p.id = "greeting";
+        p.textContent = window.fixture.greeting;
+        document.body.prepend(p);
+      }
       $("show-dialog").onclick = () => $("dlg").showModal();
       $("close").onclick = () => $("dlg").close();
       // A write to the app's backend: discovery must block it and leave the button out.
