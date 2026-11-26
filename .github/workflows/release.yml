@@ -64,7 +64,9 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:integration
+      # Electron opens real windows, and the runner has no display: xvfb-run gives
+      # the tests a virtual one, as in ci.yml.
+      - run: xvfb-run -a npm run test:integration
 
       # No separate `npm run build` step: package.json's `prepack` script already
       # runs the full build (build:node + build:types + viewer:build), and both
