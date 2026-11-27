@@ -163,7 +163,8 @@ const rows = [
         <h1>See every screen of your site at once.</h1>
         <p class="vh-lede">
           Every page and every state, on every device, laid out on one canvas you can zoom through.
-          Spot the broken one before your users do.
+          Works on websites, Electron desktop apps and Android WebView apps. Spot the broken one
+          before your users do.
         </p>
         <div class="vh-actions">
           <a class="vh-btn vh-btn-primary" :href="withBase('/guide/getting-started')"

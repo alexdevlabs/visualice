@@ -13,6 +13,7 @@ import {
 } from "../src/shared/url";
 import { resolveUrl } from "../src/crawl/recipe";
 import { writeOf, writeRules } from "../src/crawl/writes";
+import { ensureStorageState } from "../src/crawl/auth";
 import {
   devToolsEndpoint,
   inspectorAllowed,
@@ -360,5 +361,28 @@ describe("an app standing in for a browser", () => {
     expect(page.reload).toHaveBeenCalledTimes(1);
     expect(await ctx.cookies()).toEqual([{ name: "c1" }]);
     await expect(ctx.storageState()).rejects.toThrow(/own profile/);
+  });
+});
+
+describe("signing in to an app", () => {
+  it("refuses a login recipe, pointing to the app's own session", async () => {
+    const config = parseConfig(
+      {
+        app: { electron: { executable: "./my-app" } },
+        auth: { login: { steps: [{ action: "click", target: { text: "Sign in" } }] } },
+      },
+      quiet,
+    );
+    await expect(ensureStorageState(config, quiet)).rejects.toThrow(
+      /auth.login doesn't apply to an app.*app\.electron\.profile.*clearData: false/,
+    );
+  });
+
+  it("starts without a saved session file otherwise", async () => {
+    const config = parseConfig(
+      { app: { android: { package: "com.example.app" } }, auth: { storageStatePath: "x.json" } },
+      quiet,
+    );
+    expect(await ensureStorageState(config, quiet)).toBeUndefined();
   });
 });

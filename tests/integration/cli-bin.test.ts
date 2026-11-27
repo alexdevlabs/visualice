@@ -289,6 +289,23 @@ export default { target: ${JSON.stringify(server.url)}, devices: [phone] as Devi
     }
   }, 60000);
 
+  it("refuses --target when the config crawls an app", async () => {
+    const dir = await tempDir("bin");
+    try {
+      await fs.writeFile(
+        path.join(dir, "visualice.config.json"),
+        JSON.stringify({ app: { electron: { executable: "./my-app" } } }),
+      );
+      const err = (await run(["crawl", "--target", "https://example.com"], dir).catch(
+        (e: unknown) => e,
+      )) as { code: number; stderr: string };
+      expect(err.code).toBe(2);
+      expect(err.stderr).toContain("--target is for a website, and this config crawls an app");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects an unknown flag with exit code 2", async () => {
     const dir = await tempDir("bin");
     try {
